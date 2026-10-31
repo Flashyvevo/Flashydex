@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { DatabaseZap, HardDrive, Layers } from 'lucide-react';
-import { Mark, OnboardingShell } from '../../../components/onboarding-shell';
+import { Logo, OnboardingShell } from '../../../components/onboarding-shell';
 import { Button } from '../../../components/ui';
 
 export const Route = createFileRoute('/_modal/welcome/')({ component: Welcome });
@@ -18,7 +18,7 @@ function Welcome() {
       title="Your card collection, in your pocket"
       hero={
         <div className="flex justify-center py-4">
-          <Mark size={96} />
+          <Logo width={280} />
         </div>
       }
       footer={

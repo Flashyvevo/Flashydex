@@ -40,3 +40,4 @@ Thumbs.db
 # generated catalog artifacts and resumable upstream crawl cache
 .agent/metrics/packs/
 tools/catalog-builder/.cache/
+apps/mobile/public/dev-packs/full/

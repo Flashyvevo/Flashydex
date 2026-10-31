@@ -223,13 +223,13 @@
   --ps-fg-subtle: #7d8699;     /*  5.3:1 on bg, 4.56:1 on surface-2 */
   --ps-fg-disabled: #4f5668;   /* disabled only (exempt) */
 
-  --ps-accent: #ffcb05;
-  --ps-accent-hover: #ffd83d;
-  --ps-accent-pressed: #e6b600;
+  --ps-accent: #a8f030;
+  --ps-accent-hover: #b9f654;
+  --ps-accent-pressed: #8fd41a;
   --ps-on-accent: #1a1400;     /* 12.1:1 */
-  --ps-accent-fg: #ffcb05;     /* accent AS text on bg/surface */
-  --ps-accent-soft: rgb(255 203 5 / 0.14);
-  --ps-focus-ring: #ffcb05;
+  --ps-accent-fg: #a8f030;     /* accent AS text on bg/surface */
+  --ps-accent-soft: rgb(168 240 48 / 0.14);
+  --ps-focus-ring: #a8f030;
 
   --ps-positive: #34d399;
   --ps-positive-soft: rgb(52 211 153 / 0.14);
@@ -249,7 +249,7 @@
   --ps-chrome-bg-translucent: rgb(18 21 28 / 0.86);
   --ps-chrome-backdrop: none;
   --ps-chrome-border: var(--ps-border);
-  --ps-chrome-accent-fg: #ffcb05;     /* active tab label/icon, top-bar text buttons */
+  --ps-chrome-accent-fg: #a8f030;     /* active tab label/icon, top-bar text buttons */
   --ps-tab-indicator-bg: var(--ps-accent);
   --ps-sheet-handle: var(--ps-fg-subtle);
 
@@ -273,14 +273,14 @@
 
   --ps-grade-bg: #f2f4f8;
   --ps-grade-fg: #0b0d12;
-  --ps-grade-gem-ring: #ffcb05;
+  --ps-grade-gem-ring: #a8f030;
 
   --ps-variant-bg: rgb(11 13 18 / 0.78);
   --ps-variant-fg: #f2f4f8;
   --ps-variant-foil-a: #a78bfa;
   --ps-variant-foil-b: #22d3ee;
 
-  --ps-qty-bg: #ffcb05;
+  --ps-qty-bg: #a8f030;
   --ps-qty-fg: #1a1400;
 
   --ps-art-empty-bg: #161a23;
@@ -316,12 +316,12 @@
   --ps-fg-subtle: #646c7d;
   --ps-fg-disabled: #a6acb8;
 
-  --ps-accent: #ffcb05;
-  --ps-accent-hover: #ffd83d;
-  --ps-accent-pressed: #e6b600;
+  --ps-accent: #a8f030;
+  --ps-accent-hover: #b9f654;
+  --ps-accent-pressed: #8fd41a;
   --ps-on-accent: #1a1400;
-  --ps-accent-fg: #8a6a00;     /* 5.1:1 on white */
-  --ps-accent-soft: rgb(255 203 5 / 0.22);
+  --ps-accent-fg: #3f6600;     /* ≥5:1 on white */
+  --ps-accent-soft: rgb(168 240 48 / 0.22);
   --ps-focus-ring: #1d4ed8;
 
   --ps-positive: #047857;
@@ -371,7 +371,7 @@
   --ps-variant-foil-b: #0891b2;
 
   --ps-qty-bg: #0e1116;
-  --ps-qty-fg: #ffcb05;
+  --ps-qty-fg: #a8f030;
 
   --ps-art-empty-bg: #eef0f4;
   --ps-art-empty-border: #d9dde5;

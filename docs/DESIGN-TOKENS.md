@@ -35,7 +35,7 @@ Contents:
 
 ## 1. Principles
 
-1. **Card art is the hero.** Chrome is near-black and neutral so printed card colours read true. The accent yellow is the only saturated UI colour. It is used for the primary action, focus and the quantity badge.
+1. **Card art is the hero.** Chrome is near-black and neutral so printed card colours read true. The accent is the brand lime green (`#a8f030`, from the owner's logo/app icon, 2026-10-31; previously Pokémon-adjacent yellow `#a8f030`) and is the only saturated UI colour. It is used for the primary action, focus and the quantity badge.
 2. **Dark by default.** Collectors look at a phone in a living room at night, and a white UI next to holo art glares. A light theme exists and is fully specified.
 3. **Never colour alone.** Rarity, condition and gain/loss always pair colour with text or a sign (`+$4.20`, `NM`, `● Rare`).
 4. **Elevation by surface, not shadow** in dark mode, because shadows are invisible on near-black. Light mode uses soft shadows.
@@ -83,12 +83,12 @@ All pairs below were measured with WCAG 2.x relative luminance. Text pairs are �
 
 | Token | Dark | Light | Use |
 |---|---|---|---|
-| `--ps-accent` | `#ffcb05` | `#ffcb05` | primary button fill, selected chip fill |
-| `--ps-accent-hover` / `-pressed` | `#ffd83d` / `#e6b600` | same | button states |
+| `--ps-accent` | `#a8f030` | `#a8f030` | primary button fill, selected chip fill |
+| `--ps-accent-hover` / `-pressed` | `#b9f654` / `#8fd41a` | same | button states |
 | `--ps-on-accent` | `#1a1400` (12.1:1) | same | text/icons on accent |
-| `--ps-accent-fg` | `#ffcb05` (12.8:1) | `#8a6a00` (5.1:1) | accent as text on bg/surface (links) |
+| `--ps-accent-fg` | `#a8f030` (14.0:1) | `#3f6600` (6.8:1) | accent as text on bg/surface (links) |
 | `--ps-accent-soft` | 14 % yellow | 22 % yellow | selected-row tint |
-| `--ps-focus-ring` | `#ffcb05` | `#1d4ed8` | 2 px ring + 2 px offset |
+| `--ps-focus-ring` | `#a8f030` | `#1d4ed8` | 2 px ring + 2 px offset |
 | `--ps-positive` | `#34d399` | `#047857` | gain, success, "Up to date" |
 | `--ps-negative` | `#f87171` | `#b91c1c` | loss, errors, danger-zone text |
 | `--ps-warning` | `#fbbf24` | **`#9a4806`** | "Catalog incomplete", offline/paused chips |
@@ -106,7 +106,7 @@ Why yellow: it reads instantly on near-black with no glow, and it is absent from
 |---|---|---|---|
 | `--ps-chrome-bg` | `var(--ps-surface)` | `var(--ps-surface)` | solid bars (Android, web) |
 | `--ps-chrome-bg-translucent` | `rgb(18 21 28/.86)` | `rgb(255 255 255/.90)` | iOS bars, with `--ps-chrome-backdrop: saturate(180%) blur(20px)` |
-| `--ps-chrome-accent-fg` | `#ffcb05` | **`#6b5100`** | active tab label/icon, top-bar text buttons ("Done", "Back") |
+| `--ps-chrome-accent-fg` | `#a8f030` | **`#6b5100`** | active tab label/icon, top-bar text buttons ("Done", "Back") |
 | `--ps-chrome-border` | `var(--ps-border)` | `var(--ps-border)` | 1 px hairline between bar and content |
 | `--ps-tab-indicator-bg` | accent (web) / accent-soft (Android) | same | iOS has no indicator |
 | `--ps-sheet-handle` | `--ps-fg-subtle` (4.99:1) | `--ps-border-input` (3.37:1) | drag handle |
@@ -605,7 +605,7 @@ Use `#0b0d12` (dark `--ps-bg`) for:
 
 **Mark concept: "foil glint".**
 - Two overlapping, slightly rotated card silhouettes at 63:88 with the `--ps-radius-card` corner ratio, in off-white `#f2f4f8`.
-- A single diagonal **specular streak** in a yellow → amber gradient (`#ffcb05 → #f59e0b`) across the front card. The streak is the "flash" of a holo card catching light, which is where the name FlashyDex comes from.
+- A single diagonal **specular streak** in a yellow → amber gradient (`#a8f030 → #f59e0b`) across the front card. The streak is the "flash" of a holo card catching light, which is where the name FlashyDex comes from.
 - Flat shapes, no text, no outline glow.
 
 Hard exclusions, so App Review (guideline 5.2.1) and trademark law have nothing to hold on to:
@@ -618,7 +618,7 @@ Hard exclusions, so App Review (guideline 5.2.1) and trademark law have nothing 
 
 | Variant | Background | Foreground |
 |---|---|---|
-| Light (default) | `#0b0d12` full bleed, a subtle top-left lift to `#12151c` | cards `#f2f4f8`, glint `#ffcb05→#f59e0b` |
+| Light (default) | `#0b0d12` full bleed, a subtle top-left lift to `#12151c` | cards `#f2f4f8`, glint `#a8f030→#f59e0b` |
 | Dark | transparent (iOS supplies its dark backdrop) | same foreground; glint unchanged; cards `#e3e6ec` |
 | Tinted | transparent | one grayscale layer: cards at 100 % white, glint at 60 % white. iOS applies the tint; it must read in silhouette alone |
 

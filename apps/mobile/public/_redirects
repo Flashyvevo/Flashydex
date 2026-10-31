@@ -1,0 +1,3 @@
+# SPA navigation fallback. Netlify applies this after matching static files.
+# Reference: https://docs.netlify.com/manage/routing/redirects/rewrites-proxies/
+/*    /index.html   200

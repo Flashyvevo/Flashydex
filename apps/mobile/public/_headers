@@ -1,0 +1,35 @@
+# Netlify reads this file after Vite copies public/ into dist/.
+# Reference: https://docs.netlify.com/manage/routing/headers/
+
+# opfs-sahpool does not require cross-origin isolation. Enable this only if the
+# selected SQLite VFS changes to `opfs`, which requires SharedArrayBuffer:
+# /*
+#   Cross-Origin-Opener-Policy: same-origin
+#   Cross-Origin-Embedder-Policy: require-corp
+
+# Hashed Vite output can be cached forever. Do not apply this to sql-wasm.wasm:
+# that file has a stable, non-hashed name and must be revalidated.
+/assets/*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.wasm
+  Content-Type: application/wasm
+
+/assets/sql-wasm.wasm
+  Content-Type: application/wasm
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache

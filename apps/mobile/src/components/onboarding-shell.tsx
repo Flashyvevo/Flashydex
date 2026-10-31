@@ -5,6 +5,8 @@ import { useUpdateSettings } from '../data';
 import { useToast } from './overlay';
 import { canGoBack } from './page';
 import { cx } from './ui';
+import appIcon from '../assets/brand/app-icon.png';
+import logo from '../assets/brand/logo-1200.png';
 
 /** Shared layout of every first-run step (UX §15.2): back, 4 dots, Skip (not on step 1), content, sticky footer. */
 export function OnboardingShell({
@@ -83,19 +85,13 @@ export function OnboardingShell({
   );
 }
 
-/** FlashyDex mark: two overlapping 63:88 card silhouettes + a diagonal yellow→amber streak (no Poké Ball/bolt). */
+
+/** FlashyDex app icon (owner-supplied brand mark, transparent background). */
 export function Mark({ size = 96 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 96 96" role="img" aria-label="FlashyDex" className="shrink-0">
-      <defs>
-        <linearGradient id="fdstreak" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ffe45c" />
-          <stop offset="1" stopColor="#ffa500" />
-        </linearGradient>
-      </defs>
-      <rect x="14" y="14" width="46" height="64" rx="4" fill="#9aa3b8" transform="rotate(-8 37 46)" />
-      <rect x="34" y="18" width="46" height="64" rx="4" fill="#f2f4f8" transform="rotate(6 57 50)" />
-      <path d="M44 74 L70 22 L77 25 L51 77 Z" fill="url(#fdstreak)" opacity="0.95" />
-    </svg>
-  );
+  return <img src={appIcon} width={size} height={size} alt="FlashyDex" className="shrink-0 select-none" draggable={false} decoding="async" />;
+}
+
+/** FlashyDex wordmark logo (icon + "FlashyDex"), for the welcome hero and About. */
+export function Logo({ width = 260 }: { width?: number }) {
+  return <img src={logo} width={width} alt="FlashyDex" className="h-auto max-w-full select-none" draggable={false} decoding="async" style={{ width }} />;
 }
