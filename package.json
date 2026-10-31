@@ -9,7 +9,8 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tools/*"
   ],
   "scripts": {
     "postinstall": "node scripts/copy-sql-wasm.mjs && node apps/mobile/scripts/generate-icons.mjs",
@@ -22,6 +23,8 @@
     "db:generate": "npm run db:generate --workspace=@flashydex/core",
     "cap:sync": "npm run cap:sync --workspace=@flashydex/mobile",
     "cap:ios": "npm run cap:ios --workspace=@flashydex/mobile",
-    "cap:android": "npm run cap:android --workspace=@flashydex/mobile"
+    "cap:android": "npm run cap:android --workspace=@flashydex/mobile",
+    "catalog:build": "npm run catalog:build --workspace=@flashydex/catalog-builder",
+    "catalog:dev-pack": "node scripts/prepare-dev-pack.mjs"
   }
 }

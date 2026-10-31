@@ -1,6 +1,6 @@
 # FlashyDex — packages/core repository and service interfaces
 
-Scope notice: requested Stage A2 interfaces. Newer BRIEF 2026-10-31 [storage update](COMPRESSION-STORAGE.md) supersedes single-DB install/backup assumptions; Stage A3 must add catalog-pack installation, multi-DB joining, .fdx backup/settings and bounded image-cache contracts. These repository/transfer interfaces are the A2 baseline, not proof that A3 is designed or implemented. See ADR-039.
+Stage A3 current interfaces: repositories span user DB plus0..n catalog DBs, CatalogInstallService installs versioned zstd packs, BackupService produces/restores .fdx ZIP, Platform supplies streaming binary I/O, image-cache and local metrics hooks. BRIEF OWNER UPDATEs/[COMPRESSION-STORAGE](COMPRESSION-STORAGE.md) govern; [CATALOG-PACKS](CATALOG-PACKS.md) contains manifest/installer/driver evidence. ADR-040–048 record changes. These are contracts, not implemented capabilities.
 
 Normative TypeScript contracts in packages/core, NOT HTTP routes. UI calls these through TanStack Query hooks in apps/mobile/src/data. Core is framework-free, with injected Platform/SqlDriver. Shared strict zod schemas live in packages/schemas/src/{primitives,entities,api,transfer}.ts. [DATA-MODEL](DATA-MODEL.md), [ARCHITECTURE](ARCHITECTURE.md), [IMPORT-EXPORT](IMPORT-EXPORT.md) and [acceptance](PHASE1-ACCEPTANCE.md) are binding. No app code is implemented by this document.
 
@@ -327,7 +327,54 @@ interface SyncService {
 | cancel | NotFoundError | Active ->cancel_requested, inactive idempotent; committed catalog retained. |
 | resume | NotFoundError, ActiveWorkError, InvalidStateError | Same UUID/frozen selection, new token/attempt; completed cannot resume. |
 
-ARCHITECTURE retry/fencing/foreground/ETag rules binding. Read polls don't reject for crawl errors; errors stored lastError/failed units. Startup explicitly recovers interrupted jobs; get/list don't mutate. Navigation continues, suspend/tab-close/OS-kill do NOT promise progress. Native HTTP cancellation means stop scheduling/discard late responses, no guaranteed abort. prices_only writes PriceSnapshot+operational progress only, not catalog/owned. DATA-MODEL checkpoint v2.
+ARCHITECTURE retry/fencing/foreground/ETag rules binding. Read polls don't reject for crawl errors; errors stored lastError/failed units. Startup explicitly recovers interrupted jobs; get/list don't mutate. Navigation continues, suspend/tab-close/OS-kill do NOT promise progress. Native HTTP cancellation means stop scheduling/discard late responses, no guaranteed abort. prices_only writes catalog_latest_prices plus user history/operational progress, not catalog card metadata/owned/settings. Two DB commits use pending payload+idempotent replay, not an atomic card+checkpoint transaction. DATA-MODEL checkpoint v3; primary bootstrap is CatalogInstallService.
+
+## CatalogInstallService (Phase 1)
+
+Manifest/entry schemas are the normative Draft2020-12 in CATALOG-PACKS, generated alongside strict zod. CatalogManifest/Entry types are their validated inference. No arbitrary URL/path parameters; service uses configured manifest URL and caller selects only language. Native full install capabilities must be proved, optional ATTACH never required. Native missing catalog refresh ->CATALOG_NOT_INSTALLED. CatalogRepo reads with no catalog return empty pages; exact missing resource ->NotFoundError, owned copy snapshots still work.
+
+```ts
+type Lang = z.infer<typeof Language>;
+type CatalogPhase = 'idle'|'checking'|'downloading'|'downloaded'|'size_checked'|'decompressing'|
+  'verifying'|'validating'|'prepared'|'activating'|'validating_active'|'committed'|'installed'|
+  'cancelled'|'failed'|'interrupted'|'rolling_back';
+type CatalogProgress = {operationId:string;language:Lang;phase:CatalogPhase;
+  compressedBytesDone:number;compressedBytesTotal:number|null;
+  uncompressedBytesDone:number;uncompressedBytesTotal:number|null;
+  cancellable:boolean;elapsedMs:number;warningCode:string|null};
+type InstalledCatalog = {language:Lang;version:string|null;sha256:string|null;
+  installedAt:string|null;schemaVersion:number|null;generation:number;
+  status:'absent'|'installed'|'failed'}; // no private active_ref in public DTO
+type CatalogStatus = {installed:InstalledCatalog;job:CatalogProgress|null;
+  lastError:{code:string;message:string}|null;rollbackAvailable:boolean;
+  capabilities:{fullInstall:boolean;atomicActivation:boolean;attachReads:boolean;reason:string|null}};
+type CatalogUpdateCheck = {manifestVersion:1;checkedAt:string;
+  languages:Array<{language:Lang;currentVersion:string|null;targetVersion:string;
+    schemaVersion:number;compressedBytes:number;uncompressedBytes:number;
+    updateAvailable:boolean;compatible:boolean;reason:string|null;
+    strategy:'full'|'delta';fallbackReason:string|null}>};
+interface CatalogInstallService {
+  checkManifest(input?:{languages:Lang[]},signal?:AbortSignal):Promise<CatalogUpdateCheck>;
+  install(language:Lang,onProgress:(progress:CatalogProgress)=>void,signal:AbortSignal):Promise<InstalledCatalog>;
+  rollback(language:Lang):Promise<InstalledCatalog>;
+  uninstall(input:{language:Lang;confirm:true}):Promise<InstalledCatalog>;
+  status(language:Lang):Promise<CatalogStatus>;
+}
+```
+
+Strict method boundaries: languages distinct nonempty<=2 (default selected settings); literal en/ja, callbacks/signals execution-only (not JSON), optional signature validated, bounded manifest256KiB. Progress counters safe nonnegative ints, totals null until known; never pass NaN, private file refs, card IDs or tokens. Callback errors are isolated/reported locally and never leave installer lock held. install resolves ONLY after active validation+durable receipt and can run through navigation because service lifetime is app-scoped; UI can disconnect observer without cancelling. status reads persisted job+receipt without network or mutation; boot recovery is separate internal action. Check manifest network failure leaves installed catalogs usable, never changes personal data. Same installed baseline version/hash returns no-op even if refreshed bytes differ.
+
+| Method | Additional errors / behavior |
+|---|---|
+| checkManifest | HTTP_FAILED, MANIFEST_INVALID, MANIFEST_SIGNATURE_INVALID, PAYLOAD_TOO_LARGE, CANCELLED; schema-incompatible entries returned compatible=false/APP_UPDATE_REQUIRED, never auto-install. Optional delta currently strategy=full/fallbackReason=NOT_IMPLEMENTED. |
+| install | ACTIVE_WORK, CATALOG_NOT_SELECTED, APP_UPDATE_REQUIRED, UNSUPPORTED_CAPABILITY, STORAGE_FULL, PACK_SIZE_MISMATCH, PACK_HASH_MISMATCH, PACK_INVALID, FILE_IO, HTTP_FAILED, CANCELLED. Recheck/freeze entry; one global install Phase1; no selected setting change automatically starts it. Restart interrupted job using stored entry if unchanged; otherwise explicit new download. signal stops precritical, fences late output; critical atomic section completes or rolls back even if signal fires, returns actual committed outcome, not false CANCELLED after success. |
+| rollback | NO_ROLLBACK if previous removed/never existed; otherwise same read barrier/journal/validate/receipt path, bump generation; never personal row mutation. Also ACTIVE_WORK/PACK_INVALID/FILE_IO. Intended failure recovery window, not permanent pack history. |
+| uninstall | ACTIVE_WORK if jobs/read barriers cannot quiesce; confirm=true required. Close/detach/remove only requested catalog through recoverable journal then durable absent receipt with generation++; retain user copies/history/annotations/settings. Missing already absent is no-op. FILE_IO keeps prior state or recovery marker, not false success. |
+| status | Missing installed row returns explicit absent (all nullable fields null,generation0), no empty DB creation; capabilities/reason honestly describe platform. |
+
+Error classes: CatalogError codes above plus STALE_READ for joined-read retry exhaustion; BackupError also BACKUP_VERSION_UNSUPPORTED/ALREADY_RESTORED. All common DomainError sanitization/persistence rules remain. Core exports don't expose DB paths, HTTP APIs or arbitrary SQL. Metrics errors never convert an already committed install into a fake failed activation; persist best-effort diagnostic warning separately.
+
+Repositories use DatabaseSet.user/catalog(language) and CatalogReadCoordinator optional ATTACH or TS batch joins. CATALOG-PACKS query table is normative: max50 hydrated results,100-key chunks/<=400 binds, language in every map key, filter/sort/totals BEFORE pagination, lightweight streamed summaries for portfolio/value/Pocket/completion. Capture userRevision+catalogGeneration, retry once on change then STALE_READ. Ordinary copy creation obtains catalog snapshot under read barrier, then inserts user ledger+copy/children in ONE USER transaction; no catalog write required. Sync price+catalog commits are separate replay-safe steps, not one multi-file transaction. Refresh appends history only for owned/referenced user identities; prices_only may update catalog_latest_prices and user history/progress but NEVER card metadata/owned/settings/manual values.
 
 ## SettingsRepo
 
@@ -351,7 +398,7 @@ Common errors only. update>=1 field; distinct languages/keys, merged validity; r
 ```ts
 type FileRef = {id:string;name:string;mime:string;size:number}; // Opaque app-private registry entry, NOT path.
 export const FileRefSchema = z.object({id:Id,name:z.string().min(1).max(200),mime:z.string().max(100),size:SafeInt}).strict();
-export const PickInput = z.object({kind:z.enum(['transfer','database']),maxBytes:SafeInt}).strict();
+export const PickInput = z.object({kind:z.enum(['transfer','backup']),maxBytes:SafeInt}).strict();
 export const ReadInput = z.object({file:FileRefSchema,maxBytes:SafeInt}).strict();
 export const WriteInput = z.object({name:z.string().regex(/^flashydex-[a-zA-Z0-9._-]+$/).max(200),mime:z.string().max(100),
   bytes:z.instanceof(Uint8Array),area:z.enum(['staging','exports'])}).strict();
@@ -387,15 +434,21 @@ export const ExportInput = z.object({format:z.enum(['json','csv'])}).strict();
 export const ImportOptions = z.object({format:z.enum(['json','csv']),conflictPolicy:z.enum(['skip','update']).default('skip')}).strict();
 export const ImportDryRun = ImportOptions.extend({file:FileRefSchema}).strict();
 export const ImportCommit = z.object({id:Id,planHash:Hash,confirm:z.literal(true)}).strict();
-export const BackupCreate = z.object({includeRawDatabase:z.boolean().default(true)}).strict();
+export const BackupCreate = z.object({includeUserImages:z.boolean().default(false),
+  includeCatalogs:z.boolean().default(false)}).strict();
 export const RestoreDryRun = z.object({file:FileRefSchema}).strict();
-export const RestoreCommit = z.object({id:Id,backupHash:Hash,confirm:z.literal('RESTORE')}).strict();
+export const RestoreCommit = z.object({id:Id,backupHash:Hash,userStateToken:Hash,confirm:z.literal('RESTORE')}).strict();
 type ExportFile = {file:FileRef;format:'json'|'csv';warnings:string[]};
-type BackupCapabilities = {rawCopy:boolean;rawRestore:boolean;reason:string|null};
-type BackupResult = {json:FileRef;database:FileRef|null;warnings:string[]};
-type BackupPreview = {id:string;backupHash:string;expiresAt:string;schemaFingerprint:string;totalCards:number;
-  customCards:number;collectionRevision:number;warning:string};
-type RestoreResult = {restored:true;totalCards:number;safetyBackupName:string;restartRequired:false};
+type BackupCapabilities = {fdxCreate:boolean;fdxRestore:boolean;optionalCatalogPayload:boolean;reason:string|null};
+type BackupResult = {file:FileRef;format:'fdx';backupVersion:1;sha256:string;
+  counts:FdxCounts;warnings:string[]};
+type BackupPreview = {id:string;backupHash:string;expiresAt:string;backupVersion:1;
+  counts:FdxCounts;totalCards:number;customCards:number;collectionRevision:number;userStateToken:string;
+  matchedCatalogIdentities:number;missingCatalogIdentities:number;warnings:string[];
+  warning:'Replaces all personal data'};
+type RestoreResult = {restored:true;totalCards:number;counts:FdxCounts;
+  safetyBackup:FileRef;restoredAt:string;restartRequired:false};
+// FdxCounts is strict inference of IMPORT-EXPORT BackupCounts; all fields required, safe integers.
 // ImportReport/ImportCommitResult = exact zod inference from IMPORT-EXPORT.md.
 interface TransferService {
   exportFile(input:Input<typeof ExportInput>):Promise<ExportFile>;
@@ -419,12 +472,14 @@ interface BackupService {
 | dryRun | ImportError, PlatformError, SizeLimitError | <=25MiB before parse,100k copies/250k total entities; zero DB writes, immutable locally persisted plan/hash/default IDs. Well-formed invalid rows ->valid=false report, invalid syntax throws. |
 | getImport | NotFoundError, PreviewExpiredError | Local staging or committed receipt metadata; preview30min. |
 | commit | NotFoundError, ImportError, StalePreviewError, PreviewExpiredError, ConflictError | Receipt FIRST same UUID/hash returns prior result for24h even expired preview/current revision changed. Otherwise verify file/plan/revision/expiry/validity/refs, whole transaction+receipt/revision once. |
-| capabilities | PlatformError | Probe actual raw-copy/restore support, never optimistic defaults. |
-| create | PlatformError, ActiveWorkError, BackupError, SizeLimitError | JSON always. Unsupported raw requested ->database:null+warning, not fake DB. Supported: quiesce/checkpoint/close/copy/reopen/integrity+FK validate before result. |
-| previewRestore | UnsupportedCapabilityError, BackupError, PlatformError, SizeLimitError | Raw <=512MiB, isolated validation exact schema_migrations fingerprint;10min hash/revision preview. No SQL/plugin-JSON execution. |
-| restore | UnsupportedCapabilityError, NotFoundError, BackupError, PreviewExpiredError, StalePreviewError, ActiveWorkError, InvalidStateError, PlatformError | RESTORE; fence/drain/close handles, verified safety backup, same-volume swap/recovery marker, reopen/integrity/FKs/read count before result. Failure reopens prior file; consumed token cannot replay. |
+| capabilities | PlatformError | Report .fdx create/restore support and optional catalog payload separately; native restore is mandatory Phase1, not an optional raw-copy exemption. |
+| create | PlatformError, ActiveWorkError, BackupError, SizeLimitError | Consistent user snapshot ->stream compressed .fdx manifest+entities+settings+customs, optional user images, no catalog by default. Required arrays/counts/hashes/schema valid; includeCatalogs unsupported ->explicit error, not silent inclusion. signal/progress supported below. |
+| previewRestore | UnsupportedCapabilityError, BackupError, PlatformError, SizeLimitError | Stream bounded .fdx<=512MiB compressed/1GiB expanded with per-entry caps; validate manifestVersion/entry hashes/strict entities/refs, create isolated migrated staged USER DB.10min preview hash+userStateToken/revision. No target DB writes/network/catalog install. |
+| restore | UnsupportedCapabilityError, NotFoundError, BackupError, PreviewExpiredError, StalePreviewError, ActiveWorkError, InvalidStateError, PlatformError | RESTORE replaces personal data, verify safety .fdx, fence/drain/close user handles, journaled atomic activation/reopen/integrity/FKs/exact row read-back; old DB/assets retained until commit. Failure restores old personal state; catalogs untouched and actual installation receipts rebuilt/preserved from device, not archive. |
 
-Portable JSON backup/import is merge/update, not deletion of absent copies. Raw replacement only where tested; unsupported capability doesn't remove JSON backup. Plugin exportToJson/importFromJson is a DIFFERENT schema, never substitute for CollectionExportV1. No native better-sqlite3 online backup assumption. User share/download outcome is reported honestly. BackupService optional authenticated server mirror is Phase7 seam only, no remote backup now.
+.fdx spec and algorithm are normative in IMPORT-EXPORT: ZIP DEFLATE JSON/STORE compressed assets, backupVersion1, manifests+entities+settings+custom cards, optional personal images; per-card manual overrides/annotations/history ALWAYS user data. Restore works after reinstall+fresh packs via exact `(language,tcgdex_id)` only, snapshot fallback if absent/changed pack coverage. No need to retain original pack, no conversion to custom/re-ID on missing metadata. JSON/CSV remain interchange merge/update; .fdx restore explicit full personal replacement. Plugin JSON or uploaded raw SQLite schema is never executed. BackupService server mirror remains Phase7 seam only.
+
+BackupService.create(input, onProgress?, signal?) and previewRestore(input,onProgress?,signal?) accept optional execution controls: `(p:{phase:'snapshot'|'compressing'|'verifying'|'staging'|'activating'|'complete';bytesDone:number;bytesTotal:number|null;cancellable:boolean})=>void`, AbortSignal. restore(input,onProgress?,signal?) uses same control; cancellation honored before critical activation, during critical finishes commit/rollback and returns actual outcome. All bytes safe integers; callback failure isolated; cancellation leaves target unchanged. Cap checks/zip bomb/path traversal/unknown versions from IMPORT-EXPORT are mandatory. Mutations use the extended signatures (optional controls do not change serializable zod input).
 
 ## UX mapping and intentional omissions
 
