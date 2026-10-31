@@ -13,6 +13,7 @@ Read `.agent/reports/opus-ux-requests.md` (N1–N2, R1–R10, T1–T2) and `.age
 - **T1 (HTTPS on LAN)**: out of Phase 1. Terra will handle `mkcert` later. Don't spend builder time on it.
 - **Default condition on quick-add = unspecified (Sol), not NM (Opus UX).** Condition chips sit in the add sheet one tap away. Nothing the user didn't choose is recorded.
 - Apply Sol's "UX follow-up" list from `.agent/reports/sol-architecture-v2-report.md` and the A3 pack/.fdx flows from `docs/CATALOG-PACKS.md` when writing the UI brief; UX.md may lag those — Sol's contracts win on data semantics, UX.md wins on layout/copy.
+- **Opus UX v2 requests S1–S9** (`.agent/reports/opus-ux-v2-requests.md`): check which Sol v3 answered in `docs/CATALOG-PACKS.md`/`API.md`; for the rest decide and write Director notes. Non-negotiable: S7 — catalog DBs excluded from iCloud/device backup (Caches-equivalent or `isExcludedFromBackup`), user DB included; S9 — a bootstrap set index (bundled JSON or manifest-carried) so the first-run set picker works before any catalog is installed. Variant preselection by catalog priority stays (owner ruling).
 - Remaining R-items: decide yourself, log in `.agent/DIRECTOR-DECISIONS.md`.
 
 ## Hard rules
