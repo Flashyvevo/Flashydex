@@ -1,5 +1,7 @@
 # FlashyDex — local-first architecture (Stage A2)
 
+Scope notice: this is the requested Stage A2 App Store-pivot contract. A newer BRIEF OWNER UPDATE (2026-10-31) and [COMPRESSION-STORAGE](COMPRESSION-STORAGE.md) arrived during this run and SUPERSEDE its single-DB/direct-crawl-primary/snapshot-later/JSON-backup-only assumptions. Those require the separately assigned Stage A3 multi-DB/zstd/.fdx amendment; do not implement the superseded storage choices as current owner intent. Unchanged local-first/Capacitor/core/identity/transfer principles remain useful. See ADR-039.
+
 Normative Phase 1 target, not an implementation claim. BRIEF OWNER UPDATE / Fixed stack override SPEC's obsolete server direction. Read [DATA-MODEL](DATA-MODEL.md), [repository interfaces](API.md), [transfer](IMPORT-EXPORT.md), [acceptance](PHASE1-ACCEPTANCE.md), [ADRs](DECISIONS.md) and [UX](UX.md) together. SQL snake_case; TS/JSON camelCase. ADR-022 onward supersede incompatible historical ADRs.
 
 ## Boundary and stack
@@ -106,7 +108,7 @@ Core imports schemas, not React/TanStack/Capacitor/browser/Node/native DB packag
 
 UnitOfWork queues ALL single-connection tasks including reads, owns explicit beginTransaction/commitTransaction/rollbackTransaction; scoped handles avoid queue re-entry. Inside transaction run/execute use transaction=false (plugin default true); no nested/savepoint dependency. No network/share/haptics inside transaction. UUIDs in service then SELECT by known keys, no RETURNING/last_insert_rowid dependency. ON CONFLICT DO UPDATE, never INSERT OR REPLACE.
 
-Proxy handles run|all|get|values. SELECT -> plugin query (one statement) -> positional arrays in explicit projection order; strip ios_columns metadata when present, preserve null/0, never rely on arbitrary object enumeration. Bound DML ->run, DDL ->execute. execute permits raw batches, but core sends migration statements singly using drizzle-kit statement-breakpoint delimiters, not naive semicolon splitting. run/query NEVER receive multiple statements. DATA-MODEL specifies compatible SQL surface.
+Proxy handles run|all|get|values. For all/values return {rows: positionalRowArrays}; for get return {rows: firstPositionalRow} (undefined when absent), NOT a nested one-row array; run returns the agreed empty rows payload after success. The upstream sqlite-proxy session treats get separately. SELECT -> plugin query (one statement) -> positional arrays in explicit projection order; strip ios_columns metadata when present, preserve null/0, never rely on arbitrary object enumeration. Bound DML ->run, DDL ->execute. execute permits raw batches, but core sends migration statements singly using drizzle-kit statement-breakpoint delimiters, not naive semicolon splitting. run/query NEVER receive multiple statements. DATA-MODEL specifies compatible SQL surface.
 
 Web COMMIT alone isn't persistence: await saveToStore('flashydex') with queue held before successful mutation/checkpoint/migration. Quota/flush failure stops writes, raises PersistenceError, never says Saved. In-memory commit may exceed durable state: reopen last persisted DB before retry, use receipt for uncertain import, never blindly repeat bulk add. Offer recovery JSON if possible. Flush committed state only. Native success is SQLite commit. Personal transaction increments app_state.collection_revision once; sync never does.
 

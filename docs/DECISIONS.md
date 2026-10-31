@@ -1,6 +1,6 @@
 # Architecture decision records — Phase 1
 
-All entries accepted for this Stage A contract, subject to director approval before implementation changes the contract. BRIEF's fixed stack is an input, not re-litigated here. Each entry is one decision; implementation must raise a specific requested amendment rather than silently choose another design. No app code is copied by these records.
+Historical ADR-001–021 are retained as the Stage A record, NOT all current instructions. BRIEF OWNER UPDATE / Fixed stack and Stage A2 ADR-022 onward override conflicting statements. In particular ADR-012/013/017/019/020's server/Next/CLI/online-backup-only assumptions are superseded below. Unchanged identity/copy/money/transfer invariants survive. Each new decision names what changed, consequences and superseded records. No app code copied by these records.
 
 ## ADR-001 — One row per physical owned copy
 
@@ -85,3 +85,79 @@ Context: current phase is manual manager, future phase uses Python recognizer an
 ## ADR-021 — Reference inspiration, not blind code transfer
 
 Context: MIT Pokeum offers working sync/parsing but uses a different persistence/language model and later recognition concerns. Decision: cite app/reference/tcgdex.py pure parsers/retries/asset URLs, store.py conflict-upsert pattern, sync.py bounded work; do not transfer unlocalized keys/count-only freshness/default-normal/swallowed failure behavior. app/models.py informs vocabulary only, not recognition implementation now. Consequence: no code copied at Stage A; any implementation copy must retain MIT notice in THIRD_PARTY_NOTICES.md. Live sample confirms repeated price blocks and Cardmarket suffix ambiguity requiring stricter adapter tests.
+
+## Stage A2 — accepted owner-pivot decisions
+
+These entries implement the A2 App Store OWNER UPDATE / Fixed stack, not proposals to change that stack. ADR-039 records the later compression/storage update's precedence and required A3 amendment. Historical ADR text above remains for traceability; neither historical server choices nor superseded A2 storage assumptions are current owner intent.
+
+## ADR-022 — Local-first, no required server
+
+Supersedes ADR-012/013/019 deployment assumptions. Context: App Store reviewers/owners cannot depend on a private PC. Decision: catalog AND personal collection in device SQLite, offline launch/reads/mutations/import/export; no required account/server/API. Unsynced empty states/custom entry work offline, sync optional explicit action. Consequence: offline edits are Phase1, not deferred; no HTTP auth/Origin/Host/error/status/multipart or server maintenance protocol in app. Core typed errors replace HTTP statuses. Server backup/sync only Phase7 opt-in. Rejected: shipping LAN web client requiring owner's Next server.
+
+## ADR-023 — Capacitor7 native shell, Vite/React19 monorepo
+
+Supersedes ADR-013/019 and old Next layout. Decision: apps/mobile uses Vite+React19+strict TS+Tailwind4+TanStack Router file-based+TanStack Query, Capacitor7 committed ios/android, npm workspaces. Core domain logic packages/core, shared schemas packages/schemas, optional Python health services/recognition. UI/data hooks ->core methods, no server actions/route handlers. Preserve UX URLs, add requested /custom-cards/new and /settings/locations; $param route files not Next bracket directories. Disabled Scan explainer permitted but no working /scan/camera. Node>=22 includes24; Vite LAN3200 only. FLASHYDEX_ env prefix/public client config, user preferences in DB. Consequence: Mac native build required; no production Node deployment or website server.url wrapper.
+
+## ADR-024 — Drizzle sqlite-proxy with portable async driver
+
+Updates ADR-018, supersedes runtime better-sqlite3 assumptions. Decision: same core Drizzle sqlite-proxy queries on plugin native, plugin->jeep-sqlite/sql.js web, and better-sqlite3 async test adapter in Node. Core never imports platform/React/Node packages. TEXT/INTEGER/0-1/null/check/FK types supported; no JSON1/FTS/rowid/BigInt/Buffer/sync-driver dependence. Explicit positional projection mapping, iOS metadata normalization. No RETURNING reliance despite documented returnMode/Changes.values (Electron wording doesn't prove cross-platform parity); UUID+SELECT instead. run/query single statement, DDL execute, explicit UnitOfWork transaction with inner auto-transaction=false; all tasks queue, no network in transaction. Consequence: adapter parity/injected-failure tests mandatory, no fake repository-only integration or Drizzle better-sqlite3 substitution.
+
+## ADR-025 — Core ordered SQL migrations on app startup
+
+Updates ADR-018, supersedes external prestart migration command. Decision: drizzle-kit generates checked-in packages/core/migrations/*.sql, bundled at build. Core migrator tracks schema_migrations version/checksum/appliedAt, checks ordered applied prefix, one file+receipt atomic; statement-breakpoint-aware single-statement execution, no naive semicolon split. Bootstrap/seed app_state+app_settings, rerun no-op. Refuse future/checksum drift without empty replacement. No plugin upgrade-list second migration authority, no downloaded SQL. Raw restore exact supported fingerprint. Consequence: test actual plugin DDL/transactions and web persistence; no dual schema version truth.
+
+## ADR-026 — Explicit CapacitorHttp native, fetch web
+
+Overrides old universal-fetch wording only at transport seam; no SDK remains. Context: WKWebView transport quirks, both API/CDN BRIEF-verified CORS*. Decision: Platform.http explicit CapacitorHttp.request native, fetch web, no global patch; allowlisted HTTPS/encoded IDs/lowercase headers/validated JSON/304 no body. ETag discovery optimization, not data freshness proof; web falls back when headers/preflight unavailable (CORS* alone doesn't expose ETag). No required custom User-Agent on web. Native cancellation fences/discards late responses; no claimed AbortController native HTTP support. Consequence: same sync tested fake HTTP, no proxy/server or duplicated fetch domain logic.
+
+## ADR-027 — Foreground app-scoped resumable sync
+
+Supersedes ADR-012 detached worker/CLI and adjusts freshness policy. Decision: singleton SyncService persists checkpoint v2 per language/set/card, chosen all/followed sets, language selection frozen in run, concurrency8 configured6..8/adaptive floor1, retry initial+3 with backoff/jitter/Retry-After. Unique lock/fencing/heartbeat remain as app executor. Navigation continues foreground work; suspend/kill/tab closure may stop, startup interrupted/user resume. Metadata+prices+checkpoint atomic batches<=25, web flush before reported progress. Set-list304 doesn't suppress detail/price work. Separate prices_only re-GET detail writes only price snapshots+progress. No scheduled nightly/background jobs. Consequence: honest foreground limits; failed units not false100%, cancelled run retains useful data. Durable single-writer web-instance lock required in addition to DB lease.
+
+## ADR-028 — Prebuilt catalog snapshot later, not Phase1 pipeline
+
+Context: ~36k requests/~15–25min estimate and mobile storage/memory make catalog bootstrap expensive. Decision: leave a CatalogSource seam for later verified CI-generated .sqlite.gz snapshot staged/validated/imported as CATALOG ONLY. Never replace personal/settings/receipt tables or identity ledger referenced by collection. Phase1 implements direct REST crawl only; no snapshot producer/downloader, remote migrations or whole-user-DB overwrite. Consequence: future snapshot schema fingerprint/integrity/provenance/swap design required, not an undocumented shortcut now.
+
+## ADR-029 — Grouped collection binding ruling and complete filters
+
+Updates ADR-001/005/010 display query, not physical storage. Decision: groupBy:'card' one tile per(source,language,cardId,variant), qty and complete matching copyIds plus whole-group totals/IDs/representative/detail-condition-grade summaries. variantDetail remains precise duplicate identity subgroup, NOT extra top-level tiles. Filter copies then group/page; default grouped, explicit copy pages. ALL SPEC filters plus localId/no-price in selected currency/known series tcgp hide, collecting/completion and count/value sorts documented. Unknown-series offline snapshots retained. Dashboard unique/extras remain precise identity+variant+detail, whole collection totals never silently filtered. Consequence: no per-copy grid fallback, explicit partial-group semantics/no page-then-collapse; bounded full DTO hydration despite complete ID arrays. Recognizer abbreviation/manifest requests not Phase1 scope.
+
+## ADR-030 — Logical flashydex.db vs plugin physical naming
+
+Context: owner naming requirement vs plugin API appends SQLite.db (verified v7 API). Decision: public logical name/export basename flashydex.db; connection flashydex, actual flashydexSQLite.db resolved through getUrl in platform adapter. Never hack plugin files/native connection naming to force misleading path or hardcode sandbox path. Generated raw exports flashydex-<UTC compact>.db. All product names FlashyDex, build env FLASHYDEX_. Consequence: tooling documents plugin suffix explicitly, no stale product tokens; this is a capability distinction, not a product rename.
+
+## ADR-031 — Local Filesystem/Share transfer and capability-safe backups
+
+Updates ADR-014/015/016, supersedes ADR-017 native online-backup assumption. Decision: JSON v1 and exact45-column CSV unchanged, local picker/staged bytes/hash/plan then strict preview/atomic receipt commit. Native private persistent staging, Filesystem cache export/getUri/Share, web File/Blob download/private staging. No server upload/paths. JSON always portable backup; settings/catalog excluded v1 deliberately. Raw DB extra where tested: quiesce/checkpoint/close/copy/reopen/integrity/FK check, not live WAL main-only copy. Raw restore only proven platform capability, exact schema fingerprint/explicit RESTORE/safety copy/recovery marker; unsupported offers JSON merge/update honestly. Plugin JSON schema not portable app schema. Consequence: platform fakes plus actual OS tests, share cancellation not failed saved collection/external save guarantee. Receipts still same DB transaction; settings omitted doesn't break transfer v1.
+
+## ADR-032 — Typed local AppSettings and web durable-ack boundary
+
+New operational preferences, updates ADR-016 revision scope. Decision: app_settings singleton languages/followed sets/all switch/hide Pocket/default currency/disclaimer ack+time/onboarding time. Defaults explicit, first-run can skip, no network gate; schema_migrations second new operational table. Settings writes don't change personal collectionRevision or sync selection already frozen. SQL COMMIT on web not durable: await saveToStore with queue held, quota failure PersistenceError/stopped writes/reopen/recovery, not false Saved or blind bulk retry. IndexedDB documented baseline, OPFS not claimed for v7. Consequence:17 schema tables, portable v1 unchanged, browser multi-instance/eviction/memory caveats explicit.
+
+## ADR-033 — Upstream publication/image/availability facts in schema
+
+Amends ADR-011 and old catalog shape per binding BRIEF research. Decision: catalog_sets.status published/unpublished, empty shells stored/rechecked every catalog run even304/hidden normally; series is serie.id for tcgp. nullable image_url already valid and now explicit first-class state. Keep raw normal/holo/reverse/firstEdition plus w_promo 0-1 columns, wPromo no UI. Manifest count not upstream advertised count; official0 localId alone. Consequence: fixtures empty JA/EN shells/count mismatch/missing art, no forever-synced shells or invented image path/normal choice. Existing identity ledger/personal snapshot/FK invariants unchanged.
+
+## ADR-034 — Qualified print price reconciliation from research
+
+Refines ADR-005/008; supersedes low/trend fallback and root/shared-product assumptions in original architecture. Decision: enum unchanged; detail qualifies ball/gold/unlimited/edition-shadowless/stamp/subtype/size. Match detailed print attributes/product/key exactly, never variantId/order. Ball reverse uses holofoil on its OWN product; edition/unlimited keys chosen explicitly, shadowless null not sibling price. USD market->mid->null, EUR exact-print avg(mid)->null; auxiliary low/trend displayed/stored, never automatic fallback. Raw root fallback only one unambiguous detailed row; semantic providerVariantKey product+priceKey+qualifier for differentiated products prevents price history collision. Unknown/ambiguous quotes display-only other; no guessed cents/FX. Consequence: mapping table/fixtures binding; qualifiers expanded without enum/transfer structural version change; legacy keys still readable.
+
+## ADR-035 — App Store/privacy constraints are Phase1 gates
+
+New owner requirement. Decision: no required server/login/remote code loading, bundle app/WASM/migrations. FlashyDex-only name/icon/splash/store screenshots, no protected marks/art. Exact non-affiliation disclaimer in Settings/About, no collection by us; disclose direct TCGdex request metadata, user export/share, actual OS backup. Permission strings ready but no camera/photo prompt Phase1. Required-reason privacy manifest/plugin encryption export-compliance reviewed. Safe areas/44px targets/rem text scaling/VoiceOver labels/reduced motion/native share+haptics. Consequence: P/M criteria now, not promise of approval; actual iOS build/device evidence required, unknown rights/privacy details surfaced to director.
+
+## ADR-036 — Repository/device benchmarks replace HTTP latency
+
+Updates ADR-010/019. Decision: SAME core public-method validation/transaction tests via sqlite-proxy real temp-file Node adapter plus actual plugin parity. Core component vitest/Testing Library, Playwright Vite390×844+1280×800, pytest health. Search40k p95<300ms measured repository resolution including bridge, not old server route latency;10warmups/100samples, report hardware/p50/p95/max. Vite dev phone queryFn performance.now measurement explicitly documented; desktop Node preliminary only. Collection10k p95<300ms/dashboard<500ms retained, batching and render limits. Consequence: exact test/error/state criteria, no fake HTTP coverage or build-only completion, Mac/phone missing means outstanding.
+
+## ADR-037 — PostgreSQL mirror and optional recognition adapters later
+
+Updates ADR-018/020. Decision: PG possible SERVER-SIDE MIRROR Phase7, not device DB replacement; separate PG schema/migrations/export/conflict/auth work later. Recognition Phase2 seam has optional FastAPI endpoint OR on-device ORT Web/Mobile, same max-three-candidate contract, editable confirmation uses ordinary collection methods. Phase1 Python health skeleton never startup dependency, no Next proxy. Pokeum weights unavailable, no fake histogram production replacement. Consequence: no required server in any Phase1 flow, recognition/model packaging/auth/provenance review deferred with UX follow-up.
+
+## ADR-038 — Evictable image cache and measured storage budget
+
+Updates ADR-019 offline interpretation. Decision: offline app/metadata/personal data now, not guaranteed offline art; CDN low/high.webp in WebView/HTTP/browser cache only, explicit offline image cache Phase7. Native packaged shell/web PWA shell+WASM offline separate from LAN HTTP install limits. Catalog footprint4/8/12KiB×36,517 ->~143/285/428MiB before indexes/history;250–700MiB initial planning range,>=2x DB free space for staging, measure actual. sql.js RAM/flush/quota can limit full web catalog, smaller selections/low-space warnings/JSON backup. No unlimited OPFS/quota promise. Consequence: asset/storage failures honest, no metadata loss or fabricated placeholders masquerading as cards.
+
+## ADR-039 — Later owner storage update requires separate Stage A3 amendment
+
+Context: during this A2 run the director added BRIEF OWNER UPDATE2026-10-31 / docs/COMPRESSION-STORAGE.md and the separate A3 task. It supersedes the A2 task's explicit single-DB/crawl-primary/snapshot-later/JSON-plus-raw-backup scope. Decision: preserve requested A2 work as a clearly labelled baseline, put precedence notices on affected docs, and hand off rather than silently implement unassigned multi-DB/zstd/.fdx/new-file scope. Current owner intent is three DBs, production zstd packs/atomic installer, .fdx settings-aware backup, cache interface/metrics; A2 alone is NOT current design complete. A3 must amend placement/FKs, migrations, CatalogInstallService, backup format/restore, streaming/memory/bundle/metrics tests and supersede ADR-028/030/031/032/038 as needed. Consequence: do not implement those superseded A2 choices as owner-approved current storage. No claim A3 requirements were verified or built here.

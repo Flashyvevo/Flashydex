@@ -18,7 +18,7 @@
     "@types/better-sqlite3": "7.6.13",
     "better-sqlite3": "13.0.3",
     "drizzle-kit": "0.31.11",
-    "typescript": "7.0.2",
+    "typescript": "5.9.3",
     "vitest": "5.0.5"
   }
 }
