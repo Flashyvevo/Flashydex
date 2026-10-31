@@ -1,0 +1,17 @@
+Project root: C:/Projects/flashydex (cd there first). Read `BRIEF.md` (OWNER UPDATEs binding), `docs/APP-STORE-COMPLIANCE.md`, `scripts/ios-notes.md`, `apps/mobile/PERF-PROCEDURE.md`, `.agent/reports/sol-review-4.md` section on native/device items. Product FlashyDex, bundle id `com.flashydex.app` (apps/mobile/capacitor.config.ts), Capacitor 7, Vite build in `apps/mobile`. Follow BRIEF Agent rules: only your files, never commit.
+
+## Your role: Claude Sonnet — build the in-app **Diagnostics** screen so the owner can verify native facts from a TestFlight build without Xcode. Rules: NO capture_screenshot/image viewing; `session="diag"`; never commit; don't touch the :3200 HTTPS server (use it for DOM checks).
+
+## Your files: `apps/mobile/src/routes/_tabs/settings/diagnostics.tsx` (new, linked from Settings → About as "Diagnostics"), `apps/mobile/src/platform/diagnostics.ts` (new), `apps/mobile/src/platform/native-store.ts` (add read-only probes only), `apps/mobile/src/lib/diagnostics-report.ts` (new), `packages/core/src/platform/types.ts` (add an optional `diagnostics` seam on Platform — additive only), tests under `apps/mobile/src/**/*.test.ts(x)` and `apps/mobile/e2e/diagnostics.spec.ts`, `docs/UX.md` (append a short §Diagnostics), `.agent/reports/sonnet-diagnostics-report.md`.
+
+## Do
+1. Diagnostics screen shows (each row: label, value, pass/warn/unknown chip, "how measured"):
+   - App: version/build (Capacitor `App.getInfo()`), platform, OS version, device model (`Device.getInfo()` — add `@capacitor/device` if absent), web vs native, secure context, Web Locks available.
+   - Startup timings from the existing `fdx:*` performance marks/`[fdx] startup` line (db-open, migrate-user, catalog-open-*, gate-total) in ms, plus a "measure search now" button that runs a representative core search (name prefix over the installed catalog) 10× and reports p50/p95 (reuses `PERF-PROCEDURE.md` method; shows "no catalog" when none).
+   - Storage: user DB path + size, each catalog DB path + size + version + sha prefix, free space (`navigator.storage.estimate()` on web; native via Filesystem stat/`Device.getInfo().realDiskFree` if available — report "unknown" honestly), and for native iOS: whether the catalog directory is backup-excluded (read the `isExcludedFromBackup`/`NSURLIsExcludedFromBackupKey` state through whatever the sqlite plugin or Filesystem exposes; if nothing exposes it, show the configured directory and "not verifiable in-app" — never guess).
+   - Native writable-catalog probe (R04): a button that attempts the writable path on native in a dry-run (open writable connection, `BEGIN; ROLLBACK;` on a scratch copy) and reports success/failure + error text; disabled on web with reason. Must not modify catalog data.
+   - Image load check: fetch one `low.webp` and report status/time.
+   - Crash/persistence latch state, maintenance state, last sync result.
+2. "Copy report" button → plain-text report (all rows + timestamps) to clipboard (`@capacitor/clipboard`), and "Share report" via Share sheet on native. Owner will paste it back to the team.
+3. Tests: unit for the report formatter and each probe with fakes; e2e opens the route at 390 and checks rows render with honest "unknown"/"web" values.
+4. Gates: `npm run typecheck && npm run lint && npm test && npm run e2e`; DOM-check the route on https://127.0.0.1:3200 (`cdp('Security.setIgnoreCertificateErrors', ignore=True)`); report and print.
