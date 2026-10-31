@@ -39,7 +39,8 @@ npm run catalog:dev-pack
 ```
 
 Full language: `npm run catalog:build -- --lang ja` (add `--resume` to continue an interrupted crawl). Other flags: `--sets a,b`,
-`--out`, `--version YYYY.MM.DD.NNN`, `--cache-dir`, `--base-url`, `--concurrency`, `--max-cache-age-hours`, `--no-asset-check`.
+`--out`, `--version YYYY.MM.DD.NNN`, `--cache-dir`, `--base-url`, `--concurrency 1..8`, `--max-cache-age-hours`, `--no-asset-check`.
+The crawl cache and generated packs under `.agent/metrics/packs/` are gitignored.
 Published packs come from the "Catalog packs" GitHub workflow (manual or weekly), which creates a `catalog-vYYYY.MM.DD` release.
 Details: `docs/CATALOG-PACKS.md`, `docs/COMPRESSION-STORAGE.md`.
 

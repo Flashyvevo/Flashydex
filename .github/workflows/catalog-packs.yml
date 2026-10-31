@@ -2,17 +2,8 @@ name: Catalog packs
 
 on:
   workflow_dispatch:
-    inputs:
-      languages:
-        description: 'Comma-separated languages to build (en, ja)'
-        required: false
-        default: 'en,ja'
-      sets:
-        description: 'Optional comma-separated set ids (e.g. swsh3,sv1). Empty = all sets. Applied to every language.'
-        required: false
-        default: ''
   schedule:
-    - cron: '17 5 * * 1' # weekly, Mondays 05:17 UTC
+    - cron: "17 5 * * 1" # weekly, Mondays 05:17 UTC
 
 permissions:
   contents: write
@@ -26,46 +17,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      LANGUAGES: ${{ github.event.inputs.languages || 'en,ja' }}
-      SETS: ${{ github.event.inputs.sets || '' }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
-      - name: Compute version and tag
+      - name: Compute immutable release version and tag
         id: ver
         shell: bash
         run: |
           set -euo pipefail
           DATE="$(date -u +%Y.%m.%d)"
-          NNN="$(printf '%03d' $(( GITHUB_RUN_NUMBER % 1000 )))"
-          VERSION="${DATE}.${NNN}"
+          VERSION="${DATE}.$(printf '%03d' $(( GITHUB_RUN_NUMBER % 1000 )))"
           TAG="catalog-v${DATE}"
-          # A second run on the same UTC day must not collide with an existing release.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            TAG="catalog-v${VERSION}"
+            echo "Release $TAG already exists; catalog tags are immutable and date-scoped." >&2
+            exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Version ${VERSION}, tag ${TAG}"
-
       - name: Restore TCGdex crawl cache
         uses: actions/cache@v4
         with:
           path: tools/catalog-builder/.cache
-          key: tcgdex-crawl-${{ steps.ver.outputs.version }}
+          key: tcgdex-crawl-v1-${{ runner.os }}-${{ steps.ver.outputs.version }}
           restore-keys: |
-            tcgdex-crawl-
-
-      - name: Build packs
+            tcgdex-crawl-v1-${{ runner.os }}-
+      - name: Build both full language packs
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -73,37 +55,34 @@ jobs:
         run: |
           set -euo pipefail
           BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
-          IFS=',' read -ra LANGS <<< "$LANGUAGES"
-          for L in "${LANGS[@]}"; do
-            L="$(echo "$L" | tr -d '[:space:]')"
-            [ -z "$L" ] && continue
-            ARGS=(--lang "$L" --version "$VERSION" --out dist --cache-dir .cache --base-url "$BASE_URL")
-            if [ -n "$SETS" ]; then ARGS+=(--sets "$SETS"); fi
-            # Both languages write into the same dist/ so the manifest accumulates both entries.
-            npm run catalog:build -- "${ARGS[@]}"
+          for L in en ja; do
+            npm run catalog:build -- --lang "$L" --version "$VERSION" --out tools/catalog-builder/dist --cache-dir tools/catalog-builder/.cache --base-url "$BASE_URL" --concurrency 8
           done
-          ls -la tools/catalog-builder/dist
-
-      - name: Upload metrics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: catalog-metrics-${{ steps.ver.outputs.version }}
-          path: tools/catalog-builder/dist/*.metrics.json
-          if-no-files-found: warn
-
-      - name: Check manifest URLs are https
+          test -f tools/catalog-builder/dist/catalog-en-"${VERSION}".db.zst
+          test -f tools/catalog-builder/dist/catalog-ja-"${VERSION}".db.zst
+          test -f tools/catalog-builder/dist/catalog-en-"${VERSION}".metrics.json
+          test -f tools/catalog-builder/dist/catalog-ja-"${VERSION}".metrics.json
+      - name: Validate catalog manifest schema and release URLs
         shell: bash
         run: |
           set -euo pipefail
-          cd tools/catalog-builder/dist
-          grep -E '"(fullPackUrl|setIndexUrl)"' catalog-manifest.json
-          if grep -E '"(fullPackUrl|setIndexUrl)"' catalog-manifest.json | grep -v 'https://'; then
+          node scripts/validate-catalog-manifest.mjs tools/catalog-builder/dist/catalog-manifest.json
+          if grep -E '"(fullPackUrl|setIndexUrl)"' tools/catalog-builder/dist/catalog-manifest.json | grep -v 'https://'; then
             echo "non-https pack URL in manifest" >&2
             exit 1
           fi
-
-      - name: Create draft release, upload assets, publish
+      - name: Upload pack build artifacts and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-packs-${{ steps.ver.outputs.version }}
+          path: |
+            tools/catalog-builder/dist/catalog-manifest.json
+            tools/catalog-builder/dist/catalog-*.db.zst
+            tools/catalog-builder/dist/catalog-*.metrics.json
+            tools/catalog-builder/dist/set-index-*.json
+          if-no-files-found: warn
+      - name: Create draft release, upload complete asset set, publish
         shell: bash
         env:
           TAG: ${{ steps.ver.outputs.tag }}
@@ -113,10 +92,15 @@ jobs:
           cd tools/catalog-builder/dist
           gh release create "$TAG" --draft --target "$GITHUB_SHA" \
             --title "Catalog packs ${VERSION}" \
-            --notes "Catalog packs ${VERSION} (languages: ${LANGUAGES}${SETS:+, sets: ${SETS}}). Built by workflow run ${GITHUB_RUN_ID}."
-          gh release upload "$TAG" --clobber \
-            catalog-*-"${VERSION}".db.zst \
-            set-index-*.json \
-            catalog-manifest.json
+            --notes "Full EN and JA catalog packs ${VERSION}; built by workflow run ${GITHUB_RUN_ID}."
+          gh release upload "$TAG" \
+            catalog-en-"${VERSION}".db.zst \
+            catalog-ja-"${VERSION}".db.zst \
+            catalog-en-"${VERSION}".metrics.json \
+            catalog-ja-"${VERSION}".metrics.json \
+            set-index-en.json set-index-ja.json catalog-manifest.json
+          ASSETS="$(gh release view "$TAG" --json assets --jq '[.assets[].name] | sort | join(" ")')"
+          for ASSET in catalog-en-"${VERSION}".db.zst catalog-ja-"${VERSION}".db.zst catalog-en-"${VERSION}".metrics.json catalog-ja-"${VERSION}".metrics.json set-index-en.json set-index-ja.json catalog-manifest.json; do
+            grep -Fqx "$ASSET" <<< "$(tr ' ' '\n' <<< "$ASSETS")"
+          done
           gh release edit "$TAG" --draft=false
-          gh release view "$TAG" --json url,assets --jq '.url, (.assets[].name)'

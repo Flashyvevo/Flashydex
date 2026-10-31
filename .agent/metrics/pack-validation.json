@@ -1,0 +1,120 @@
+[
+  {
+    "language": "en",
+    "sha256": "bbca47b37ae46b73684ea784abb8c96ac9bba98b5317512cb6841285ec081606",
+    "shaMatches": true,
+    "bytes": 138002432,
+    "bytesMatch": true,
+    "integrity": "ok",
+    "counts": {
+      "sets": 220,
+      "cards": 23736,
+      "variants": 36693,
+      "prices": 48805,
+      "unpublishedSets": 4,
+      "cardsWithoutImage": 1749
+    },
+    "countsMatch": true,
+    "liveChecks": [
+      {
+        "id": "2011bw-1",
+        "ok": true
+      },
+      {
+        "id": "2011bw-10",
+        "ok": true
+      },
+      {
+        "id": "2011bw-11",
+        "ok": true
+      },
+      {
+        "id": "2011bw-12",
+        "ok": true
+      },
+      {
+        "id": "2011bw-2",
+        "ok": true
+      },
+      {
+        "id": "xyp-XY99",
+        "ok": true
+      },
+      {
+        "id": "xyp-XY98",
+        "ok": true
+      },
+      {
+        "id": "xyp-XY97",
+        "ok": true
+      },
+      {
+        "id": "xyp-XY96",
+        "ok": true
+      },
+      {
+        "id": "xyp-XY95",
+        "ok": true
+      }
+    ]
+  },
+  {
+    "language": "ja",
+    "sha256": "ed7fb6eafa6d0b38c086555081c48db9df0583828cd9ca710cc9952591ec6047",
+    "shaMatches": true,
+    "bytes": 45592576,
+    "bytesMatch": true,
+    "integrity": "ok",
+    "counts": {
+      "sets": 184,
+      "cards": 12781,
+      "variants": 15781,
+      "prices": 10127,
+      "unpublishedSets": 68,
+      "cardsWithoutImage": 8899
+    },
+    "countsMatch": true,
+    "liveChecks": [
+      {
+        "id": "CP1-001",
+        "ok": true
+      },
+      {
+        "id": "CP1-002",
+        "ok": true
+      },
+      {
+        "id": "CP1-003",
+        "ok": true
+      },
+      {
+        "id": "CP1-004",
+        "ok": true
+      },
+      {
+        "id": "CP1-005",
+        "ok": true
+      },
+      {
+        "id": "web1-048",
+        "ok": true
+      },
+      {
+        "id": "web1-047",
+        "ok": true
+      },
+      {
+        "id": "web1-046",
+        "ok": true
+      },
+      {
+        "id": "web1-045",
+        "ok": true
+      },
+      {
+        "id": "web1-044",
+        "ok": true
+      }
+    ]
+  }
+]

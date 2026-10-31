@@ -60,6 +60,10 @@ function parseArgs(argv: string[]): Options {
   if (!/^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{3}$/.test(version)) throw new Error(`--version must be YYYY.MM.DD.NNN, got ${version}`);
   const sets = typeof flags.get('sets') === 'string' ? (flags.get('sets') as string).split(',').map((s) => s.trim()).filter(Boolean) : undefined;
   if (flags.has('sets') && !sets?.length) usage();
+  const concurrency = Number(flags.get('concurrency') ?? 8);
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) {
+    throw new Error(`--concurrency must be an integer from 1 to 8, got ${String(flags.get('concurrency') ?? 8)}`);
+  }
   return {
     language: lang,
     sets,
@@ -68,7 +72,7 @@ function parseArgs(argv: string[]): Options {
     resume: flags.has('resume'),
     cacheDir: resolve(typeof flags.get('cache-dir') === 'string' ? (flags.get('cache-dir') as string) : '.cache'),
     baseUrl: (typeof flags.get('base-url') === 'string' ? (flags.get('base-url') as string) : `${DEFAULT_REPO}/releases/download/catalog-v${version}`).replace(/\/$/, ''),
-    concurrency: Number(flags.get('concurrency') ?? 8),
+    concurrency,
     maxCacheAgeHours: Number(flags.get('max-cache-age-hours') ?? 24),
     checkAssets: !flags.has('no-asset-check')
   };

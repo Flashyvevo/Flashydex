@@ -36,3 +36,7 @@ Thumbs.db
 *.log
 .agent/*-run.log
 .agent/previous/
+
+# generated catalog artifacts and resumable upstream crawl cache
+.agent/metrics/packs/
+tools/catalog-builder/.cache/

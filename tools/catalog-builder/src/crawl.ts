@@ -41,7 +41,7 @@ export async function crawl(fetcher: Fetcher, options: CrawlOptions): Promise<Cr
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate set ids in /v2/${language}/sets`);
   log(`${language}: ${list.length} sets in provider list`);
 
-  const detailList = await pool(list, 16, async (brief): Promise<[string, RawSetDetail | null]> => {
+  const detailList = await pool(list, 8, async (brief): Promise<[string, RawSetDetail | null]> => {
     try {
       const detail = await fetcher.getJson<RawSetDetail>(
         `${TCGDEX_API}/${language}/sets/${encodeIdForPath(brief.id)}`, join(langRoot, 'sets', `${encodeIdForPath(brief.id)}.json`)
@@ -83,7 +83,7 @@ export async function crawl(fetcher: Fetcher, options: CrawlOptions): Promise<Cr
   const cards = new Map<string, RawCard>();
   let done = 0;
   const started = Date.now();
-  await pool(briefs, 32, async ({ setId, cardId }) => {
+  await pool(briefs, 8, async ({ setId, cardId }) => {
     try {
       const card = await fetcher.getJson<RawCard>(
         `${TCGDEX_API}/${language}/cards/${encodeIdForPath(cardId)}`, join(langRoot, 'cards', `${encodeIdForPath(cardId)}.json`)
