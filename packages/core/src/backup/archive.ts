@@ -151,6 +151,7 @@ function verifyLocalHeaders(data: Uint8Array, central: CentralEntry[]): void {
     const localFlags = view.getUint16(at + 6, true);
     const localMethod = view.getUint16(at + 8, true);
     const nameLen = view.getUint16(at + 26, true);
+    const extraLen = view.getUint16(at + 28, true);
     if (at + 30 + nameLen > data.byteLength || decoder.decode(data.subarray(at + 30, at + 30 + nameLen)) !== entry.name) throw damaged();
     // E03: encryption (traditional 0x1, strong 0x40, masked headers 0x2000) is unsupported in EITHER header, and the flag words must agree exactly.
     if (((localFlags | entry.flags) & ENCRYPTION_FLAGS) !== 0) throw new BackupError('BACKUP_INVALID', 'Encrypted backups are not supported');
@@ -158,6 +159,14 @@ function verifyLocalHeaders(data: Uint8Array, central: CentralEntry[]): void {
     if (localMethod !== entry.method) throw damaged();
     if ((localFlags & 8) === 0) { // no data descriptor: the local header carries the real values
       if (view.getUint32(at + 14, true) !== entry.crc || view.getUint32(at + 18, true) !== entry.compressedSize || view.getUint32(at + 22, true) !== entry.uncompressedSize) throw damaged();
+    } else {
+      // F02: the descriptor follows the compressed data. The central compressed size only LOCATES it (never allocates); the descriptor's
+      // CRC / compressed / uncompressed fields (optional 0x08074b50 signature first) must equal the central directory.
+      let d = at + 30 + nameLen + extraLen + entry.compressedSize;
+      if (d + 12 > data.byteLength) throw damaged();
+      if (view.getUint32(d, true) === 0x08074b50) d += 4;
+      if (d + 12 > data.byteLength) throw damaged();
+      if (view.getUint32(d, true) !== entry.crc || view.getUint32(d + 4, true) !== entry.compressedSize || view.getUint32(d + 8, true) !== entry.uncompressedSize) throw damaged();
     }
   }
 }
@@ -273,6 +282,8 @@ export async function parseArchive(
   for (const n of names) if (!files.has(n)) throw new BackupError('BACKUP_INVALID', 'The archive entries do not match its directory');
   // N08: the CRC-32 of every inflated entry must equal the (already local/central-consistent) recorded value.
   for (const entry of central) if (crc32(files.get(entry.name)!) !== entry.crc) throw new BackupError('BACKUP_INVALID', 'An archive entry failed its checksum');
+  // F02: the ACTUAL inflated length must equal the (local/central/descriptor-consistent) declared uncompressed size.
+  for (const entry of central) if (files.get(entry.name)!.byteLength !== entry.uncompressedSize) throw new BackupError('BACKUP_INVALID', 'An archive entry does not match its declared size');
 
   // ---- manifest
   const rawManifest = decodeJson(files.get('manifest.json')!, 'manifest.json');

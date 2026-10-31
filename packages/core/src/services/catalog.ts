@@ -141,7 +141,7 @@ export class CatalogRepo {
   }
 
   async listSets(input: Input<typeof SetListQuery>): Promise<Page<SetSummary>> {
-    return this.ctx.databases.protectedRead(languagesOf(parse(SetListQuery, input).language), () => this.listSetsOnce(input));
+    return this.ctx.databases.consistentRead(languagesOf(parse(SetListQuery, input).language), () => this.listSetsOnce(input));
   }
 
   private async listSetsOnce(input: Input<typeof SetListQuery>): Promise<Page<SetSummary>> {
@@ -196,7 +196,7 @@ export class CatalogRepo {
   }
 
   async getSet(input: Input<typeof SetKey>): Promise<SetSummary & { missingPreview: CardSummary[] }> {
-    return this.ctx.databases.protectedRead([parse(SetKey, input).language], () => this.getSetOnce(input));
+    return this.ctx.databases.consistentRead([parse(SetKey, input).language], () => this.getSetOnce(input));
   }
 
   private async getSetOnce(input: Input<typeof SetKey>): Promise<SetSummary & { missingPreview: CardSummary[] }> {
@@ -232,7 +232,7 @@ export class CatalogRepo {
   }
 
   async listSetCards(input: Input<typeof SetCardsQuery>): Promise<Page<CardSummary>> {
-    return this.ctx.databases.protectedRead([parse(SetCardsQuery, input).language], () => this.listSetCardsOnce(input));
+    return this.ctx.databases.consistentRead([parse(SetCardsQuery, input).language], () => this.listSetCardsOnce(input));
   }
 
   private async listSetCardsOnce(input: Input<typeof SetCardsQuery>): Promise<Page<CardSummary>> {
@@ -247,7 +247,7 @@ export class CatalogRepo {
 
   /* ----------------------------------------------------------------------------------------------- cards */
   async searchCards(input: Input<typeof CardSearchQuery>): Promise<Page<CardSummary>> {
-    return this.ctx.databases.protectedRead(languagesOf(parse(CardSearchQuery, input).language), () => this.searchCardsOnce(input));
+    return this.ctx.databases.consistentRead(languagesOf(parse(CardSearchQuery, input).language), () => this.searchCardsOnce(input));
   }
 
   private async searchCardsOnce(input: Input<typeof CardSearchQuery>): Promise<Page<CardSummary>> {
@@ -302,7 +302,7 @@ export class CatalogRepo {
   }
 
   async getCard(input: Input<typeof CardDetailQuery>): Promise<CardDetail> {
-    return this.ctx.databases.protectedRead([parse(CardDetailQuery, input).language], () => this.getCardOnce(input));
+    return this.ctx.databases.consistentRead([parse(CardDetailQuery, input).language], () => this.getCardOnce(input));
   }
 
   private async getCardOnce(input: Input<typeof CardDetailQuery>): Promise<CardDetail> {
