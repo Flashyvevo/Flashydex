@@ -1,0 +1,350 @@
+/*
+ * pokescan design tokens — CSS custom properties ONLY.
+ * Source of truth: docs/DESIGN-TOKENS.md (owner: Opus UX lead).
+ *
+ * Consumption:
+ *   globals.css:  @import "tailwindcss";
+ *                 @import "../styles/tokens.css";
+ *                 @theme inline { ...mapping in DESIGN-TOKENS.md §9... }
+ *
+ * Theming: <html data-theme="dark|light">. Dark is the default and also applies
+ * when the attribute is missing. "System" is resolved to dark|light by the tiny
+ * inline head script described in DESIGN-TOKENS.md §2 (no flash, no React needed).
+ *
+ * Naming: every token is prefixed --ps-. Never hard-code a hex value in a component.
+ */
+
+/* ------------------------------------------------------------------ */
+/* 1. Theme-independent tokens                                         */
+/* ------------------------------------------------------------------ */
+:root {
+  /* --- Typography ------------------------------------------------- */
+  /* --font-inter is injected by next/font (self-hosted, latin subset). */
+  --ps-font-sans: var(--font-inter, ui-sans-serif), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --ps-font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* Type scale — mobile first. size / line-height / weight / tracking   */
+  --ps-text-display: 2rem;          /* 32px — dashboard value only        */
+  --ps-text-display-lh: 2.375rem;
+  --ps-text-display-weight: 700;
+  --ps-text-display-tracking: -0.02em;
+
+  --ps-text-h1: 1.75rem;            /* 28px (≤ 2rem rule)                */
+  --ps-text-h1-lh: 2.125rem;
+  --ps-text-h1-weight: 700;
+  --ps-text-h1-tracking: -0.015em;
+
+  --ps-text-h2: 1.25rem;            /* 20px                              */
+  --ps-text-h2-lh: 1.75rem;
+  --ps-text-h2-weight: 650;
+  --ps-text-h2-tracking: -0.01em;
+
+  --ps-text-h3: 1.0625rem;          /* 17px                              */
+  --ps-text-h3-lh: 1.5rem;
+  --ps-text-h3-weight: 600;
+
+  --ps-text-body: 1rem;             /* 16px — also every <input> (no iOS zoom) */
+  --ps-text-body-lh: 1.5rem;
+  --ps-text-body-weight: 400;
+
+  --ps-text-small: 0.875rem;        /* 14px — secondary lines            */
+  --ps-text-small-lh: 1.25rem;
+
+  --ps-text-caption: 0.8125rem;     /* 13px — tile meta, helper text     */
+  --ps-text-caption-lh: 1.125rem;
+
+  --ps-text-micro: 0.75rem;         /* 12px — badges/chips only, ≥600 wt */
+  --ps-text-micro-lh: 1rem;
+  --ps-text-micro-weight: 650;
+  --ps-text-micro-tracking: 0.01em;
+
+  /* --- Spacing (4px grid; Tailwind's default --spacing: 0.25rem matches) --- */
+  --ps-space-0: 0;
+  --ps-space-1: 0.25rem;  /* 4  */
+  --ps-space-2: 0.5rem;   /* 8  */
+  --ps-space-3: 0.75rem;  /* 12 */
+  --ps-space-4: 1rem;     /* 16 */
+  --ps-space-5: 1.25rem;  /* 20 */
+  --ps-space-6: 1.5rem;   /* 24 */
+  --ps-space-8: 2rem;     /* 32 */
+  --ps-space-10: 2.5rem;  /* 40 */
+  --ps-space-12: 3rem;    /* 48 */
+  --ps-space-16: 4rem;    /* 64 */
+
+  /* Layout */
+  --ps-page-x: 1rem;                 /* 16px gutters at 390px            */
+  --ps-page-max: 80rem;              /* 1280px content max on desktop    */
+  --ps-grid-gap: 0.5rem;             /* card grid gap mobile             */
+  --ps-tile-min: 6.75rem;            /* 108px → 3 cols at 390px          */
+  --ps-sidebar-w: 15rem;             /* 240px desktop sidebar            */
+  --ps-topbar-h: 3.5rem;             /* 56px                             */
+  --ps-bottomnav-h: 4rem;            /* 64px + safe area                 */
+  --ps-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ps-safe-top: env(safe-area-inset-top, 0px);
+  --ps-tap: 2.75rem;                 /* 44px minimum target              */
+  --ps-tap-lg: 3rem;                 /* 48px nav / primary buttons       */
+  --ps-scan-fab: 3.75rem;            /* 60px center scan button          */
+
+  /* Card art geometry — real card 63×88 mm, ~3 mm corner radius */
+  --ps-card-aspect: 63 / 88;
+  --ps-radius-card: 4.8% / 3.4%;     /* elliptical % keeps corners circular */
+
+  /* --- Radii -------------------------------------------------------- */
+  --ps-radius-xs: 0.25rem;   /* 4  badges                 */
+  --ps-radius-sm: 0.375rem;  /* 6  chips                  */
+  --ps-radius-md: 0.625rem;  /* 10 buttons, inputs        */
+  --ps-radius-lg: 0.875rem;  /* 14 panels, list groups    */
+  --ps-radius-xl: 1.25rem;   /* 20 bottom-sheet top edge  */
+  --ps-radius-full: 9999px;
+
+  /* --- Z layers ----------------------------------------------------- */
+  --ps-z-sticky: 10;
+  --ps-z-nav: 30;
+  --ps-z-sheet: 40;
+  --ps-z-toast: 50;
+
+  /* --- Motion -------------------------------------------------------- */
+  /* Easings */
+  --ps-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ps-ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);   /* entering */
+  --ps-ease-accelerate: cubic-bezier(0.3, 0, 1, 1);        /* leaving  */
+  --ps-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);     /* badge pop, small overshoot */
+
+  /* Durations that MOVE things (transform/size/position). Zeroed under reduced motion. */
+  --ps-dur-move-fast: 160ms;     /* chip select, press scale       */
+  --ps-dur-move: 240ms;          /* tile enter, list reorder       */
+  --ps-dur-move-slow: 360ms;     /* bottom sheet, page slide       */
+
+  /* Durations that only FADE/RECOLOR. Kept under reduced motion (micro-interactions stay alive). */
+  --ps-dur-instant: 80ms;        /* pressed-state color            */
+  --ps-dur-fade-fast: 120ms;     /* hover/focus/selected color     */
+  --ps-dur-fade: 200ms;          /* image fade-in, toast in        */
+  --ps-dur-fade-slow: 320ms;     /* skeleton → content crossfade   */
+
+  /* Distances used by enter animations (become 0 under reduced motion). */
+  --ps-move-y-sm: 4px;
+  --ps-move-y-md: 12px;
+  --ps-press-scale: 0.97;
+  --ps-pop-scale: 1.12;
+
+  /* Skeleton shimmer cycle */
+  --ps-dur-shimmer: 1400ms;
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. Dark theme (DEFAULT)                                              */
+/* ------------------------------------------------------------------ */
+:root,
+[data-theme="dark"] {
+  /* color-scheme lives in globals.css (non-custom property) — see DESIGN-TOKENS.md §9 */
+  --ps-color-scheme: dark;
+
+  /* Surfaces: elevation = lighter surface, not big shadows */
+  --ps-bg: #0b0d12;
+  --ps-surface: #12151c;
+  --ps-surface-2: #1a1e27;
+  --ps-surface-3: #232835;
+  --ps-overlay: rgb(5 6 10 / 0.72);       /* sheet/dialog scrim */
+  --ps-border: #262c3a;
+  --ps-border-strong: #3a4256;      /* dividers/hover only (decorative) */
+  --ps-border-input: #687186;       /* form-control boundaries, ≥3:1 on bg/surface (WCAG 1.4.11) */
+
+  /* Text */
+  --ps-fg: #f2f4f8;            /* 17.6:1 on bg */
+  --ps-fg-muted: #a3abbd;      /*  8.4:1 on bg, 7.2:1 on surface-2 */
+  --ps-fg-subtle: #7d8699;     /*  5.3:1 on bg, 4.6:1 on surface-2 — AA */
+  --ps-fg-disabled: #4f5668;   /* decorative/disabled only */
+
+  /* Brand accent: Pokémon-adjacent electric yellow; text on it is near-black */
+  --ps-accent: #ffcb05;
+  --ps-accent-hover: #ffd83d;
+  --ps-accent-pressed: #e6b600;
+  --ps-on-accent: #1a1400;     /* 12.1:1 on accent */
+  --ps-accent-fg: #ffcb05;     /* accent used AS text/icon on bg (12.8:1) */
+  --ps-accent-soft: rgb(255 203 5 / 0.14);
+  --ps-focus-ring: #ffcb05;
+
+  /* Status */
+  --ps-positive: #34d399;      /* gain */
+  --ps-positive-soft: rgb(52 211 153 / 0.14);
+  --ps-negative: #f87171;      /* loss, destructive */
+  --ps-negative-soft: rgb(248 113 113 / 0.14);
+  --ps-warning: #fbbf24;
+  --ps-warning-soft: rgb(251 191 36 / 0.14);
+  --ps-info: #60a5fa;
+  --ps-info-soft: rgb(96 165 250 / 0.14);
+  --ps-danger-solid: #dc2626;  /* destructive button fill */
+  --ps-on-danger: #ffffff;
+
+  /* Rarity accents (dot + label; never color alone) */
+  --ps-rarity-common: #94a3b8;
+  --ps-rarity-uncommon: #4ade80;
+  --ps-rarity-rare: #60a5fa;
+  --ps-rarity-holo: #a78bfa;
+  --ps-rarity-ultra: #f472b6;
+  --ps-rarity-illustration: #fb923c;
+  --ps-rarity-secret: #facc15;
+  --ps-rarity-secret-2: #f59e0b;        /* gradient stop for secret/hyper */
+  --ps-rarity-promo: #22d3ee;
+  --ps-rarity-unknown: #64748b;
+
+  /* Condition badges: solid fill + label, fg chosen for ≥4.5:1 */
+  --ps-cond-nm: #22c55e;   --ps-on-cond-nm: #04210f;
+  --ps-cond-lp: #84cc16;   --ps-on-cond-lp: #1a2604;
+  --ps-cond-mp: #eab308;   --ps-on-cond-mp: #251c00;
+  --ps-cond-hp: #f97316;   --ps-on-cond-hp: #2a1100;
+  --ps-cond-dmg: #dc2626;  --ps-on-cond-dmg: #ffffff;   /* 4.8:1 */
+  --ps-cond-unknown: #3a4256; --ps-on-cond-unknown: #d5d9e2;
+
+  /* Graded slab badge: inverted high-contrast pill */
+  --ps-grade-bg: #f2f4f8;
+  --ps-grade-fg: #0b0d12;
+  --ps-grade-gem-ring: #ffcb05;         /* grade 10 / Pristine / Black Label ring */
+
+  /* Variant chips */
+  --ps-variant-bg: rgb(11 13 18 / 0.78);  /* over art: dark glass */
+  --ps-variant-fg: #f2f4f8;
+  --ps-variant-foil-a: #a78bfa;           /* holo/reverse shimmer edge */
+  --ps-variant-foil-b: #22d3ee;
+
+  /* Quantity badge */
+  --ps-qty-bg: #ffcb05;
+  --ps-qty-fg: #1a1400;
+
+  /* Card art placeholder (catalog has no image) + skeleton */
+  --ps-art-empty-bg: #161a23;
+  --ps-art-empty-border: #2a3040;
+  --ps-skeleton-base: #1a1e27;
+  --ps-skeleton-highlight: #262c3a;
+
+  /* Shadows: subtle in dark; elevation mostly via surfaces + top hairline */
+  --ps-hairline-top: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --ps-shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --ps-shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+  --ps-shadow-3: 0 12px 40px rgb(0 0 0 / 0.6);
+  --ps-shadow-card: 0 1px 2px rgb(0 0 0 / 0.6), 0 6px 18px rgb(0 0 0 / 0.35);
+  --ps-shadow-scan: 0 0 0 4px var(--ps-bg), 0 6px 24px rgb(255 203 5 / 0.35);
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. Light theme                                                       */
+/* ------------------------------------------------------------------ */
+[data-theme="light"] {
+  --ps-color-scheme: light;
+
+  --ps-bg: #f6f7f9;
+  --ps-surface: #ffffff;
+  --ps-surface-2: #eef0f4;
+  --ps-surface-3: #e3e6ec;
+  --ps-overlay: rgb(14 17 22 / 0.45);
+  --ps-border: #d9dde5;
+  --ps-border-strong: #b9bfcc;
+  --ps-border-input: #848c9e;  /* 3.4:1 on white */
+
+  --ps-fg: #0e1116;            /* 18.9:1 on white */
+  --ps-fg-muted: #4a5263;      /*  7.8:1 */
+  --ps-fg-subtle: #646c7d;     /*  5.3:1 on white, 4.9:1 on bg */
+  --ps-fg-disabled: #a6acb8;
+
+  --ps-accent: #ffcb05;        /* fills stay yellow: on-accent text is dark */
+  --ps-accent-hover: #ffd83d;
+  --ps-accent-pressed: #e6b600;
+  --ps-on-accent: #1a1400;
+  --ps-accent-fg: #8a6a00;     /* yellow as TEXT is illegible on white → dark gold (5.1:1 white, 4.7:1 bg) */
+  --ps-accent-soft: rgb(255 203 5 / 0.22);
+  --ps-focus-ring: #1d4ed8;    /* yellow ring vanishes on white; use blue */
+
+  --ps-positive: #047857;
+  --ps-positive-soft: rgb(4 120 87 / 0.1);
+  --ps-negative: #b91c1c;
+  --ps-negative-soft: rgb(185 28 28 / 0.08);
+  --ps-warning: #b45309;
+  --ps-warning-soft: rgb(180 83 9 / 0.1);
+  --ps-info: #1d4ed8;
+  --ps-info-soft: rgb(29 78 216 / 0.08);
+  --ps-danger-solid: #b91c1c;
+  --ps-on-danger: #ffffff;
+
+  --ps-rarity-common: #64748b;
+  --ps-rarity-uncommon: #16a34a;
+  --ps-rarity-rare: #2563eb;
+  --ps-rarity-holo: #7c3aed;
+  --ps-rarity-ultra: #db2777;
+  --ps-rarity-illustration: #ea580c;
+  --ps-rarity-secret: #ca8a04;
+  --ps-rarity-secret-2: #b45309;
+  --ps-rarity-promo: #0891b2;
+  --ps-rarity-unknown: #94a3b8;
+
+  --ps-cond-nm: #15803d;   --ps-on-cond-nm: #ffffff;
+  --ps-cond-lp: #4d7c0f;   --ps-on-cond-lp: #ffffff;
+  --ps-cond-mp: #a16207;   --ps-on-cond-mp: #ffffff;
+  --ps-cond-hp: #c2410c;   --ps-on-cond-hp: #ffffff;
+  --ps-cond-dmg: #b91c1c;  --ps-on-cond-dmg: #ffffff;
+  --ps-cond-unknown: #e3e6ec; --ps-on-cond-unknown: #3b4252;
+
+  --ps-grade-bg: #0e1116;
+  --ps-grade-fg: #ffffff;
+  --ps-grade-gem-ring: #ca8a04;
+
+  --ps-variant-bg: rgb(255 255 255 / 0.88);
+  --ps-variant-fg: #0e1116;
+  --ps-variant-foil-a: #7c3aed;
+  --ps-variant-foil-b: #0891b2;
+
+  --ps-qty-bg: #0e1116;
+  --ps-qty-fg: #ffcb05;
+
+  --ps-art-empty-bg: #eef0f4;
+  --ps-art-empty-border: #d9dde5;
+  --ps-skeleton-base: #e8ebf0;
+  --ps-skeleton-highlight: #f4f6f9;
+
+  --ps-hairline-top: inset 0 1px 0 rgb(255 255 255 / 0.6);
+  --ps-shadow-1: 0 1px 2px rgb(16 24 40 / 0.06);
+  --ps-shadow-2: 0 4px 16px rgb(16 24 40 / 0.08);
+  --ps-shadow-3: 0 12px 40px rgb(16 24 40 / 0.16);
+  --ps-shadow-card: 0 1px 2px rgb(16 24 40 / 0.1), 0 6px 18px rgb(16 24 40 / 0.08);
+  --ps-shadow-scan: 0 0 0 4px var(--ps-surface), 0 6px 20px rgb(202 138 4 / 0.35);
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. Responsive token overrides                                        */
+/* ------------------------------------------------------------------ */
+@media (min-width: 640px) {
+  :root {
+    --ps-page-x: 1.5rem;
+    --ps-grid-gap: 0.75rem;
+    --ps-tile-min: 8.5rem;          /* 136px */
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --ps-page-x: 2rem;
+    --ps-grid-gap: 1rem;
+    --ps-tile-min: 10rem;           /* 160px */
+    --ps-text-h1: 2rem;             /* 32px desktop H1 (still ≤ 2rem) */
+    --ps-text-h1-lh: 2.5rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. Reduced motion: kill MOVEMENT, keep FADES/COLOR feedback alive    */
+/* ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ps-dur-move-fast: 1ms;
+    --ps-dur-move: 1ms;
+    --ps-dur-move-slow: 1ms;
+    --ps-move-y-sm: 0px;
+    --ps-move-y-md: 0px;
+    --ps-press-scale: 1;
+    --ps-pop-scale: 1;
+    --ps-ease-spring: cubic-bezier(0.2, 0, 0, 1);
+    --ps-dur-shimmer: 0ms;          /* skeletons render static */
+    /* --ps-dur-instant / --ps-dur-fade-* intentionally unchanged */
+  }
+}

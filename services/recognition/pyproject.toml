@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[project]
+name = "pokescan-recognition"
+version = "0.0.0"
+description = "Phase 2 recognition service skeleton for pokescan"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.128.8",
+  "uvicorn[standard]==0.40.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "pytest==9.0.2",
+  "ruff==0.14.14",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

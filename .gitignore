@@ -1,0 +1,34 @@
+# dependencies and builds
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+
+# local application data
+apps/web/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+services/recognition/.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+
+# environment files
+.env
+.env.*
+!.env.example
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agent/reference/
+*.log
+.agent/*-run.log
