@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AddConfirmSheet, type AddTarget } from '../../components/add-confirm';
 import { CardRow, LangBadge, RarityLabel } from '../../components/card';
 import { ModalPage, useCloseOrBack } from '../../components/page';
-import { Banner, ChipGroup, EmptyState, ErrorState, LinkButton, NativeSelect, SearchField, Skeleton } from '../../components/ui';
+import { Banner, EmptyState, ErrorState, LinkButton, NativeSelect, SearchField, SegmentedControl, Skeleton } from '../../components/ui';
 import { useCardSearch, useCatalogCard, useCatalogInstall, useCatalogStatus, useCollection, useSetCards, useSets } from '../../data';
 import { collectorNumber, formatInt, type Language } from '../../lib/format';
 import { useDebounced, useDelayedFlag } from '../../lib/hooks';
@@ -146,26 +146,28 @@ function AddPage() {
     <ModalPage title="Add a card" onClose={close} noFooterPad>
       <div className="sticky z-(--ps-z-sticky) -mx-4 flex flex-col gap-2 bg-bg px-4 pb-2" style={{ top: 'var(--ps-topbar-total)' }}>
         <SearchField value={text} onChange={setText} placeholder="Search name, number or id" label="Search the catalog" autoFocus inputRef={inputRef} onEnter={() => rows[0] && openCard(rows[0].language, rows[0].id)} />
-        <div className="flex items-center gap-2">
-          <ChipGroup
+        <div className="flex flex-col gap-2">
+          <SegmentedControl
             label="Language"
-            hideLabel
             value={lang}
             onChange={(v) => {
               prefs.setSearchLanguage(v);
               setSearch({ lang: v });
             }}
-            options={[{ value: 'all', label: 'All' }, { value: 'en', label: 'EN' }, { value: 'ja', label: 'JA' }]}
+            className="flex w-full"
+            options={[
+              { value: 'all', label: 'All', aria: 'All languages', testId: 'lang-all' },
+              { value: 'en', label: 'EN', aria: 'English', testId: 'lang-en' },
+              { value: 'ja', label: 'JA', aria: 'Japanese', testId: 'lang-ja' }
+            ]}
           />
-          <div className="ml-auto w-44">
-            <NativeSelect
-              label="In"
-              value={setScope ?? ''}
-              onChange={(v) => setSearch({ set: v || undefined })}
-              testId="add-set-scope"
-              options={[{ value: '', label: 'Any set' }, ...(setScope && !sets.data?.data.some((s) => `${s.language}:${s.id}` === setScope) ? [{ value: setScope, label: setScope }] : []), ...(sets.data?.data ?? []).map((s) => ({ value: `${s.language}:${s.id}`, label: `${s.name} (${s.language.toUpperCase()})` }))]}
-            />
-          </div>
+          <NativeSelect
+            label="In"
+            value={setScope ?? ''}
+            onChange={(v) => setSearch({ set: v || undefined })}
+            testId="add-set-scope"
+            options={[{ value: '', label: 'Any set' }, ...(setScope && !sets.data?.data.some((s) => `${s.language}:${s.id}` === setScope) ? [{ value: setScope, label: setScope }] : []), ...(sets.data?.data ?? []).map((s) => ({ value: `${s.language}:${s.id}`, label: `${s.name} (${s.language.toUpperCase()})` }))]}
+          />
         </div>
       </div>
 

@@ -60,11 +60,11 @@ function CollectionPage() {
       <SearchField value={text} onChange={setText} placeholder="Search by name or number" label="Search your collection" />
       <div className="flex items-center gap-2">
         {!wide && (
-          <Button variant="secondary" className="min-h-(--ps-tap) px-3" icon={Filter} data-testid="filter-button" aria-label={filterCount ? `Filters, ${filterCount} active` : 'Filters'} onClick={() => sheets.open('filters')}>
+          <Button variant="secondary" className="min-h-(--ps-tap) px-2" icon={Filter} data-testid="filter-button" aria-label={filterCount ? `Filters, ${filterCount} active` : 'Filters'} onClick={() => sheets.open('filters')}>
             Filters{filterCount > 0 && <span className="ml-1 rounded-full bg-accent px-1.5 text-micro text-on-accent">{filterCount}</span>}
           </Button>
         )}
-        <Button variant="secondary" className="min-h-(--ps-tap) min-w-0 px-3" icon={ArrowUpDown} data-testid="sort-button" onClick={() => sheets.open('sort')}>
+        <Button variant="secondary" className="min-h-(--ps-tap) min-w-0 px-1.5" icon={ArrowUpDown} data-testid="sort-button" onClick={() => sheets.open('sort')}>
           <span className="truncate">{SORT_LABEL[sort]}</span>
         </Button>
         <SegmentedControl
@@ -114,7 +114,7 @@ function CollectionPage() {
                 ? `${formatInt(total)} matching ${total === 1 ? 'card' : 'cards'}`
                 : dash.data
                   ? `${plural(dash.data.totalCards, 'card')} · ${formatInt(dash.data.uniqueCards)} unique`
-                  : `${formatInt(total)} cards`
+                  : plural(total, 'card')
               : ' '}
           </p>
 

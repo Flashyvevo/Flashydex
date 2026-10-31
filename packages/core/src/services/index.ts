@@ -1,3 +1,4 @@
+import { timed } from '../perf';
 import { migrate } from '../db/migrator';
 import { USER_MIGRATIONS } from '../db/migrations.generated';
 import { DatabaseSet, type CatalogSource } from '../db/database-set';
@@ -30,7 +31,7 @@ export interface Services {
 export async function openUserDb(driver: SqlDriver, env: Environment): Promise<Db> {
   const db = new Db(driver);
   await db.initialize();
-  await migrate(db, USER_MIGRATIONS, env.clock.now);
+  await timed('fdx:migrate-user', () => migrate(db, USER_MIGRATIONS, env.clock.now));
   return db;
 }
 
@@ -50,9 +51,9 @@ export async function createServices(options: CreateServicesOptions): Promise<Se
   const databases = new DatabaseSet(user, options.catalogSource);
   const ctx: ServiceContext = { databases, env: options.env };
   const install = new CatalogInstallService(ctx, options.installPort);
-  await install.recover();
+  await timed('fdx:recover-install', () => install.recover());
   const sync = new SyncService(ctx, options.platform, options.sync);
-  await sync.recover();
+  await timed('fdx:recover-sync', () => sync.recover());
   return {
     databases,
     settings: new SettingsRepo(ctx),

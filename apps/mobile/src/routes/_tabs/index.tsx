@@ -8,7 +8,7 @@ import { Button, EmptyState, ErrorState, LinkButton, SectionTitle, Skeleton, Sta
 import { useCatalogInstall, useCatalogStatus, useDashboard, useSettings, useSyncCapabilities, useUpdateOwnedPrices } from '../../data';
 import { describeProgress } from '../../lib/catalog';
 import { describeError, isCancelled } from '../../lib/errors';
-import { formatInt, formatMoney, formatSigned, LANGUAGE_NAMES, type Currency } from '../../lib/format';
+import { formatInt, plural, formatMoney, formatSigned, LANGUAGE_NAMES, type Currency } from '../../lib/format';
 import { useDelayedFlag } from '../../lib/hooks';
 import { useNetwork } from '../../lib/native';
 
@@ -228,7 +228,7 @@ function PaidTile({ d }: { d: Dash }) {
           </span>
         )
       }
-      sub={rows.length > 0 ? `known cost on ${formatInt(known)} of ${formatInt(d.totalCopies)} cards` : 'No purchase prices entered'}
+      sub={rows.length > 0 ? `known cost on ${formatInt(known)} of ${plural(d.totalCopies, 'card')}` : 'No purchase prices entered'}
     />
   );
 }

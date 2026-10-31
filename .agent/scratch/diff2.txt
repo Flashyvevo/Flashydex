@@ -1,0 +1,189 @@
+[/] p||Add what you paid to see gai#1: y 174→178 | margin 0px 0px 0px 0px→4px 0px 0px 0px
+[/] a||Add what you paid to see gai#1: y 174→178
+[/] a|coverage|2 of 2 copies priced ›#1: y 218→222
+[/] p|value-secondary|€14.50 from Cardmarket price#1: y 262→266
+[/] p||TCGplayer pricesUpdate#1: y 282→286
+[/] button|dash-update-prices|Update prices#1: y 282→286 | w 44.6→85.4 | color rgb(125, 134, 153)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/] a||Total cards2#1: y 350→354
+[/] a||Duplicates1#1: y 440→444
+[/] h2||Recently added#1: y 587.9→591.9
+[/] a||See all ›#1: y 579.9→583.9
+[/] a|card-tile|Charizard V, Darkness Ablaze#1: y 635.9→639.9
+[/] a|card-tile|Charizard V, Darkness Ablaze#2: y 635.9→639.9
+[/] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/collection] button|filter-button|Filters#1: w 72.3→114.1 | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/collection] button|sort-button|Recently added#1: x 96.3→138.1 | w 143.7→135.9 | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/collection] button|view-grid|Grid view#1: color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/collection] button|view-list|List view#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/collection] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/collection#filters] button|filter-button|Filters#1: w 72.3→114.1 | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/collection#filters] button|sort-button|Recently added#1: x 96.3→138.1 | w 143.7→135.9 | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/collection#filters] button|view-grid|Grid view#1: color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/collection#filters] button|view-list|List view#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/collection#filters] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/collection#filters] button|sheet-cancel|Cancel#1: w 52.5→76.5 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/collection#filters] button||Reset#1: x 338→315.6 | w 44→66.4 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/collection#filters] button|filter-lang-__any__|All#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-lang-en|EN#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-lang-ja|JA#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-cond-__any__|Any#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-cond-NM|NM#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-cond-LP|LP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-cond-MP|MP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-cond-HP|HP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-cond-DMG|DMG#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-cond-unknown|Condition not recorded#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button||All#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button||Raw#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button||Graded#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-priced-__any__|Any#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-priced-some|Has price#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] button|filter-priced-none|No price#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/collection#filters] p||Prices in your display curre#1: y 618.9→622.9 | margin 0px 0px 0px 0px→4px 0px 0px 0px
+[/collection#filters] button|filter-dupes|DuplicatesOnly cards I have #1: y 652.9→656.9 | h 48→58 | pad 0px 0px 0px 0px→8px 0px 8px 0px
+[/collection#filters] input||Exact number, e.g. 136 or 00#1: y 802.9→816.9
+[/collection#filters] button|filter-hide-pocket|Hide TCG PocketDigital-only #1: y 866.9→880.9 | h 60→76 | pad 0px 0px 0px 0px→8px 0px 8px 0px
+[/collection#filters] button|filter-apply|Show 1 card#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/add] button|lang-all|All languages#1: color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add] button|lang-en|English#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add] button|lang-ja|Japanese#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#results] button||Clear search#1: color rgb(242, 244, 248)→rgb(125, 134, 153)
+[/add#results] button|lang-all|All languages#1: color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#results] button|lang-en|English#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#results] button|lang-ja|Japanese#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#confirm] button||Clear search#1: color rgb(242, 244, 248)→rgb(125, 134, 153)
+[/add#confirm] button|lang-all|All languages#1: color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#confirm] button|lang-en|English#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#confirm] button|lang-ja|Japanese#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#confirm] button|sheet-cancel|Cancel#1: w 52.5→76.5 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/add#confirm] p||Market $7.15 (Holo)#1: y 133→137 | margin 0px 0px 0px 0px→4px 0px 0px 0px
+[/add#confirm] button|variant-chip-holo|Holo#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/add#confirm] button||Other…#1: w 55.1→48.2 | color rgb(242, 244, 248)→rgb(255, 203, 5)
+[/add#confirm] button|condition-chip-unset|Condition not set#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/add#confirm] button|condition-chip-NM|NM#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/add#confirm] button|condition-chip-LP|LP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/add#confirm] button|condition-chip-MP|MP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/add#confirm] button|condition-chip-HP|HP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/add#confirm] button|condition-chip-DMG|DMG#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/add#confirm] button||Decrease quantity#1: bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/add#confirm] button||Increase quantity#1: bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/add#confirm] button|graded-switch|Graded#1: pad 0px 0px 0px 0px→8px 0px 8px 0px
+[/add#confirm] button|add-submit|Add to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/sets] button||All#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/sets] button||EN#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/sets] button||JA#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/sets] button|show-collecting|Collecting#1: x 252.1→235.5 | w 59.9→68.3 | color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/sets] button|show-all|All sets#1: x 312.1→303.7 | w 59.9→68.3 | color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/sets] button||Newest#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/sets] button||Name#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/sets] button||Most complete#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/sets] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/sets/en/swsh3] button|back-button|Back to Sets#1: w 61.1→73.1 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 0px
+[/sets/en/swsh3] button|set-menu|More actions#1: color rgb(242, 244, 248)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|tab-all|All 201 cards#1: color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/sets/en/swsh3] button|tab-owned|Owned 1#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/sets/en/swsh3] button|tab-missing|Missing 200#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/sets/en/swsh3] button|tab-dupes|Duplicates#1: color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/sets/en/swsh3] button|missing-add|Add Butterfree V to collecti#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Butterfree VMAX to colle#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Paras to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Parasect to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Carnivine to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Pansage to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Simisage to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Karrablast to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Shelmet to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Accelgor to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Rowlet to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Dartrix to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Decidueye to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Bounsweet to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Steenee to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Tsareena to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Wimpod to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Golisopod to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Charizard VMAX to collec#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Houndoom V to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Torchic to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Combusken to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Blaziken to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Heatran to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Pansear to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Simisear to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Galarian Darmanitan to c#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Larvesta to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button|missing-add|Add Volcarona to collection#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5)
+[/sets/en/swsh3] button||Load more#1: x 154.6→134.1 | w 80.8→121.8 | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/sets/en/swsh3] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/cards/en/swsh3-19] button|back-button|Back to Collection#1: w 103.7→115.7 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 0px
+[/cards/en/swsh3-19] button|card-menu|More actions#1: color rgb(242, 244, 248)→rgb(255, 203, 5)
+[/cards/en/swsh3-19] button|add-copy|+ Add a copy#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/cards/en/swsh3-19] button||US dollars, TCGplayer#1: x 284→266.5 | w 44→52.7 | color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/cards/en/swsh3-19] button||Euros, Cardmarket#1: x 328→319.3 | w 44→52.7 | color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/cards/en/swsh3-19] button||Select#1: x 326.8→285.5 | w 47.2→88.5 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/cards/en/swsh3-19] button|copy-row|Holo, Condition not recorded#1: pad 0px 0px 0px 0px→8px 16px 8px 16px
+[/cards/en/swsh3-19] button|copy-row|Holo, Condition not recorded#2: pad 0px 0px 0px 0px→8px 16px 8px 16px
+[/cards/en/swsh3-19] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/cards/en/swsh3-19#copy-editor] button|back-button|Back to Collection#1: w 103.7→115.7 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 0px
+[/cards/en/swsh3-19#copy-editor] button|card-menu|More actions#1: color rgb(242, 244, 248)→rgb(255, 203, 5)
+[/cards/en/swsh3-19#copy-editor] button|add-copy|+ Add a copy#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/cards/en/swsh3-19#copy-editor] button||US dollars, TCGplayer#1: x 284→266.5 | w 44→52.7 | color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/cards/en/swsh3-19#copy-editor] button||Euros, Cardmarket#1: x 328→319.3 | w 44→52.7 | color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/cards/en/swsh3-19#copy-editor] button||Select#1: x 326.8→285.5 | w 47.2→88.5 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/cards/en/swsh3-19#copy-editor] button|copy-row|Holo, Condition not recorded#1: pad 0px 0px 0px 0px→8px 16px 8px 16px
+[/cards/en/swsh3-19#copy-editor] button|copy-row|Holo, Condition not recorded#2: pad 0px 0px 0px 0px→8px 16px 8px 16px
+[/cards/en/swsh3-19#copy-editor] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/cards/en/swsh3-19#copy-editor] button|sheet-cancel|Cancel#1: w 52.5→76.5 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/cards/en/swsh3-19#copy-editor] button|copy-save|Save#1: x 345→320.1 | w 37→61.9 | color rgb(242, 244, 248)→rgb(79, 86, 104) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[/cards/en/swsh3-19#copy-editor] button|copy-cond-unset|Condition not recorded#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/cards/en/swsh3-19#copy-editor] button|copy-cond-NM|NM#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/cards/en/swsh3-19#copy-editor] button|copy-cond-LP|LP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/cards/en/swsh3-19#copy-editor] button|copy-cond-MP|MP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/cards/en/swsh3-19#copy-editor] button|copy-cond-HP|HP#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/cards/en/swsh3-19#copy-editor] button|copy-cond-DMG|DMG#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/cards/en/swsh3-19#copy-editor] button||Graded#1: pad 0px 0px 0px 0px→8px 0px 8px 0px
+[/cards/en/swsh3-19#copy-editor] button|copy-delete|Delete copy#1: color rgb(242, 244, 248)→rgb(248, 113, 113) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/settings] button|currency-USD|USD · TCGplayer#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/settings] button|currency-EUR|EUR · Cardmarket#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/settings] button|searchlang-all|All#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/settings] button|searchlang-en|EN#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/settings] button|searchlang-ja|JA#1: pad 0px 0px 0px 0px→4px 0px 4px 0px
+[/settings] button|pocket-switch|Show TCG Pocket cards#1: pad 0px 0px 0px 0px→8px 0px 8px 0px
+[/settings] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/settings/data] button|back-button|Back to Settings#1: color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 0px
+[/settings/data] button|import-file|Choose file#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/settings/data] button|backup-create|Back up nowSaves your collec#1: bg rgba(0, 0, 0, 0)→oklab(0.235061 -0.00121229 -0.0183558 / 0.6) | cursor pointer→not-allowed
+[/settings/data] button|restore-file|Restore from backup…Replaces#1: bg rgba(0, 0, 0, 0)→oklab(0.235061 -0.00121229 -0.0183558 / 0.6) | cursor pointer→not-allowed
+[/settings/data] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/settings/catalog] button|back-button|Back to Settings#1: w 89.7→101.7 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 0px
+[/settings/catalog] button|catalog-download-ja|Download#1: x 282.2→240.5 | w 75.8→117.5 | color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/settings/catalog] button|prices-update|Update prices#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/settings/catalog] MISSING after: p||Last checked Oct 31, 12:09 A#1
+[/settings/catalog] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/settings/catalog] NEW after: p||Last checked Oct 31, 12:08 A#1
+[/settings/locations] button|back-button|Back to Settings#1: color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 0px
+[/settings/locations] button||Create a location#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/settings/locations] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[owned:/cards/en/swsh3-19?variant=holo] button|back-button|Back to Collection#1: w 103.7→115.7 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→0px 12px 0px 0px
+[owned:/cards/en/swsh3-19?variant=holo] button|card-menu|More actions#1: color rgb(242, 244, 248)→rgb(255, 203, 5)
+[owned:/cards/en/swsh3-19?variant=holo] button|add-copy|+ Add a copy#1: color rgb(242, 244, 248)→rgb(26, 20, 0) | bg rgba(0, 0, 0, 0)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[owned:/cards/en/swsh3-19?variant=holo] button||US dollars, TCGplayer#1: x 284→266.5 | w 44→52.7 | color rgb(242, 244, 248)→rgb(11, 13, 18) | bg rgba(0, 0, 0, 0)→rgb(242, 244, 248) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[owned:/cards/en/swsh3-19?variant=holo] button||Euros, Cardmarket#1: x 328→319.3 | w 44→52.7 | color rgb(242, 244, 248)→rgb(163, 171, 189) | pad 0px 0px 0px 0px→0px 12px 0px 12px
+[owned:/cards/en/swsh3-19?variant=holo] button||Select#1: x 326.8→285.5 | w 47.2→88.5 | color rgb(242, 244, 248)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[owned:/cards/en/swsh3-19?variant=holo] button|copy-row|Holo, Condition not recorded#1: pad 0px 0px 0px 0px→8px 16px 8px 16px
+[owned:/cards/en/swsh3-19?variant=holo] button|copy-row|Holo, Condition not recorded#2: pad 0px 0px 0px 0px→8px 16px 8px 16px
+[owned:/cards/en/swsh3-19?variant=holo] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+[/#tabbar-extra] p||Add what you paid to see gai#1: y 174→178 | margin 0px 0px 0px 0px→4px 0px 0px 0px
+[/#tabbar-extra] a||Add what you paid to see gai#1: y 174→178
+[/#tabbar-extra] a|coverage|2 of 2 copies priced ›#1: y 218→222
+[/#tabbar-extra] p|value-secondary|€14.50 from Cardmarket price#1: y 262→266
+[/#tabbar-extra] p||TCGplayer pricesUpdate#1: y 282→286
+[/#tabbar-extra] button|dash-update-prices|Update prices#1: y 282→286 | w 44.6→85.4 | color rgb(125, 134, 153)→rgb(255, 203, 5) | pad 0px 0px 0px 0px→8px 20px 8px 20px
+[/#tabbar-extra] a||Total cards2#1: y 350→354
+[/#tabbar-extra] a||Duplicates1#1: y 440→444
+[/#tabbar-extra] h2||Recently added#1: y 587.9→591.9
+[/#tabbar-extra] a||See all ›#1: y 579.9→583.9
+[/#tabbar-extra] a|card-tile|Charizard V, Darkness Ablaze#1: y 635.9→639.9
+[/#tabbar-extra] a|card-tile|Charizard V, Darkness Ablaze#2: y 635.9→639.9
+[/#tabbar-extra] button|tab-scan|Scan, coming in a later upda#1: color rgb(242, 244, 248)→rgb(79, 86, 104) | bg rgba(0, 0, 0, 0)→rgb(35, 40, 53)
+diff count 188

@@ -1,9 +1,12 @@
 import { expect, test } from '@playwright/test';
+import { trackErrors } from './helpers';
 
-test.use({ viewport: { width: 390, height: 844 } });
 
-test('opens FlashyDex with a working web SQLite driver', async ({ page }) => {
+test('fresh profile opens the DB and lands on /welcome', async ({ page }) => {
+  const errors = trackErrors(page);
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'FlashyDex' })).toBeVisible();
-  await expect(page.getByText(/SQLite \d+\.\d+\.\d+/)).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/\/welcome$/, { timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Your card collection, in your pocket' })).toBeVisible();
+  await expect(page.getByTestId('welcome-start')).toBeVisible();
+  expect(errors).toEqual([]);
 });

@@ -22,7 +22,7 @@ import {
 } from '../../../data';
 import { describeProgress, failureCopy, failureReason } from '../../../lib/catalog';
 import { describeError, errorCode, isCancelled } from '../../../lib/errors';
-import { LANGUAGE_NAMES, formatBytes, formatDate, formatInt, type Language } from '../../../lib/format';
+import { LANGUAGE_NAMES, formatBytes, formatDate, formatInt, plural, type Language } from '../../../lib/format';
 import { haptic, useNetwork } from '../../../lib/native';
 import { useSheetParam } from '../../../lib/sheets';
 
@@ -75,7 +75,7 @@ function CatalogPage() {
         <NavRow
           label="Sets I collect"
           testId="sets-i-collect"
-          value={settings.data ? (settings.data.syncAllSets || settings.data.setsFollowed.length === 0 ? 'All sets' : `${formatInt(settings.data.setsFollowed.length)} sets`) : '—'}
+          value={settings.data ? (settings.data.syncAllSets || settings.data.setsFollowed.length === 0 ? 'All sets' : plural(settings.data.setsFollowed.length, 'set')) : '—'}
           onClick={() => sheets.open('sets')}
         />
       </Group>
@@ -270,14 +270,14 @@ function PricesSection() {
           <ProgressCard
             testId="prices-progress"
             title="Updating prices"
-            line={run.cardsTotal ? `${formatInt(run.cardsDone)} / ${formatInt(run.cardsTotal)} cards` : `${formatInt(run.cardsDone)} cards`}
+            line={run.cardsTotal ? `${formatInt(run.cardsDone)} / ${formatInt(run.cardsTotal)} cards` : plural(run.cardsDone, 'card')}
             stageLine={
               run.status === 'cancel_requested'
                 ? 'Stopping…'
                 : run.status === 'cancelled' || run.status === 'interrupted'
                   ? `Paused at ${formatInt(run.cardsDone)}${run.cardsTotal ? ` of ${formatInt(run.cardsTotal)}` : ''} cards. Everything downloaded so far is kept.`
                   : run.status === 'failed'
-                    ? `Stopped at ${formatInt(run.cardsDone)} cards. Everything downloaded so far is kept.`
+                    ? `Stopped at ${plural(run.cardsDone, 'card')}. Everything downloaded so far is kept.`
                     : run.cardsFailed > 0
                       ? `${formatInt(run.cardsFailed)} failed`
                       : 'Downloading prices'

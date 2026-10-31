@@ -26,6 +26,19 @@ const BUTTON_STYLES: Record<ButtonVariant, string> = {
   'danger-outline': 'border border-negative text-negative font-semibold active:bg-negative-soft'
 };
 
+/** Default size/padding for a Button, minus anything the caller overrides (utilities are unordered in CSS: a caller's px-3 would lose to the default px-5). */
+function buttonBox(variant: ButtonVariant, className?: string): string {
+  const own = className ?? '';
+  const text = variant === 'text';
+  return [
+    /(^|\s)min-h-/.test(own) ? '' : text ? 'min-h-(--ps-tap)' : 'min-h-(--ps-tap-lg)',
+    /(^|\s)px-/.test(own) ? '' : text ? 'px-3' : 'px-5',
+    /(^|\s)py-/.test(own) ? '' : 'py-2'
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   loading?: boolean;
@@ -55,8 +68,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         onClick?.(e);
       }}
       className={cx(
-        'inline-flex min-h-(--ps-tap-lg) items-center justify-center gap-2 rounded-lg px-5 py-2 text-body transition-[transform,opacity,background-color] duration-(--ps-dur-move-fast) ease-standard active:scale-(--ps-press-scale)',
-        variant === 'text' && 'min-h-(--ps-tap) px-3',
+        'inline-flex items-center justify-center gap-2 rounded-lg text-body transition-[transform,opacity,background-color] duration-(--ps-dur-move-fast) ease-standard active:scale-(--ps-press-scale)',
+        buttonBox(variant, className),
         BUTTON_STYLES[variant],
         (isDisabled || softDisabled) && 'opacity-45',
         full && 'w-full',
@@ -94,8 +107,8 @@ export function LinkButton({ variant = 'secondary', full, className, children, i
     <Link
       {...(rest as LinkProps)}
       className={cx(
-        'inline-flex min-h-(--ps-tap-lg) items-center justify-center gap-2 rounded-lg px-5 py-2 text-body active:scale-(--ps-press-scale)',
-        variant === 'text' && 'min-h-(--ps-tap) px-3',
+        'inline-flex items-center justify-center gap-2 rounded-lg text-body active:scale-(--ps-press-scale)',
+        buttonBox(variant, className),
         BUTTON_STYLES[variant],
         full && 'w-full',
         className
@@ -303,7 +316,8 @@ export function SegmentedControl<T extends string>({
               onChange(o.value);
             }}
             className={cx(
-              'inline-flex min-h-(--ps-tap) min-w-(--ps-tap) flex-1 items-center justify-center gap-1 rounded-md px-3 text-small font-semibold transition-colors',
+              'inline-flex min-h-(--ps-tap) min-w-(--ps-tap) flex-1 items-center justify-center gap-1 rounded-md text-small font-semibold transition-colors',
+              tabs ? 'px-1' : 'px-3',
               on ? 'bg-fg text-bg shadow-1' : 'text-fg-muted'
             )}
           >
@@ -627,6 +641,69 @@ export function NavRow({
   return (
     <button type="button" data-testid={testId} onClick={onClick} className={cls}>
       {body}
+    </button>
+  );
+}
+
+/** Tappable action row for export/backup lists: leading icon, label + description, trailing icon, ≥56px, pressed + disabled states. */
+export function ActionRow({
+  icon: Icon,
+  label,
+  description,
+  trailingIcon: Trailing = ChevronRight,
+  onClick,
+  loading,
+  disabled,
+  disabledNote,
+  tone,
+  testId,
+  describedBy
+}: {
+  icon: LucideIcon;
+  label: string;
+  description?: ReactNode;
+  trailingIcon?: LucideIcon;
+  onClick?: () => void;
+  loading?: boolean;
+  /** Inert, but stays focusable (aria-disabled) and styled as unavailable. */
+  disabled?: boolean;
+  /** Short badge shown on a disabled row (e.g. "Later build"). */
+  disabledNote?: string;
+  tone?: 'negative';
+  testId?: string;
+  describedBy?: string;
+}) {
+  const inert = disabled || loading;
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-disabled={inert || undefined}
+      aria-describedby={describedBy}
+      onClick={(e) => {
+        if (inert) {
+          e.preventDefault();
+          return;
+        }
+        onClick?.();
+      }}
+      className={cx(
+        'flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left transition-colors',
+        disabled ? 'cursor-not-allowed bg-surface-2/60' : 'active:bg-surface-3'
+      )}
+    >
+      <span className={cx('flex size-9 shrink-0 items-center justify-center rounded-md', disabled ? 'bg-surface-3 text-fg-disabled' : tone === 'negative' ? 'bg-negative-soft text-negative' : 'bg-accent-soft text-accent-fg')}>
+        {loading ? <Loader2 size={20} className="fd-spin" aria-hidden /> : <Icon size={20} aria-hidden />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cx('block text-body font-medium', disabled ? 'text-fg-disabled' : tone === 'negative' ? 'text-negative' : 'text-fg')}>{label}</span>
+        {description && <span className={cx('block text-caption', disabled ? 'text-fg-subtle' : 'text-fg-muted')}>{description}</span>}
+      </span>
+      {disabled && disabledNote ? (
+        <span className="shrink-0 rounded-full border border-border-strong px-2 py-0.5 text-micro text-fg-subtle">{disabledNote}</span>
+      ) : (
+        <Trailing size={18} className={cx('shrink-0', disabled ? 'text-fg-disabled' : 'text-fg-subtle')} aria-hidden />
+      )}
     </button>
   );
 }

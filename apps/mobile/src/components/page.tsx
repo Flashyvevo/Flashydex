@@ -71,6 +71,7 @@ export function Page({ title, large, back, actions, add, children, className, bl
   }, [title]);
 
   const barTitleVisible = !large || !h1Visible;
+  const collapseBack = !!back && title.length + back.label.length > 24;
   const goBack = () => {
     if (!back) return;
     if (canGoBack()) router.history.back();
@@ -88,19 +89,23 @@ export function Page({ title, large, back, actions, add, children, className, bl
           WebkitBackdropFilter: 'var(--ps-chrome-backdrop)'
         }}
       >
-        <div className="relative flex h-(--ps-topbar-h) items-center justify-between" style={{ paddingLeft: 'max(4px, var(--ps-safe-left))', paddingRight: 'max(4px, var(--ps-safe-right))' }}>
-          <div className="flex min-w-0 items-center">
+        <div className="relative grid h-(--ps-topbar-h) grid-cols-[1fr_auto_1fr] items-center" style={{ paddingLeft: 'max(4px, var(--ps-safe-left))', paddingRight: 'max(4px, var(--ps-safe-right))' }}>
+          <div className="flex min-w-0 items-center justify-self-start">
             {back ? (
-              <button type="button" onClick={goBack} aria-label={`Back to ${back.label}`} className="inline-flex min-h-(--ps-tap) items-center gap-0.5 pr-3 text-body text-chrome-accent">
+              <button type="button" onClick={goBack} aria-label={`Back to ${back.label}`} data-testid="back-button" className="inline-flex min-h-(--ps-tap) min-w-(--ps-tap) items-center gap-0.5 pr-3 text-body text-chrome-accent">
                 <ChevronLeft size={26} aria-hidden />
-                <span className="max-w-[28vw] truncate">{back.label}</span>
+                <span className={cx('max-w-[28vw] truncate', collapseBack && 'hidden')}>{back.label}</span>
               </button>
             ) : null}
           </div>
-          <div aria-hidden className={cx('pointer-events-none absolute inset-x-16 truncate text-center text-bar-title font-semibold transition-opacity duration-(--ps-dur-fade-fast)', barTitleVisible ? 'opacity-100' : 'opacity-0')}>
+          <div
+            aria-hidden
+            data-testid="bar-title"
+            className={cx('pointer-events-none min-w-0 max-w-[60vw] overflow-hidden text-ellipsis whitespace-nowrap text-center text-bar-title font-semibold transition-opacity duration-(--ps-dur-fade-fast)', barTitleVisible ? 'opacity-100' : 'opacity-0')}
+          >
             {title}
           </div>
-          <div className="flex shrink-0 items-center">
+          <div className="flex shrink-0 items-center justify-self-end">
             {actions}
             {add && (
               <Link to="/add" aria-label="Add a card" data-testid="add-button" className="inline-flex size-(--ps-tap) items-center justify-center rounded-full text-chrome-accent active:bg-surface-3">

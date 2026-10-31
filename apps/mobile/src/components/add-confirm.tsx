@@ -258,7 +258,7 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
         <div className="flex flex-col gap-5 pt-1">
           <div className="flex gap-3">
             <div className="w-28 shrink-0">
-              <CardArt image={info.image} size="high" meta={{ name: info.name, setName: info.setName, localId: info.localId, rarity: info.rarity }} alt={`${info.name} card art`} />
+              <CardArt image={info.image} size="high" lowFirst meta={{ name: info.name, setName: info.setName, localId: info.localId, rarity: info.rarity }} alt={`${info.name} card art`} />
             </div>
             <div className="min-w-0">
               <h3 className="break-words text-h3 font-semibold">{info.name}</h3>

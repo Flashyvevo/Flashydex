@@ -9,6 +9,7 @@ export * from './platform/platform';
 export * from './catalog/tcgdex';
 export * from './domain/valuation';
 export * from './services';
+export { timed } from './perf';
 export type { CollectionCardGroup } from './services/collection-list';
 export type { PackEntry, PackInstallResult, PackInstallProgress } from './services/catalog-install';
 export { hydrateOwned } from './services/owned-read';

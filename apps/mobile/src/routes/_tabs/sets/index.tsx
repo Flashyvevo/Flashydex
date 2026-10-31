@@ -39,7 +39,7 @@ function SetsPage() {
   const hideTcgPocket = settings.data?.hideTcgPocket ?? true;
   const query = useMemo(() => ({ ...(search.lang ? { language: search.lang } : {}), ...(show === 'collecting' ? { owned: true } : {}), hideTcgPocket, sort, limit: 50 }), [search.lang, show, hideTcgPocket, sort]);
   const sets = useSets(query);
-  const followed = settings.data?.setsFollowed ?? [];
+  const followed = useMemo(() => settings.data?.setsFollowed ?? [], [settings.data?.setsFollowed]);
   // "Collecting" also lists the sets the user chose to collect, even with 0 owned (UX §6.1).
   const all = useSets(show === 'collecting' && followed.length > 0 ? { ...(search.lang ? { language: search.lang } : {}), hideTcgPocket, sort, limit: 50 } : undefined);
   const rows = useMemo(() => {

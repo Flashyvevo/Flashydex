@@ -1,5 +1,6 @@
 import type { Language } from '@flashydex/schemas';
 import { Db, type SqlDriver } from './sql';
+import { timed } from '../perf';
 
 /** Opens (read-only) catalog connections. `null` = no catalog installed for that language (a normal state). */
 export interface CatalogSource {
@@ -33,7 +34,7 @@ export class DatabaseSet {
     let existing = this.catalogs.get(language);
     if (!existing) {
       existing = (async () => {
-        const driver = await this.source.open(language);
+        const driver = await timed(`fdx:catalog-open-${language}`, () => this.source.open(language));
         if (!driver) return null;
         const db = new Db(driver, true);
         await db.initialize();

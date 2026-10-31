@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSetIndex } from '../data';
-import { assetWebp, formatInt, releaseYear, type Language } from '../lib/format';
+import { assetWebp, plural, releaseYear, type Language } from '../lib/format';
 import { ChipGroup, SearchField, Skeleton, cx } from './ui';
 
 export type SetKey = { language: Language; setId: string };
@@ -95,7 +95,7 @@ export function SetPicker({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-body">{s.name}</span>
                           <span className="block text-caption text-fg-muted">
-                            {[releaseYear(s.releaseDate), s.totalCount ? `${formatInt(s.totalCount)} cards` : null].filter(Boolean).join(' · ')}
+                            {[releaseYear(s.releaseDate), s.totalCount ? plural(s.totalCount, 'card') : null].filter(Boolean).join(' · ')}
                           </span>
                         </span>
                       </button>

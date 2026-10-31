@@ -146,7 +146,8 @@ export function CardArt({
   priority,
   className,
   rounded = true,
-  alt
+  alt,
+  lowFirst
 }: {
   /** Base image URL as stored in the catalog (suffix is added here). */
   image: string | null | undefined;
@@ -156,8 +157,19 @@ export function CardArt({
   className?: string;
   rounded?: boolean;
   alt?: string;
+  /** With size="high": paint the low-res image first and swap to the high-res one when it has loaded. */
+  lowFirst?: boolean;
 }) {
   const src = imageUrl(image, size);
+  // Progressive: show the (already cached) low-res art immediately, fade the high-res one in over it.
+  const lowSrc = lowFirst && size === 'high' ? imageUrl(image, 'low') : null;
+  const [lowState, setLowState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const lowShown = !!lowSrc && lowState !== 'error';
+  const [seenLow, setSeenLow] = useState(lowSrc);
+  if (seenLow !== lowSrc) {
+    setSeenLow(lowSrc);
+    setLowState('loading');
+  }
   const [state, setState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [attempt, setAttempt] = useState(0);
   const [retried, setRetried] = useState(false);
@@ -179,7 +191,7 @@ export function CardArt({
     return () => window.removeEventListener('online', onOnline);
   }, [state, retried]);
 
-  const showPlaceholder = !src || state === 'error';
+  const showPlaceholder = !src || (state === 'error' && !lowShown);
   const tier = rarityTier(meta.rarity);
   return (
     <div
@@ -189,7 +201,20 @@ export function CardArt({
     >
       {src && !showPlaceholder && (
         <>
-          {state === 'loading' && <div aria-hidden className="shimmer absolute inset-0" />}
+          {lowSrc && lowState !== 'error' && (
+            <img
+              src={lowSrc}
+              alt=""
+              aria-hidden
+              data-testid="card-art-low"
+              draggable={false}
+              decoding="async"
+              onLoad={() => setLowState('loaded')}
+              onError={() => setLowState('error')}
+              className="absolute inset-0 size-full object-cover"
+            />
+          )}
+          {state === 'loading' && !lowShown && <div aria-hidden className="shimmer absolute inset-0" />}
           <img
             key={attempt}
             src={src}
@@ -198,8 +223,7 @@ export function CardArt({
             height={size === 'low' ? 337 : 825}
             loading={priority ? 'eager' : 'lazy'}
             decoding="async"
-            // @ts-expect-error fetchpriority is valid HTML; React 19 types lag
-            fetchpriority={priority ? 'high' : undefined}
+            fetchPriority={priority ? 'high' : undefined}
             draggable={false}
             onLoad={() => setState('loaded')}
             onError={() => setState('error')}

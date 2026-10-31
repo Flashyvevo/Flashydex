@@ -129,7 +129,7 @@ export function TabBar({ hidden }: { hidden: boolean }) {
             >
               <ScanLine size={26} aria-hidden />
             </button>
-            <span aria-hidden className="mt-9 text-tab font-semibold text-fg-subtle">
+            <span aria-hidden data-testid="tab-scan-label" className="absolute inset-x-0 bottom-0.5 text-center text-tab font-semibold leading-none text-fg-subtle">
               Soon
             </span>
           </div>

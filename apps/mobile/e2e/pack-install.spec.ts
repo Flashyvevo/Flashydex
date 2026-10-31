@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 
-test.use({ viewport: { width: 390, height: 844 } });
 
 interface Manifest {
   languages: Record<string, { targetVersion: string; sha256: string; uncompressedBytes: number; compressedBytes: number; counts: Record<string, number> }>;

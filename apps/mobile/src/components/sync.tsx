@@ -49,7 +49,7 @@ export function ProgressCard({
 /* ───────── Combined "catalog work" state for the pill ───────── */
 
 type PillState =
-  | { kind: 'running'; label: string; sr: string; percent: number | null }
+  | { kind: 'running'; label: string; sr: string; percent: number | null; start: string }
   | { kind: 'waiting'; label: string; sr: string }
   | { kind: 'paused'; label: string; sr: string; resume: () => void }
   | { kind: 'done'; label: string; sr: string }
@@ -83,27 +83,43 @@ export function useSyncPillState(): PillState | null {
   const run = sync.data ?? null;
   void cancelledWhileOffline;
 
+  // A finished price/card update shows a short "done" pill (the latest run stays `completed` afterwards, so detect the transition).
+  const [syncDone, setSyncDone] = useState<string | null>(null);
+  const prevRunStatus = useRef<string | null>(null);
+  const runStatus = run?.status ?? null;
+  const runMode = run?.mode ?? null;
+  useEffect(() => {
+    const was = prevRunStatus.current;
+    prevRunStatus.current = runStatus;
+    if ((was === 'running' || was === 'queued') && runStatus === 'completed') {
+      const label = runMode === 'prices_only' ? 'Prices updated' : 'Cards updated';
+      setTimeout(() => setSyncDone(label), 0);
+      setTimeout(() => setSyncDone(null), 3000);
+    }
+  }, [runStatus, runMode]);
+  const doneLabel = done ?? syncDone;
+
   if (install.active && progress) {
     const d = describeProgress(progress.language, progress);
     const name = LANGUAGE_NAMES[progress.language];
     if (!net.online) return { kind: 'waiting', label: 'Waiting for connection', sr: `Catalog download, ${name}, waiting for connection. Opens catalog settings.` };
     if (d.stage === 'downloading') {
       const pct = d.percent;
-      return { kind: 'running', percent: pct, label: `Downloading ${name}${pct !== null ? ` · ${pct} %` : '…'}`, sr: `Catalog download, ${name}${pct !== null ? `, ${pct} percent` : ''}. Opens catalog settings.` };
+      return { kind: 'running', start: 'Catalog download started', percent: pct, label: `Downloading ${name}${pct !== null ? ` · ${pct} %` : '…'}`, sr: `Catalog download, ${name}${pct !== null ? `, ${pct} percent` : ''}. Opens catalog settings.` };
     }
-    return { kind: 'running', percent: null, label: `${STAGE_LABEL[d.stage]} ${name}…`, sr: `Catalog ${STAGE_LABEL[d.stage].toLowerCase()}, ${name}. Opens catalog settings.` };
+    return { kind: 'running', start: 'Catalog download started', percent: null, label: `${STAGE_LABEL[d.stage]} ${name}…`, sr: `Catalog ${STAGE_LABEL[d.stage].toLowerCase()}, ${name}. Opens catalog settings.` };
   }
   if (run && (run.status === 'running' || run.status === 'queued' || run.status === 'cancel_requested')) {
     const total = run.cardsTotal;
     const pct = total ? Math.round((run.cardsDone / total) * 100) : null;
     const what = run.mode === 'prices_only' ? 'Updating prices' : 'Downloading cards';
     if (!net.online) return { kind: 'waiting', label: 'Waiting for connection', sr: `${what}, waiting for connection. Opens catalog settings.` };
-    return { kind: 'running', percent: pct, label: `${what}${pct !== null ? ` · ${pct} %` : '…'}`, sr: `${what}${pct !== null ? `, ${pct} percent` : ''}. Opens catalog settings.` };
+    return { kind: 'running', start: run.mode === 'prices_only' ? 'Updating prices' : 'Card download started', percent: pct, label: `${what}${pct !== null ? ` · ${pct} %` : '…'}`, sr: `${what}${pct !== null ? `, ${pct} percent` : ''}. Opens catalog settings.` };
   }
   if (run && (run.status === 'interrupted' || run.status === 'cancelled')) {
     return { kind: 'paused', label: 'Download paused · Resume', sr: 'Download paused. Resume.', resume: () => resume.mutate({ id: run.id }) };
   }
-  if (done) return { kind: 'done', label: done, sr: done };
+  if (doneLabel) return { kind: 'done', label: doneLabel, sr: doneLabel };
   if (progress && (progress.phase === 'failed' || progress.phase === 'interrupted') && stageOf(progress.phase) === 'failed') {
     return { kind: 'failed', label: 'Download failed · Details', sr: 'Download failed. Opens catalog settings.' };
   }
@@ -121,7 +137,7 @@ export function SyncPill({ inline }: { inline?: boolean }) {
   const key = state ? state.kind : null;
   if (key !== prevKey) {
     setPrevKey(key);
-    if (key === 'running') setAnnounce('Catalog download started');
+    if (state?.kind === 'running') setAnnounce(state.start);
     else if (key === 'done') setAnnounce(state?.label ?? 'Catalog ready');
     else if (key === 'failed') setAnnounce('Download failed');
   }

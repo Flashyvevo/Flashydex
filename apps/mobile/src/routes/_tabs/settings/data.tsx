@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { z } from 'zod';
 import { BottomSheet, ConfirmDialog, Dialog, useToast } from '../../../components/overlay';
 import { Page } from '../../../components/page';
-import { Banner, Button, ChipGroup, Group, LinkButton, SectionCaption, TextInput } from '../../../components/ui';
+import { ActionRow, Banner, Button, ChipGroup, Group, LinkButton, SectionCaption, TextInput } from '../../../components/ui';
+import { ArchiveRestore, FileJson, FileSpreadsheet, HardDriveDownload, Share2 } from 'lucide-react';
 import {
   useBackupCapabilities,
   useCreateBackup,
@@ -158,33 +159,56 @@ function DataPage() {
       </div>
 
       <SectionCaption>Export</SectionCaption>
-      <div className="flex flex-col gap-3 rounded-lg bg-surface p-4">
-        <div>
-          <Button variant="secondary" full loading={exporting === 'json'} disabled={exporting !== null} onClick={() => void doExport('json')} data-testid="export-json">
-            {exporting === 'json' ? 'Preparing…' : 'Share JSON'}
-          </Button>
-          <p className="mt-1 text-caption text-fg-muted">Complete — use this to move to another device or app.</p>
-        </div>
-        <div>
-          <Button variant="secondary" full loading={exporting === 'csv'} disabled={exporting !== null} onClick={() => void doExport('csv')} data-testid="export-csv">
-            {exporting === 'csv' ? 'Preparing…' : 'Share CSV'}
-          </Button>
-          <p className="mt-1 text-caption text-fg-muted">One row per card, for spreadsheets. Some details aren’t included.</p>
-        </div>
-      </div>
+      <Group>
+        <ActionRow
+          icon={FileJson}
+          trailingIcon={Share2}
+          label={exporting === 'json' ? 'Preparing…' : 'Share JSON'}
+          description="Complete — use this to move to another device or app."
+          loading={exporting === 'json'}
+          disabled={exporting === 'csv'}
+          onClick={() => void doExport('json')}
+          testId="export-json"
+        />
+        <ActionRow
+          icon={FileSpreadsheet}
+          trailingIcon={Share2}
+          label={exporting === 'csv' ? 'Preparing…' : 'Share CSV'}
+          description="One row per card, for spreadsheets. Some details aren’t included."
+          loading={exporting === 'csv'}
+          disabled={exporting === 'json'}
+          onClick={() => void doExport('csv')}
+          testId="export-csv"
+        />
+      </Group>
 
       <SectionCaption>Backup & restore</SectionCaption>
-      <div className="flex flex-col gap-3 rounded-lg bg-surface p-4">
-        <div>
-          <Button variant="secondary" full softDisabled={!capsReady || !canCreate} loading={backing} aria-describedby={capsReady && !canCreate ? 'backup-reason' : undefined} onClick={() => void doBackup()} data-testid="backup-create">
-            Back up now
-          </Button>
-          <p className="mt-1 text-caption text-fg-muted">Saves your collection, settings and custom cards in one file. Card catalogs aren’t included — they download again after a restore. Save it to Files or iCloud Drive.</p>
-          {lastBackup && <p className="mt-1 text-caption text-fg-muted" data-testid="last-backup">Last backup: {formatDate(lastBackup.at)} · {plural(lastBackup.totalCards, 'card')}</p>}
-        </div>
-        <Button variant="danger-outline" full softDisabled={!capsReady || !canRestore} aria-describedby={capsReady && !canRestore ? 'backup-reason' : undefined} onClick={() => sheets.open('restore')} data-testid="restore-file">
-          Restore from backup…
-        </Button>
+      <Group>
+        <ActionRow
+          icon={HardDriveDownload}
+          label="Back up now"
+          description="Saves your collection, settings and custom cards in one file. Card catalogs aren’t included — they download again after a restore. Save it to Files or iCloud Drive."
+          loading={backing}
+          disabled={!capsReady || !canCreate}
+          disabledNote={capsReady && !canCreate ? 'Later build' : undefined}
+          describedBy={capsReady && !canCreate ? 'backup-reason' : undefined}
+          onClick={() => void doBackup()}
+          testId="backup-create"
+        />
+        <ActionRow
+          icon={ArchiveRestore}
+          tone="negative"
+          label="Restore from backup…"
+          description="Replaces your collection with the contents of a backup file."
+          disabled={!capsReady || !canRestore}
+          disabledNote={capsReady && !canRestore ? 'Later build' : undefined}
+          describedBy={capsReady && !canRestore ? 'backup-reason' : undefined}
+          onClick={() => sheets.open('restore')}
+          testId="restore-file"
+        />
+      </Group>
+      <div className="mt-2 flex flex-col gap-1 px-1">
+        {lastBackup && <p className="text-caption text-fg-muted" data-testid="last-backup">Last backup: {formatDate(lastBackup.at)} · {plural(lastBackup.totalCards, 'card')}</p>}
         {capsReady && (!canCreate || !canRestore) && (
           <p id="backup-reason" className="text-caption text-fg-muted" data-testid="backup-reason">
             {reason ?? 'Backup files aren’t available on this device yet.'} This backup can be merged with Import instead.

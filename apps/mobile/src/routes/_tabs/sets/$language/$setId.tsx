@@ -10,7 +10,7 @@ import { SetLogo } from '../../../../components/set-logo';
 import { Banner, Button, EmptyState, ErrorState, SegmentedControl, Skeleton } from '../../../../components/ui';
 import { useSet, useSetCards, useSettings, useUpdateSettings } from '../../../../data';
 import { describeError } from '../../../../lib/errors';
-import { collectorNumber, formatPercent, formatDate, formatInt, LANGUAGE_NAMES, type Language } from '../../../../lib/format';
+import { collectorNumber, formatPercent, formatDate, formatInt, plural, LANGUAGE_NAMES, type Language } from '../../../../lib/format';
 import { useDelayedFlag, useSentinel } from '../../../../lib/hooks';
 import { useSetSearch, useSheetParam } from '../../../../lib/sheets';
 
@@ -119,8 +119,8 @@ function SetDetail() {
           <div className="mt-3 flex items-center gap-3">
             <Ring percent={s.completionPercent} />
             <div className="text-small text-fg-muted" data-testid="set-counts">
-              <div className="text-body text-fg">{formatInt(s.ownedUnique)} of {formatInt(s.catalogCount)} cards</div>
-              <div>{formatInt(s.missingCount)} missing · {formatInt(s.duplicateExtras)} duplicates</div>
+              <div className="text-body text-fg">{formatInt(s.ownedUnique)} of {plural(s.catalogCount, 'card')}</div>
+              <div>{formatInt(s.missingCount)} missing · {plural(s.duplicateExtras, 'duplicate')}</div>
               {s.officialCount ? <div>Official set: {formatInt(s.officialCount)}{s.totalCount && s.totalCount > s.officialCount ? ` + ${formatInt(s.totalCount - s.officialCount)} secret` : ''}</div> : null}
               {s.customOwnedCount > 0 && <div>+ {formatInt(s.customOwnedCount)} custom cards not counted</div>}
             </div>
