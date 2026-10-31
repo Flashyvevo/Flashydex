@@ -9,9 +9,12 @@ let connectionPromise: Promise<SQLiteDBConnection> | undefined;
 async function prepareWebComponent(): Promise<void> {
   await defineCustomElements(window);
   await customElements.whenDefined('jeep-sqlite');
-  if (!document.querySelector('jeep-sqlite')) {
-    document.body.append(document.createElement('jeep-sqlite'));
+  let element = document.querySelector('jeep-sqlite');
+  if (!element) {
+    element = document.createElement('jeep-sqlite');
+    document.body.append(element);
   }
+  await (element as HTMLElement & { componentOnReady(): Promise<unknown> }).componentOnReady();
 }
 
 async function openConnection(): Promise<SQLiteDBConnection> {

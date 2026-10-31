@@ -8,7 +8,7 @@ test-results/
 
 # Capacitor local state
 apps/mobile/.capacitor/
-apps/mobile/public/sql-wasm.wasm
+apps/mobile/public/assets/sql-wasm.wasm
 
 # local application data
 *.db

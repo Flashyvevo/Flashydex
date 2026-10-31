@@ -1,181 +1,416 @@
-# flashydex — Phase 1 UX specification
+# FlashyDex — Phase 1 UX specification
 
-Owner: Opus (UX lead). Implementer: Sonnet — build this pixel-faithfully. Tokens: `docs/DESIGN-TOKENS.md` + `apps/web/src/styles/tokens.css`.
-Contract alignment: routes, field names and enums follow `docs/ARCHITECTURE.md` and `docs/DATA-MODEL.md` (both present when this was written). Endpoint names refer to `docs/API.md`; where API.md was not yet written, the needed data is described by DATA-MODEL field names (camelCase) — if API.md names differ, API.md wins for the wire, this doc wins for what the screen shows.
-Real example data used throughout: **Furret · Darkness Ablaze · 136/189** (`en` / `swsh3-136`, rarity Uncommon, variants normal + reverse, set official 189 / total 201, logo `https://assets.tcgdex.net/en/swsh/swsh3/logo`). Prices in wireframes are shown as `$—`/`€—` placeholders because prices change; the UI must render whatever the latest PriceSnapshot holds, and nothing when it is null. Personal values in wireframes (copy counts, "Binder A", purchase dates, totals like "412 cards") are illustrative layout filler for the owner's own data, never seed data — the app starts empty.
+Owner: Opus (UX lead). Implementer: Sonnet. Build this pixel-faithfully. Tokens: `docs/DESIGN-TOKENS.md` + `apps/mobile/src/styles/tokens.css`.
+
+**Stage A2 (2026-10-30/31): native iOS/Android, local-first.** FlashyDex is a Capacitor 7 app (iOS first, Android buildable). Its web build runs in a desktop browser for development and as a PWA. All data lives on the device. There is no FlashyDex server, and the app works with no network at all.
+
+Contract alignment:
+- **Screen data** comes from the `packages/core` interfaces in `docs/API.md`: `CatalogRepo`, `CollectionRepo`, `PortfolioService`, `SyncService`, `SettingsRepo`, `TransferService`, `BackupService` and `Platform`. The UI calls them through TanStack Query hooks in `apps/mobile/src/data/`.
+- **Catalog install** follows `docs/COMPRESSION-STORAGE.md`: versioned zstd catalog packs per language, `.fdx` backups.
+- Where an interface is still missing, this doc names it and lists it in `.agent/reports/opus-ux-v2-requests.md` together with a working fallback.
+- Precedence: if API.md names differ, API.md wins for names; this doc wins for what the screen shows and says.
+
+Real example data used throughout: **Furret · Darkness Ablaze · 136/189** (`en` / `swsh3-136`, rarity Uncommon, variants normal + reverse, set official 189 / total 201).
+- Prices in wireframes are shown as `$—`/`€—`. The UI renders whatever the latest PriceSnapshot holds, and nothing when it is null.
+- Personal values (copy counts, "Binder A", dates, "412 cards") are layout filler for the owner's own data. They are never seed data; the app starts empty.
+
+What changed in A2:
+- New: §15 first run, §16 offline behaviour, §17 native conventions, §18 icon and splash.
+- Shell: safe areas, sheets, back gestures and the sync pill (§1–2).
+- Routes are TanStack Router file routes (§1.1).
+- Every "your PC / server / LAN" state is gone.
+- Settings gained Catalog, About, Privacy, Licenses and a Danger zone (§10).
+- The collection grid now uses API.md's binding `groupBy:'card'`.
+- The add form leaves condition unset by default (API.md "UX mapping").
+
+Section numbers 0–14 are unchanged from Stage A because other docs link to them (RECOGNITION-DESIGN links to §7.3 and §11.2).
 
 Contents
-0. Global rules · 1. App shell & navigation · 2. Shared components · 3. Dashboard · 4. Collection · 5. Card Details (+ copy editor) · 6. Sets & Set detail · 7. Add flow · 8. Storage locations · 9. Custom cards · 10. Settings & Data · 11. Scanner (Phase 3 design; disabled in Phase 1) · 12. Global states & copy · 13. Accessibility checklist · 14. Acceptance hooks for Playwright
+0. Global rules
+1. App shell and navigation
+2. Shared components
+3. Dashboard
+4. Collection
+5. Card Details (+ copy editor)
+6. Sets and Set detail
+7. Add flow
+8. Storage locations
+9. Custom cards
+10. Settings, Catalog, Data, About
+11. Scanner (Phase 3 design; disabled in Phase 1)
+12. Global states and copy
+13. Accessibility checklist
+14. Acceptance hooks
+15. First run / onboarding
+16. Offline and network behaviour; download pause/resume
+17. iOS/Android native conventions
+18. App icon and splash
 
 ---
 
 ## 0. Global rules (apply to every screen)
 
-1. **390 px first.** No horizontal scroll at 390 × 844 (Playwright asserts `document.documentElement.scrollWidth <= 390`). Then 768 and ≥ 1024.
-2. **Card art is always 63:88** (`aspect-card rounded-card`), space reserved before load; low-res `…/low.webp` in grids/lists, `…/high.webp` on Card Details and in the add-confirm sheet. Missing image → the "No catalog image" placeholder (DESIGN-TOKENS §8.7). Never a stock/fake image.
-3. **No fabricated data.** Null price → hidden (tiles/rows) or "No price data" (details). Unknown condition → `?` badge. Incomplete catalog → "Catalog incomplete", never a fake %.
-4. **Nothing saves without an explicit button press.** Closing a sheet discards. Edits are buffered until Save. Destructive actions confirm (with counts).
-5. **Every tappable thing ≥ 44 × 44 px**; nav items and primary buttons 48 px.
-6. **Every list has four states**: loading skeleton (same geometry as content), empty (real copy + one CTA), error (what failed + Retry), offline (banner; reads from cache if any; mutations disabled with reason).
-7. **Language is always visible** on catalog rows/tiles when the collection contains both languages: `EN`/`JA` micro badge (surface-3 fill, fg-muted text). If the user owns only one language, hide the badge in the collection but keep it in search results.
-8. **Numbers**: `tabular-nums`; thousands separators via `Intl.NumberFormat`; collector numbers render as `136/189` when the set's official count is known, else `#136`.
-9. **URL is state.** Filters, sort, view mode, search query and tabs live in the query string so Back works and links can be shared to the desktop.
+1. **390 px first.** No horizontal scroll at 390 × 844 (Playwright asserts `document.documentElement.scrollWidth <= 390`). Then 768 and ≥ 1024 (web, PWA, iPad).
+2. **Card art is always 63:88** (`aspect-card rounded-card`). Space is reserved before the image loads.
+   - `…/low.webp` in grids, lists, search and sets; `…/high.webp` only on Card Details hero and zoom (COMPRESSION-STORAGE image policy).
+   - Missing image → "No catalog image" placeholder. Failed load (offline, not cached) → "Image not loaded" placeholder (DESIGN-TOKENS §8.7). Never a stock or fake image.
+3. **No fabricated data.**
+   - Null price → hidden (tiles, rows) or "No price data" (details).
+   - Unknown condition → `?` badge.
+   - Incomplete catalog → "Catalog incomplete", never a fake %.
+   - Old prices carry their date ("Prices as of 30 Oct").
+4. **Nothing saves without an explicit button press.**
+   - Closing a sheet discards it; edits are buffered until Save.
+   - Destructive actions confirm and state counts.
+   - Preferences (theme, currency, haptics) are view settings and apply instantly.
+5. **Every tappable thing is ≥ 44 × 44 pt** (`--ps-tap`). Tab items and primary buttons are ≥ 48 (`--ps-tap-lg`).
+6. **Every list has five states.**
+   - Loading: skeleton with the same geometry as the content.
+   - Empty: real copy + one CTA.
+   - Error: what failed + Try again.
+   - No results.
+   - Offline-aware: works from local data; only network-bound parts degrade (§16).
+7. **Language is visible** on catalog rows and tiles when the collection contains both languages: an `EN`/`JA` micro badge (surface-3 fill, fg-muted text). If the user owns only one language, hide the badge in the collection but keep it in search results.
+8. **Numbers.**
+   - Use `tabular-nums` and `Intl.NumberFormat` (device locale).
+   - Collector numbers render as `136/189` when the set's official count is > 0, else `#136`. JA `001` stays `001`.
+9. **URL is state.** Filters, sort, view mode, search query, tabs and open sheets live in the route search params. Back (iOS edge swipe, Android back, in-app back) therefore closes sheets and restores filters (§1.5).
+10. **Local reads are instant.** Data comes from on-device SQLite.
+    - Skeletons appear only after 150 ms.
+    - Never show a spinner for a local read under 300 ms.
+    - Never block a screen on the network.
 
 ## 1. App shell and navigation
 
-### 1.1 Routes (aligns with ARCHITECTURE.md layout)
+### 1.1 Routes: TanStack Router file routes (`apps/mobile/src/routes/`)
 
-| Route | Screen | Notes |
-|---|---|---|
-| `/` | Dashboard | |
-| `/collection` | Collection | query: `q, view=grid\|list, sort, set, rarity, lang, cond, graded, dupes, loc, group` |
-| `/collection/[ownedId]` | Single copy (deep link) | renders Card Details for the copy's identity with that copy's editor sheet open; works when catalog cache is wiped (uses snapshot) |
-| `/cards/[language]/[cardId]` | Card Details (catalog card) | e.g. `/cards/en/swsh3-136` |
-| `/custom-cards/[customId]` | Card Details (custom card) | same layout, "Custom" badge, no price block |
-| `/custom-cards/new` | Create custom card | **new page — requested from Sol (not in ARCHITECTURE tree)** |
-| `/sets` | Sets list | query: `lang, show=collecting\|all, sort, pocket=1` |
-| `/sets/[language]/[setId]` | Set detail | query: `tab=all\|owned\|missing\|dupes` |
-| `/add` | Add flow (search → confirm) | query: `q, lang, card=<language>:<cardId>` (confirm step open), `set` (prefilter from a set) |
-| `/settings` | Settings home | appearance, defaults, links |
-| `/settings/data` | Sync, import, export, backup, restore | |
-| `/settings/locations` | Storage locations | **new page — requested from Sol** |
-| `/scan` | — | **does not exist in Phase 1** (ARCHITECTURE: no scanner route). Phase 3 adds it. |
+URLs are unchanged from Stage A and ARCHITECTURE.md (TanStack writes params as `$param`). Two pathless layout routes give native structure:
+- **`_tabs`**: top bar + tab bar + sync pill. Pushed screens keep the tab bar, as on iOS and Android.
+- **`_modal`**: full-screen modal presentation that slides up. It has no tab bar and a close button in the top-left.
+
+| File | URL | Screen | Search params (zod `validateSearch`) |
+|---|---|---|---|
+| `__root.tsx` | — | providers, startup gate (§15.1), toast host, sheet host, platform listeners | — |
+| `_tabs.tsx` | — | tab shell (§1.2) | — |
+| `_tabs/index.tsx` | `/` | Dashboard | — |
+| `_tabs/collection/index.tsx` | `/collection` | Collection | `q, view=grid\|list, sort, set, rarity, lang, cond, graded, dupes, loc, group, variant, priced=none\|some, num` (localId), `sheet=filters\|sort` |
+| `_tabs/collection/$ownedId.tsx` | `/collection/$ownedId` | one copy (deep link): Card Details with that copy's editor open; snapshot-safe | — |
+| `_tabs/cards/$language/$cardId.tsx` | `/cards/$language/$cardId` | Card Details (catalog) | `variant, copy` (copy editor open), `zoom=1` |
+| `_tabs/custom-cards/$customId.tsx` | `/custom-cards/$customId` | Card Details (custom) | `edit=1` |
+| `_tabs/sets/index.tsx` | `/sets` | Sets | `lang, show=collecting\|all, sort` |
+| `_tabs/sets/$language/$setId.tsx` | `/sets/$language/$setId` | Set detail | `tab=all\|owned\|missing\|dupes` |
+| `_tabs/settings/index.tsx` | `/settings` | Settings home | — |
+| `_tabs/settings/catalog.tsx` | `/settings/catalog` | **new**: card catalog (languages, packs, updates, prices, sets I collect) | `sheet=sets` |
+| `_tabs/settings/data.tsx` | `/settings/data` | import, export, backup, restore | `sheet=import\|restore` |
+| `_tabs/settings/locations.tsx` | `/settings/locations` | Storage locations | `sheet=new\|<id>` |
+| `_tabs/settings/about.tsx` | `/settings/about` | **new**: About, disclaimer, attribution, version | — |
+| `_tabs/settings/privacy.tsx` | `/settings/privacy` | **new**: privacy policy (in-app text) | — |
+| `_tabs/settings/licenses.tsx` | `/settings/licenses` | **new**: licenses | — |
+| `_modal.tsx` | — | modal shell | — |
+| `_modal/add.tsx` | `/add` | Add flow (search → confirm) | `q, lang, set` (`<language>:<setId>`), `card` (`<language>:<cardId>` or `custom:<uuid>`; confirm sheet open) |
+| `_modal/custom-cards/new.tsx` | `/custom-cards/new` | Create custom card | `name` (prefill from search) |
+| `_modal/welcome/index.tsx` | `/welcome` | First run: welcome | — |
+| `_modal/welcome/notice.tsx` | `/welcome/notice` | First run: disclaimer + privacy | — |
+| `_modal/welcome/languages.tsx` | `/welcome/languages` | First run: languages + download | — |
+| `_modal/welcome/sets.tsx` | `/welcome/sets` | First run: sets you collect | `q` |
+| — | `/scan` | **does not exist in Phase 1** (ARCHITECTURE: no scanner route; Phase 3 adds `_modal/scan.tsx`) | — |
+
+Rules:
+- `beforeLoad` in `__root` runs the startup gate (§15.1). It never blocks `/settings/about`, `/settings/privacy` or `/settings/licenses`; these are readable before onboarding and offline (API.md SettingsRepo note).
+- Every navigation is client-side. There is no `window.location` assignment and no reload. `<a href>` is only for external links, and those open in the in-app browser (§17.9).
+- Route-level code splitting: tab routes are in the main chunk so the first tap is instant. Only `/settings/licenses` and the zoom viewer are lazy.
+- The new routes (`/settings/catalog`, `/settings/about`, `/settings/privacy`, `/settings/licenses`, `/welcome/*`) are listed for Sol in the requests file.
 
 ### 1.2 Mobile shell (< 1024 px)
 
 ```
-390 px
+390 px (iPhone; Android identical except bar heights/indicator, DESIGN-TOKENS §5.3)
 ┌──────────────────────────────────────┐
-│ ░ status bar (safe-area-top)          │
+│ ░ status bar  (--ps-safe-top)         │  translucent chrome continues under it (iOS)
 ├──────────────────────────────────────┤
-│ Collection                  [⌕] [+]  │  top bar 56px, surface, sticky
+│        Collection         [⌕] [+]    │  top bar --ps-topbar-h (44 iOS / 64 Android / 56 web)
 ├──────────────────────────────────────┤
+│ Collection                           │  large title (H1) in content on tab roots
+│ page content (document scrolls)      │  padding-bottom: --ps-content-pad-bottom
 │                                      │
-│              page content            │  scrolls; padding-bottom = nav + 16
-│                                      │
+│        ( ◔ Downloading English 42% ) │  sync pill (§1.6), only while catalog work runs
 ├──────────────────────────────────────┤
-│  ⌂        ▦        ◉        ▤     ⚙  │  bottom nav 64px + safe-area-bottom
-│ Home  Collection  Scan    Sets  Settings
-│                  Soon                 │
+│  ⌂        ▦        ◉        ▤     ⚙  │  tab bar --ps-tabbar-h + --ps-safe-bottom
+│ Home  Collection  Soon    Sets  Settings
+│ ▔▔▔▔▔ home indicator (--ps-safe-bottom)│
 └──────────────────────────────────────┘
 ```
 
-Bottom nav (`<nav aria-label="Primary">`, surface bg, 1 px top border, `--ps-hairline-top`):
-- Five equal slots, each ≥ 48 px tall, icon 24 px + label (micro 12 px, 600). Active: icon + label `--ps-accent-fg`, a 32×4 px accent pill above the icon, `aria-current="page"`. Inactive: `--ps-fg-muted`.
-- **Center slot "Scan"**: 60 px circle raised 12 px above the bar (`--ps-shadow-scan` cuts it out of the bar). Phase 3: accent fill, camera icon, `on-accent` color.
-  **Phase 1 (disabled):** circle in `--ps-surface-3`, icon `--ps-fg-disabled`, a small `Soon` micro label under it instead of "Scan". Element is a `<button aria-disabled="true" aria-describedby="scan-soon">` (stays focusable so screen-reader users learn why). Tapping it opens the **Scanner-coming sheet** (§11.6) whose primary button is "Add a card by search" → `/add`. It never opens a camera and is never labelled as working (ARCHITECTURE rule).
-- Icons: use `lucide-react` (tree-shaken, MIT): `Home`, `LayoutGrid`, `ScanLine`, `Layers`, `Settings`. Same set in the sidebar.
+**Top bar** (`<header>`):
+- `position: fixed`, height `--ps-topbar-total`, `padding-top: --ps-safe-top`.
+- Background `--ps-chrome-bg` with `backdrop-filter: var(--ps-chrome-backdrop)`; a 1 px `--ps-chrome-border` hairline appears only once content scrolls under it.
+- Title: centred on iOS, left on Android/web (`--ps-topbar-title-size`).
+- Up to two 44 px icon buttons on the right. On Dashboard, Collection, Sets and Card Details the rightmost is **Add** (`Plus`, accessible name "Add a card") → `/add`.
+- Pushed screens show the platform back affordance on the left (§17.3).
+- **Large title:**
+  - On tab roots (Dashboard, Collection, Sets, Settings) the H1 sits in the content at `--ps-text-h1`.
+  - The inline bar title is `aria-hidden` and invisible until the H1 scrolls under the bar (IntersectionObserver; fade `--ps-dur-fade-fast`). This is the iOS large-title pattern; Android keeps the same behaviour, which is acceptable in M3.
 
-Top bar (per screen): title (H3 size on mobile, left), up to two 44 px icon buttons on the right. On every primary screen except Settings the rightmost button is **Add** (`Plus` icon, accessible name "Add a card") → `/add`. That is the Phase 1 primary entry point to adding; it stays in Phase 3 too (manual entry must always remain available — SPEC).
-Large-title behavior: on Dashboard/Collection/Sets the page H1 sits in the content (28 px) and the top bar shows the title only after the H1 scrolls under it (IntersectionObserver; fade `--ps-dur-fade-fast`).
+**Tab bar** (`<nav aria-label="Tabs">`):
+- `position: fixed` at the bottom, height `--ps-tabbar-total`, `padding-bottom: --ps-safe-bottom`.
+- Chrome background. A 1 px top hairline (`--ps-chrome-border`) on iOS and web; none on Android.
+- Five equal slots, each ≥ `--ps-tap-lg`. Each has an icon (`--ps-tab-icon` 24) and a label (`--ps-tab-label-size`, 600).
+- Active slot:
+  - iOS: icon and label in `--ps-chrome-accent-fg`.
+  - Android: a 56×32 `--ps-tab-indicator-bg` pill behind the icon, label in `--ps-fg`.
+  - Web: 32×4 accent bar above the icon.
+  - Every platform: `aria-current="page"`.
+- Inactive slots: `--ps-fg-muted`.
+- **Center slot "Scan"** (Phase 1 disabled):
+  - A 60 px circle (`--ps-scan-fab`) raised `--ps-scan-raise` above the bar, `--ps-surface-3` fill.
+  - Icon in `--ps-fg-disabled`; the micro label reads `Soon`.
+  - Element: `<button aria-disabled="true" aria-label="Scan, coming in a later update">`. It stays focusable, so VoiceOver users learn why it is disabled.
+  - Tapping it opens the Scanner-coming sheet (§11.6). It never requests the camera.
+  - Phase 3: accent fill and a camera icon.
+- Icons are `lucide-react` (MIT; listed in Licenses): `Home`, `LayoutGrid`, `ScanLine`, `Layers`, `Settings`.
+- **Hidden** while the keyboard is open (Android `adjustResize` would otherwise lift it above the keyboard) and on `_modal` routes.
 
-### 1.3 Desktop shell (≥ 1024 px)
+### 1.3 Wide shell (≥ 1024 px: web dev, PWA, iPad landscape)
 
 ```
 ≥1024 px
 ┌───────────────┬──────────────────────────────────────────────────────┐
-│ flashydex      │  Collection                     [search……]  [+ Add]  │
-│               ├──────────────────────────────────────────────────────┤
-│ [+ Add card]  │                                                      │
-│               │                                                      │
-│ ⌂ Dashboard   │                 content (max 1280, centered)         │
-│ ▦ Collection  │                                                      │
+│ FlashyDex     │  Collection                     [search……]  [+ Add]  │
+│ [+ Add card]  ├──────────────────────────────────────────────────────┤
+│ ⌂ Dashboard   │                                                      │
+│ ▦ Collection  │            content (max 1280, centred)               │
 │ ◉ Scan  Soon  │                                                      │
 │ ▤ Sets        │                                                      │
 │ ⚙ Settings    │                                                      │
-│               │                                                      │
 │ ───────────── │                                                      │
-│ Catalog: EN ✓ │                                                      │
-│ JA ✓ · 2h ago │                                                      │
+│ EN catalog ✓  │                                                      │
+│ JA · 42 %     │                                                      │
 └───────────────┴──────────────────────────────────────────────────────┘
 ```
 
-Sidebar 240 px, surface bg, sticky full height. Primary button "Add card" at the top. Nav rows 44 px, radius md, active row `accent-soft` bg + `accent-fg` text. Scan row disabled the same way as mobile (opens the same explanation as a dialog). Footer: catalog freshness per language ("EN synced 2 h ago", from latest completed sync) linking to `/settings/data`; while a sync runs it shows a 4 px progress bar and "Syncing 34 / 220 sets".
-Dialogs instead of bottom sheets at ≥ 1024 (centered, max-width 560, radius xl). The add-confirm and copy editor become a right-side panel (480 px) over a scrim.
+- Sidebar is `--ps-sidebar-w` 240, surface background, sticky at full height, with `padding-left: --ps-safe-left`.
+- It starts with an "Add card" primary button. Nav rows are 44 tall with radius md; the active row has `accent-soft` background and `accent-fg` text. Scan is disabled the same way as on mobile.
+- Footer: catalog status per language ("EN catalog ✓ v2026.10.30", "JA · 42 %") linking to `/settings/catalog`. While catalog work runs the sync pill moves here.
+- Dialogs replace bottom sheets (centred, max-width 560, radius xl). The add-confirm and copy editor become a right-side panel (480 px) over a scrim.
+- iPad portrait (768–1023) uses the mobile shell.
 
 ### 1.4 Global feedback
 
-- **Toasts**: bottom-center above the nav (mobile) / bottom-right (desktop), max 1 visible, 4 s (8 s if it has an action), `role="status"` live region. Example: "Added Furret · Darkness Ablaze" [Undo].
-- **Offline banner**: below the top bar, `warning-soft` bg, "You're offline. Showing saved pages — changes need a connection to your PC." Uses `navigator.onLine` + failed fetch. Mutating buttons become `aria-disabled` with the tooltip/explanation "Reconnect to make changes".
-- **Maintenance (restore running, API 503 MAINTENANCE)**: full-width info banner "Restoring a backup — the app will be back in a moment." Polls `/api/health` every 2 s and reloads when healthy.
-- **Sync running** (any screen): the Settings tab icon shows a 6 px info dot; nothing else interrupts.
+- **Toasts**:
+  - Placement: bottom-centre at `--ps-toast-bottom` (above the tab bar, sync pill and keyboard); bottom-right on wide screens.
+  - At most one visible. 4 s, or 8 s if it has an action. `role="status"`.
+  - Example: "Added Furret · Darkness Ablaze" [Undo].
+  - Swipe down to dismiss.
+- **Offline**: there is **no** permanent offline banner, because the app works offline. Network-bound features show an `Offline` chip and explain themselves in place (§16).
+- **Blocking overlay** (`--ps-z-blocking`), used only for restore and erase:
+  - full-screen surface;
+  - spinner and "Restoring your backup… Keep FlashyDex open.";
+  - cannot be dismissed;
+  - Android back is swallowed.
+- **Background work** (catalog download, price update): the sync pill (§1.6). Nothing else interrupts.
+- **Startup failure** (DB can't open or a migration fails): a full-screen error (§12) instead of the app. It is never an empty app.
+
+### 1.5 Native navigation model (back gestures, tab stacks)
+
+- **History is the source of truth.** TanStack Router uses browser history (`createBrowserHistory`); on native it runs inside the Capacitor WebView origin. There is no browser chrome, so the app provides every back affordance itself.
+- **iOS edge-swipe back.**
+  - Enable WKWebView's native `allowsBackForwardNavigationGestures` (request to Terra: a tiny `CAPBridgeViewController` subclass). This gives the real interactive swipe with the previous page's snapshot underneath.
+  - JS view transitions are skipped for these pops (DESIGN-TOKENS §7.2).
+  - No horizontal-swipe UI may start within 24 px of the left edge.
+- **Android back** (`@capacitor/app` `backButton`), in this precedence order:
+  1. Close the topmost sheet or dialog. If it has unsaved changes, show the "Discard changes?" dialog instead.
+  2. Close the keyboard.
+  3. `router.history.back()` if the in-tab depth > 0.
+  4. On a non-Home tab root, go to Home.
+  5. On Home root, `App.minimizeApp()`.
+- **Tab stacks.** Each tab is a stack; history never crosses tabs.
+  - Switching tabs first collapses the current tab's pushed entries (`history.go(-depth)`, where the shell tracks depth), then `replace`s to the target tab root. Back and the edge swipe therefore never jump into another tab, onboarding or a finished modal.
+  - Re-tapping the active tab pops to its root if depth > 0; at the root it scrolls to top (smooth, or instant under reduced motion).
+  - Each tab root restores its scroll position and its loaded list (Query cache keyed by search params).
+  - Remembering a deep per-tab stack across tab switches is Phase 7 polish.
+- **Sheets are history entries** (`sheet=` or `card=`/`copy=` search params), so the edge swipe and Android back close them.
+  - Sheets that aren't deep-linkable push with `state` only.
+  - Closing with the ✕/Cancel button calls `history.back()`, never a push.
+- **Modals** (`_modal/*`) are pushed entries.
+  - Closing pops back to where they were opened.
+  - On cold start straight into a modal (deep link), close goes to `/`.
+  - Finishing onboarding `replace`s to `/`, so back can never return into `/welcome`.
+- **Status-bar tap** scrolls to top for free, because the document is the scroll container (no inner scrolling page div).
+
+### 1.6 Sync pill (catalog work indicator)
+
+A compact pill shown while catalog work runs: pack download/install, price update or set fill-in. Placement:
+- Centred, `--ps-syncpill-h` tall, floating `8 px` above the tab bar (`bottom: calc(var(--ps-tabbar-total) + 8px)`), `--ps-z-syncpill`.
+- `<html>` gets `.has-sync-pill`, so pages and toasts clear it.
+- On wide screens it lives in the sidebar footer instead.
+
+```
+ ( ◔  Downloading English · 42 %   )      surface-3 pill, radius full, shadow-2
+ ( ◔  Installing English…          )      ring = determinate progress (accent), spinner if indeterminate
+ ( ⏸  Download paused · Resume     )      tap → resume (no navigation)
+ ( ☁̸  Waiting for connection       )      warning text, Offline glyph
+ ( ✓  English catalog ready        )      positive, auto-hides after 3 s
+ ( !  Download failed · Details    )      negative, tap → /settings/catalog
+```
+
+- **Tap** opens `/settings/catalog`. The Resume and Retry states act in place.
+- **Content:** one line, ellipsis. The progress ring is 16 px; under reduced motion it is a static ring at its value. The percentage uses `tabular-nums`.
+- **VoiceOver:**
+  - A button labelled with the full state, e.g. "Catalog download, English, 42 percent. Opens catalog settings."
+  - It is not a live region. One polite announcement each at start, completion ("English catalog ready") and failure.
+- **Hidden** on `_modal` routes (Add shows its own inline banner, §7.1) and on `/settings/catalog`, where the full progress card is visible.
+- Also mirrored on the Dashboard as a full progress card while no catalog is ready (§3.3).
 
 ## 2. Shared components (build once, reuse)
 
 | Component | Spec |
 |---|---|
-| `CardArt` | props `{imageUrl, size: 'low'\|'high', alt, rarityTier, name, setName, localId}`; fixed 63:88 frame; skeleton bg until `onLoad`, then 200 ms opacity fade; `loading="lazy" decoding="async"`, `fetchpriority="high"` only for Card Details hero; on error or null url → placeholder (DESIGN-TOKENS §8.7). |
+| `CardArt` | props `{imageUrl, size:'low'\|'high', alt, rarityTier, name, setName, localId}`; fixed 63:88 frame; skeleton until `onLoad`, then a 200 ms fade; `loading="lazy" decoding="async"`, `fetchpriority="high"` only on the Card Details hero. `imageUrl` null → "No catalog image". `onError` → "Image not loaded" (DESIGN-TOKENS §8.7), with one retry when the network comes back. `draggable=false`, no iOS callout. |
 | `CardTile` | §2.1 |
 | `CardRow` | §2.2 |
 | `ConditionBadge`, `GradeBadge`, `VariantChip`, `QtyBadge`, `RarityLabel`, `LangBadge`, `Price` | DESIGN-TOKENS §8; `Price` takes `{cents: number\|null, currency}` and returns `null` for null cents. |
-| `StatTile` | label (caption, muted), value (h2, tabular), optional sub-line (caption). radius lg, surface bg, padding 16. |
-| `BottomSheet` / `Dialog` | Radix-free custom or `vaul`-style; role dialog, `aria-modal`, focus trap, Esc/scrim/drag-down closes (drag only when no unsaved edits; otherwise confirm "Discard changes?"). Snap points: content height up to 92 dvh. Top handle 36×4. Sheet enters with `--ps-dur-move-slow` + decelerate. |
-| `SegmentedControl` | track surface-3, thumb surface (dark) / white (light) with shadow-1, 40 px tall (44 px hit area). |
-| `ChipGroup` | single/multi select chips, 36 px tall visual, 44 px hit area via padding; selected = accent fill + on-accent text + check glyph. |
-| `Stepper` | − [ 1 ] + ; buttons 44×44; field is `inputmode="numeric"` 16 px; range 1–100 (DATA-MODEL bulk max 100). |
-| `Skeleton` | surface-colored blocks with `animate-shimmer` gradient (`skeleton` → `skeleton-hi` → `skeleton`), static under reduced motion. |
-| `EmptyState` | 64 px muted icon, H3 title, body text (muted, max 34ch), one primary button, optional secondary text button. |
-| `ErrorState` | same layout, `negative` icon, message from API `error.message` mapped to friendly copy (§12), Retry button, small "Details" disclosure with `error.code`. |
+| `StatTile` | label (caption, muted), value (h2, tabular), optional sub-line (caption). Radius lg, surface bg, padding 16. |
+| `BottomSheet` | §2.3 |
+| `Dialog` | centred alert-style (≤ 1024: 320 wide, radius xl). Title, body, up to 2 buttons stacked at large text. Destructive button in `--ps-danger-solid`. Used for confirmations instead of a sheet. |
+| `SegmentedControl` | track surface-3, thumb surface/white with shadow-1, 36 visual / 44 hit. `haptic('select')` on change (iOS). |
+| `ChipGroup` | single/multi-select chips, 36 visual / 44 hit via padding; selected = accent fill + on-accent text + check glyph; `flex-wrap`. |
+| `Stepper` | − [ 1 ] + ; 44×44 buttons; `inputmode="numeric"` field (16 px); range 1–100 (BulkAdd max); `haptic('select')` per step (iOS). |
+| `Switch` | `role="switch"`, 51×31 visual (iOS look) on all platforms, 44 hit; on = accent. |
+| `NativeSelect` | a real `<select>` styled as a row (label left, value + chevron right): iOS shows its native menu/wheel, Android its native dialog. Used for Location, Group, Currency and Set scope. No custom dropdowns. |
+| `DateField` | `<input type="date">` (native picker) + a "Today" chip; empty = unknown. |
+| `Skeleton` | surface blocks with `animate-shimmer`; static under reduced motion. |
+| `EmptyState` | 64 px muted icon, H3 title, body (muted, max 34ch), one primary button, optional text button. |
+| `ErrorState` | same layout, `negative` icon, friendly message (§12), Try again, a "Details" disclosure with the `DomainError.code`. |
 | `FilterSheet` | §4.4 |
-| `SearchField` | 44 px, surface-2, radius md, leading search icon, trailing clear (×) button when non-empty, `type="search" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false"`. Debounce 200 ms. |
+| `SearchField` | 44 px, surface-2, radius md, leading search icon, trailing clear (×, 44 hit) when non-empty, `type="search" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false"`. 16 px text (no iOS zoom). Debounce 150 ms (local search). |
+| `PullToRefresh` | §2.4 |
+| `OfflineChip` | `warning-soft` pill with a `CloudOff` glyph and the text "Offline". It appears only where the network matters (§16). |
+| `SyncPill` | §1.6 |
+| `ProgressCard` | catalog work card: title, determinate bar (4 px, accent) or striped indeterminate, primary line ("8.4 of 14.2 MB" / "34 of 220 sets"), secondary line (stage), actions (Pause/Resume/Cancel/Retry). `role="progressbar"` with `aria-valuenow`/`aria-valuetext`. |
 
 ### 2.1 Card tile (grid)
 
 ```
- ┌───────────────┐   tile width 114 px at 390 (3 cols)
- │×3        Rev  │   ← QtyBadge (only when groupCount>1) · VariantChip (not for normal)
+ ┌───────────────┐   tile 114 px wide at 390 (3 cols); 2 cols at Accessibility text sizes
+ │×3        Rev  │   ← QtyBadge (only when qty>1) · VariantChip (not for normal)
  │               │
  │   card art    │   63:88, rounded-card, shadow-card
  │   (low.webp)  │
  │               │
- │NM             │   ← ConditionBadge or GradeBadge (bottom-left, 6 px inset)
+ │NM+            │   ← ConditionBadge or GradeBadge (bottom-left, 6 px inset)
  └───────────────┘
  Furret              ← caption 13/600, 1 line, ellipsis
  136/189 · DAA   $—  ← micro/caption muted; price right-aligned, tabular; omitted when null
 ```
 
-- In the Collection grid one tile = one **group** (`(identity, variant, variantDetail)`, DATA-MODEL "unique card"). Badge rules for a group: Qty = group count; condition badge = the condition shared by all copies, else the best condition followed by `+` (e.g. `NM+` means "NM and others"; aria "Mixed conditions, best Near Mint"); if any copy is graded and all are graded show the highest grade; mixed raw/graded shows the condition badge plus a 6 px dark dot ("includes graded copies").
-- Meta line: `localId/officialCount` (or `#localId`) · set abbreviation when the catalog has `abbreviation.official` (e.g. `DAA`), else the set name truncated.
-- Price: group value per copy = latest raw valuation for the variant in the display currency (Settings default USD/TCGplayer). Hidden when null. Shown as the per-copy price, not the group total (the group total is on Card Details).
-- Press: scale 0.97 + darken; tap → `/cards/[language]/[cardId]` (or `/custom-cards/[id]`) with `?variant=` to preselect the variant section.
-- Long-press (500 ms) / right-click: context menu (Add another copy, Move to location…, View set). Optional in Phase 1; if built it must also be reachable from Card Details (no long-press-only actions).
-- Accessible name (one string on the link): "Furret, Darkness Ablaze 136 of 189, Reverse holo, 3 copies, Near Mint, $X".
+- **One tile = one group** in the Collection grid. This is the owner ruling and is binding (API.md `groupBy:'card'`): one row per (language, cardId, variant), with source catalog or custom. `variantDetail` sub-prints (e.g. pokéball/masterball foil) do **not** split tiles; they appear as rows in Card Details.
+- **Badge rules for a group** (`CollectionCardGroup`):
+  - Qty = `qty` (the copies matching the filters). When filters hide some copies, `totalQty` shows in the accessible name: "3 of 5 copies match".
+  - Condition: if one condition covers all `conditions`, show it. Otherwise show the best condition followed by `+` (`NM+`; aria "Mixed conditions, best Near Mint").
+  - Graded: if `grading.graded = qty`, show the representative's grade. If the group is mixed raw/graded, show the condition badge plus a 6 px dark dot ("includes graded copies").
+- **Meta line:** `localId/officialCount` (or `#localId`), then a set abbreviation if the catalog has one, else the set name truncated. Set-code search itself is request R4, not in Phase 1.
+- **Price:** the per-copy value in the display currency (`defaultCurrency`), from the representative's `valuations`. It is hidden when null. The group total appears on Card Details.
+- **Interaction:**
+  - Press: darken + scale `--ps-press-scale`.
+  - Tap → `/cards/$language/$cardId?variant=<v>` (or `/custom-cards/$id`).
+  - **Long-press** (500 ms) → `haptic('longpress')` and a context menu sheet: Add another copy · Move to location… · View set. Every action is also reachable from Card Details; nothing is long-press-only.
+- **Accessible name** (one string on the link): "Furret, Darkness Ablaze 136 of 189, Reverse holo, 3 copies, Near Mint, $X".
 
 ### 2.2 Compact row (list view, search results)
 
 ```
 ┌────────────────────────────────────────────────┐
-│ ┌──┐ Furret                       ×3     $—   │  row 64 px; thumb 40×56 (63:88)
+│ ┌──┐ Furret                       ×3     $—   │  row 64 px min (grows with text); thumb 40×56
 │ │  │ Darkness Ablaze · 136/189 · Rev  NM  EN  │
 │ └──┘                                          │
 └────────────────────────────────────────────────┘
 ```
-Line 1: name (body 16/500, ellipsis) — right: qty `×3` (only >1), price (small, tabular). Line 2 (caption muted): set name · number · variant short label — right: condition/grade badge, lang badge (rule 0.7). Divider 1 px `border` inset 64 px.
+- Line 1: name (body 16/500, ellipsis); on the right, qty `×3` (only when > 1) and the price (small, tabular).
+- Line 2 (caption, muted): set name · number · variant short label; on the right, the condition/grade badge and the lang badge (rule 0.7).
+- Divider: 1 px `border`, inset 64 px.
+- At the `ax` text bucket the right-hand items move under line 2.
+
+### 2.3 Bottom sheet (mobile) — native behaviour
+
+```
+┌──────────────────────────────────────┐
+│               ▬▬▬                    │  drag handle --ps-sheet-handle-w/h, 6 px from top
+│ Cancel        Filters          Reset │  sheet header 44 px: leading Cancel/Close, title, trailing action
+├──────────────────────────────────────┤
+│ … content (scrolls inside sheet,     │  overscroll-behavior: contain
+│   keyboard-aware) …                  │
+├──────────────────────────────────────┤
+│ [          Show 37 cards          ]  │  sticky footer; padding-bottom --ps-sheet-pad-bottom
+└──────────────────────────────────────┘
+```
+
+- **Detents.** `medium` is about 55 % of the viewport. `large` is `--ps-sheet-max-h`, leaving a sliver of the page and status bar visible, like iOS. Content-sized sheets (menus, short forms) use one detent fitted to their content, capped at large.
+  - Focusing an input moves the sheet to large.
+- **Drag.** The handle and the whole header are the drag area (≥ 44 tall).
+  - Dragging down past `--ps-sheet-dismiss-distance`, or with velocity > 0.5 px/ms, dismisses the sheet. `haptic('threshold')` fires once when the drag crosses the distance.
+  - Content scroll hands off to sheet drag only when the content is scrolled to top.
+  - Settle uses `--ps-ease-sheet`.
+- **Unsaved changes** (add confirm, copy editor, forms): drag, scrim tap and Android back don't dismiss. The sheet springs back and the "Discard changes?" dialog appears ([Keep editing] [Discard]). This mirrors iOS `isModalInPresentation`.
+- **Scrim** `--ps-overlay`; tapping it dismisses under the same rule.
+- **iOS** scales the page behind to 0.94 with radius 10 (not under reduced motion). **Android** has no page scale and uses a 28 radius.
+- **Safe area and keyboard.** The footer pads by `--ps-sheet-pad-bottom` (home indicator or keyboard, whichever is larger). The focused field scrolls into view (`scrollIntoView({block:'center'})`) after `keyboardDidShow`.
+- **Accessibility.**
+  - `role="dialog" aria-modal="true" aria-labelledby=<title>`; the handle is `aria-hidden`.
+  - On open, focus moves to the title. On close it returns to the invoker.
+  - There is **always a visible Cancel/Close button**: VoiceOver's escape gesture and Switch Control can't drag.
+  - Everything behind the sheet is `inert`.
+- **Wide screens** use a centred dialog or a side panel instead.
+
+### 2.4 Pull-to-refresh (only where there is something to fetch)
+
+Where it is used, and what it fetches:
+- Dashboard: update prices of owned cards.
+- Card Details: refresh this card.
+- Sets list: check for new sets / a catalog update.
+- Set detail: refresh this set.
+
+It is **not used** on Collection, Add or Settings, which read local data only and have nothing to refresh. A pull that does nothing teaches the user nothing.
+
+Behaviour:
+- Pull on the document at `scrollY = 0`. Rubber-band up to `--ps-pull-max`; past `--ps-pull-threshold`, `haptic('threshold')` fires and the spinner arms. Release → refresh.
+- iOS: spinner under the large title. Android: 40 px circle on surface-3.
+- While refreshing: spinner. Then 240 ms settle and a toast with the result ("Prices updated for 128 cards" / "Already up to date").
+- **Offline:** the spinner springs back immediately and a toast says "You're offline. Prices update when you're connected." No haptic.
+- If a long job starts (e.g. a price update for many cards), the pull ends at once and the job continues in the sync pill.
+- Reduced motion: no stretch, just the spinner.
+- **Accessibility:** every pull action has a visible button equivalent (the "Update prices" link on the Dashboard, "Refresh card" in Card Details `⋯`, "Check for updates" in Settings → Catalog).
 
 ## 3. Dashboard (`/`)
 
-Data: dashboard endpoint (DATA-MODEL "Definitions": totalCards, uniqueCards, duplicates, per-currency `{estimatedValueCents, valuedCopies, unvaluedCopies, totalPaidCents, knownCostCopies, comparableCopies, comparableCostCents, comparableValueCents, gainLossCents}`, recent copies ×10).
+Data: `PortfolioService.dashboard({currency})` → `DashboardDto`:
+- `totalCards`, `totalCopies`, `uniqueCards`, `duplicates`, `displayCurrency`, `pricedCopies`;
+- `currencies[USD, EUR]` → `CurrencyStats`;
+- `recent` (10).
+
+Catalog/download state comes from the catalog pack service (§10.2) and `SyncService`.
 
 ### 3.1 Layout 390 px
 
 ```
 ┌──────────────────────────────────────┐
-│ flashydex                        [+]  │
+│ (status bar)                     [+] │
+│ Dashboard                            │  large title (visually: value block leads)
 ├──────────────────────────────────────┤
 │ Estimated value                      │  caption muted
-│ $1,234.56                            │  display 32/700 tabular   (USD bucket)
-│ ▲ +$210.40 on 128 cards with a       │  small; positive/negative color + sign
-│   known cost · TCGplayer market      │
-│ €87.20 from Cardmarket prices        │  small muted — only if EUR bucket non-null
-│ 37 cards have no price data  ›       │  caption subtle link → /collection?priced=none*
+│ $1,234.56                            │  display, tabular (displayCurrency bucket)
+│ ▲ +$210.40 on 128 cards with a       │  small; positive/negative + sign
+│   known cost                         │
+│ 380 of 412 copies priced ›           │  caption → /collection?priced=none (unpriced)
+│ €87.20 from Cardmarket prices        │  small muted — other bucket, only if non-null
+│ TCGplayer prices as of 30 Oct · Update│ caption subtle; "Update" = text button (pull equivalent)
 ├──────────────────────────────────────┤
-│ ┌───────────────┐ ┌───────────────┐  │  2×2 StatTile grid, gap 8
+│ ┌───────────────┐ ┌───────────────┐  │  2×2 StatTile grid, gap 8 (1 col at ax)
 │ │ Total cards   │ │ Unique cards  │  │
 │ │ 412           │ │ 301           │  │
 │ └───────────────┘ └───────────────┘  │
 │ ┌───────────────┐ ┌───────────────┐  │
-│ │ Duplicates    │ │ Total paid    │  │
-│ │ 111      ›    │ │ $980.00       │  │
+│ │ Duplicates ›  │ │ Total paid    │  │
+│ │ 111           │ │ $980.00       │  │
 │ │               │ │ 128 of 412    │  │  "known cost on 128 of 412 cards"
 │ └───────────────┘ └───────────────┘  │
 ├──────────────────────────────────────┤
@@ -183,222 +418,299 @@ Data: dashboard endpoint (DATA-MODEL "Definitions": totalCards, uniqueCards, dup
 │ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌──      │  horizontal scroller, tiles 104 px,
 │ │art │ │art │ │art │ │art │ │        │  scroll-snap, 16 px edge padding,
 │ └────┘ └────┘ └────┘ └────┘ └──      │  shows 3.5 tiles to signal scroll
-│ Furret  …                             │
 └──────────────────────────────────────┘
 ```
-(*a "no price data" collection filter is request R7 to Sol; until it exists the line is plain text, not a link. The count is `unvaluedCopies` of the display currency.)
 
-- Value block is the hero. Currency buckets are **never summed**. The primary currency is the user's display preference (Settings → Price source, default USD); the other bucket shows as a secondary line only when non-null. Each money figure carries its source in words.
-- Gain/loss line only when `gainLossCents` is non-null; wording always states the subset: "on N cards with a known cost". When null: "Add what you paid to see gain/loss" (link to Collection sorted by recent).
-- Duplicates tile links to `/collection?dupes=1`. Total cards → `/collection`. Unique → `/collection?view=grid`.
-- Total paid shows each currency that has a non-null total, stacked (`$980.00` / `€40.00`), plus coverage "known cost on 128 of 412 cards".
+- **Value block (the hero).**
+  - Currency buckets are **never summed or converted**.
+  - The primary bucket is `displayCurrency` (Settings → Currency, default USD). The other bucket appears as a secondary line only when its value is non-null.
+  - Each money figure names its source in words (TCGplayer / Cardmarket).
+- **Coverage line:** "`pricedCopies` of `totalCopies` copies priced" (API.md wording). It links to `/collection?priced=none` (R7, accepted).
+- **Price date:** "TCGplayer prices as of 30 Oct" comes from the newest `sourceUpdatedAt` among the owned cards' snapshots. When the date is older than 14 days it renders in `warning`: "Prices are 3 weeks old · Update".
+- **Gain/loss** appears only when `gainLossCents` is non-null, and always states the subset: "on N cards with a known cost". When null: "Add what you paid to see gain/loss" (link to Collection sorted by recent).
+- **Stat tiles:**
+  - Duplicates → `/collection?dupes=1`.
+  - Total → `/collection`.
+  - Total paid shows each non-null currency stacked, plus coverage.
+- **Pull-to-refresh / "Update"** runs a price update for owned cards (§10.2, request S2). It needs the network (§16).
 
 ### 3.2 Layout ≥ 1024 px
-
-```
-┌ sidebar ┬──────────────────────────────────────────────────────────────┐
-│         │ Dashboard                                          [+ Add]   │
-│         │ ┌──────────────────────────────┐ ┌────────┐┌────────┐        │
-│         │ │ Estimated value  $1,234.56   │ │ Total  ││ Unique │        │
-│         │ │ ▲ +$210.40 on 128 cards…     │ │ 412    ││ 301    │        │
-│         │ │ €87.20 from Cardmarket       │ ├────────┤├────────┤        │
-│         │ │ 37 cards have no price data  │ │ Dupes  ││ Paid   │        │
-│         │ └──────────────────────────────┘ └────────┘└────────┘        │
-│         │ Recently added                                    See all ›  │
-│         │ [tile][tile][tile][tile][tile][tile][tile][tile][tile][tile] │  grid, 10 max
-└─────────┴──────────────────────────────────────────────────────────────┘
-```
-Value panel spans 6/12 columns, stat tiles 2×2 in the other 6.
+The value panel spans 6/12 columns and the stat tiles 2×2 in the other 6. Recently added becomes a 10-tile grid.
 
 ### 3.3 States
-- Loading: skeleton for value (180×38 block + two 240×16 lines), 4 stat tiles with 60×28 value blocks, 4 tile skeletons in the scroller.
-- **Empty, no catalog** (no completed sync for any language): hero replaced by EmptyState — icon `DatabaseZap`; title "Download the card catalog"; body "flashydex needs the TCGdex card list (English and Japanese) before you can search and add cards. It runs on your PC and you can leave this page while it works."; button "Go to Data & sync" → `/settings/data`.
-- **Empty, catalog ready, no cards**: stats render real zeros (Total 0, Unique 0, Duplicates 0); value line reads "No cards yet" (not $0.00); Recently added → EmptyState: "Your collection is empty" / "Search the catalog to add your first card." / button "Add a card" → `/add`.
-- Error: ErrorState in place of the whole page body: "Couldn't load your dashboard" / "The server on your PC didn't answer. Check that flashydex is still running." / Retry.
-- Offline: banner + last server-rendered HTML if the SW cached it; otherwise ErrorState with "You're offline".
+- **Loading:** skeleton for the value block (180×38 + two 240×16 lines), 4 stat tiles, 4 scroller tiles.
+- **No catalog yet, download running** (first run): a `ProgressCard` sits at the top:
+  - Title "Downloading the English card catalog". Line "8.4 of 14.2 MB · about 1 min left". [Pause] or [Cancel].
+  - Body: "You can add custom cards or import a collection while you wait."
+  - Stats render real zeros; Recently added shows its empty state.
+- **No catalog, nothing running** (onboarding skipped, offline, or the catalog was removed): `EmptyState`.
+  - Icon `DatabaseZap`. Title "Download the card catalog".
+  - Body: "FlashyDex needs the card list before you can search. It downloads once (about 14 MB for English) and then works offline."
+  - Button "Choose languages" → `/settings/catalog`. Text button "Import a collection" → `/settings/data`.
+  - When offline, the body adds: "Connect to the internet to download it."
+- **Catalog ready, no cards:**
+  - Stats render real zeros.
+  - The value line reads "No cards yet" (not $0.00).
+  - Recently added → EmptyState "Your collection is empty" / "Search the catalog to add your first card." / "Add a card" → `/add`.
+- **Error** (local read failed, rare): ErrorState "Couldn't load your dashboard" / "Something went wrong reading your collection. Your data hasn't changed." / Try again.
 
 ### 3.4 Accessibility
-H1 "Dashboard" visually hidden on mobile (the value block is the visual heading) but present for SR. Gain/loss text includes the word "gain"/"loss" for SR ("Gain of $210.40 on 128 cards with a known cost"). Scroller is a `<ul>` with `aria-label="Recently added"`; each tile is a link.
+- The H1 "Dashboard" is the large title.
+- Gain/loss text includes the words "gain"/"loss" for screen readers ("Gain of $210.40 on 128 cards with a known cost").
+- The scroller is a `<ul aria-label="Recently added">`; each tile is a link.
+- The "Update" text button is labelled "Update prices".
 
 ## 4. Collection (`/collection`)
 
-Data: owned-cards list endpoint (`GET /api/owned-cards`, offset paging, limit ≤ 50) with filters `q, setId, language, rarity, condition (NM…DMG|unknown), grading (raw|graded), duplicates, storageLocationId (id|none), groupId, variant`, sort `created_desc | name_asc | set_asc`. UI does infinite scroll (next offset when a sentinel 600 px before the end is visible; "Load more" button fallback for keyboard/SR; reset to offset 0 after any mutation or filter change, per API.md).
+Data: `CollectionRepo.list({groupBy:'card', …filters, sort, offset, limit:50})` → `Page<CollectionCardGroup>`. This is all local, so filtering is instant.
 
-**Grouping (request R1 to Sol):** API.md lists copies (one `OwnedDto` per physical copy, each with `duplicateCount`). The grid is designed to show one tile per **group** (identity + variant + variantDetail) with a qty badge. This needs a grouped list (e.g. `GET /api/owned-cards?view=groups` returning `{identity, variant, variantDetail, count, conditions[], grades[], representative OwnedDto}` with the same filters/paging). **Fallback if R1 is declined:** the grid shows one tile per copy and the qty badge shows `duplicateCount` (so three Furrets appear as three tiles each badged ×3) — acceptable but noticeably worse; build the tile so it accepts either shape.
+Search params map to typed input in the route's `validateSearch`:
+- `lang`→`language`
+- `cond`→`condition` (`?`→`unknown`)
+- `graded`→`grading`
+- `dupes`→`duplicates`
+- `loc`→`storageLocationId` (`none`)
+- `set`→`setId`
+- `num`→`localId`
+- `priced`
+- `group`→`groupId`
+- `variant`
+- `hideTcgPocket` from Settings
+
+Infinite scroll:
+- The next page loads when a sentinel 600 px before the end becomes visible. A "Load more" button is the fallback for keyboard and VoiceOver.
+- Reset to offset 0 after any filter change or mutation (API.md).
 
 ### 4.1 Layout 390 px
 
 ```
 ┌──────────────────────────────────────┐
-│ Collection                      [+]  │
+│                                 [+]  │
+│ Collection                           │  large title
+│ [⌕ Search by name or number     ×]   │  SearchField, sticky under the top bar (top: --ps-topbar-total)
+│ [Filters •3] [Sort: Recent ▾] [▦|☰]  │  44 px row; fits at 390
+│ ( Darkness Ablaze ×)( NM ×)( Dupes ×)│  active-filter chips, horizontal scroller
 ├──────────────────────────────────────┤
-│ [⌕ Search your cards…          ×]    │  SearchField, sticky under top bar
-│ [Filters •3] [Sort: Recent ▾] [▦|☰]  │  44 px row; horizontally fits at 390
-│ ( Darkness Ablaze ×)( NM ×)( Dupes ×)│  active-filter chips, scrolls horizontally
-├──────────────────────────────────────┤
-│ 412 cards · 301 unique               │  caption muted, live-updates (aria-live polite)
+│ 412 cards · 301 unique               │  caption muted, aria-live polite
 │ ┌────┐ ┌────┐ ┌────┐                 │
-│ │    │ │    │ │    │                 │  3-col grid of CardTile
+│ │    │ │    │ │    │                 │  3-col grid of CardTile (2 at ax)
 │ └────┘ └────┘ └────┘                 │
-│ Furret  …      …                     │
-│ ┌────┐ ┌────┐ ┌────┐                 │
 └──────────────────────────────────────┘
 ```
-- Search (`q`) matches the card name (API: name contains, normalized). Placeholder: "Search by name". Collector-number search inside the collection (`136`, `136/189`) is **request R2** (add `localId` to OwnedListQuery); when it lands, a query that is only a number goes to `localId` instead of `q` and the placeholder becomes "Search by name or number". Searching keeps filters.
-- Sort options (API): Recently added (`created_desc`, default), Name A–Z (`name_asc`), Set & number (`set_asc`). Value high→low / low→high and Quantity are **request R3**; do not show them until the API supports them.
-- View toggle: segmented `Grid`/`List` icons with accessible names; persisted in the URL and in `localStorage["ps-collection-view"]`.
+- **Search:**
+  - Text goes to `q` (normalized name contains).
+  - A query that is only a collector number (`136`, `136/189`, `SV-P 001`-style letters and digits without spaces after trimming) goes to `localId` instead (R2, accepted). The `/189` part narrows client-side to sets whose official count is 189.
+  - Searching keeps the filters.
+- **Sort** (sheet with radio rows):
+  - Recently added (`created_desc`, default)
+  - Name A–Z (`name_asc`)
+  - Set & number (`set_asc`)
+  - Value high→low (`value_desc`)
+  - Value low→high (`value_asc`)
+  - Most copies (`count_desc`)
+
+  Value sorts put unpriced groups last in both directions, and say so in a caption under the sort row ("Cards without a price are listed last").
+- **View toggle:** a segmented control with Grid/List icons and accessible names. The choice persists in the URL and in a device preference.
 
 ### 4.2 Layout ≥ 1024 px
-Filters become a left rail (260 px) inside the content area — always visible, same controls as the sheet, applied instantly. Grid uses `--ps-tile-min` 160 px (≈6 columns at 1440). List view becomes a table: Art · Name · Set · No. · Variant · Condition/Grade · Qty · Location · Paid · Value. Column headers sortable (`aria-sort`).
+- Filters become an always-visible left rail (260 px) inside the content, with the same controls as the sheet, applied instantly.
+- The grid uses `--ps-tile-min` 160.
+- List view becomes a table: Art · Name · Set · No. · Variant · Condition/Grade · Qty · Location · Paid · Value. Column headers are sortable (`aria-sort`) where the API supports the sort.
 
 ### 4.3 States
-- Loading: 12 tile skeletons (3×4) / 10 row skeletons; count line skeleton 120×14.
-- **Empty collection**: EmptyState "No cards yet" / "Add cards by searching the catalog. They'll show up here with quantities, conditions and value." / "Add a card".
-- **No results for filters/search**: "No cards match" / "Nothing in your collection matches “furet” with 3 filters." / button "Clear filters" (+ text button "Search the whole catalog" → `/add?q=furet`).
-- Error / offline: as global.
-- Partial page error during infinite scroll: inline row "Couldn't load more cards. [Retry]" — already-shown tiles stay.
+- **Loading** (rare, local): 12 tile skeletons or 10 row skeletons, after 150 ms only.
+- **Empty collection:** EmptyState "No cards yet" / "Add cards by searching the catalog. They'll show up here with quantities, conditions and value." / "Add a card".
+  - If no catalog is installed, add the text button "Import a collection".
+- **No results:** "No cards match" / "Nothing in your collection matches “furet” with 3 filters." / "Clear filters", plus the text button "Search the whole catalog" → `/add?q=furet`.
+- **Error:** ErrorState (§12). A failure while loading the next page shows the inline row "Couldn't load more cards. [Try again]"; tiles already shown stay.
+- **Offline:** fully functional. Tiles whose art isn't in the WebView cache show the "Image not loaded" placeholder.
 
-### 4.4 Filter sheet (mobile) / filter rail (desktop)
+### 4.4 Filter sheet (mobile) / filter rail (wide)
 
 ```
 ┌──────────────────────────────────────┐
-│ ─────                                │
-│ Filters                     Reset    │
+│               ▬▬▬                    │
+│ Cancel        Filters          Reset │
 ├──────────────────────────────────────┤
 │ Language     (All)(EN)(JA)           │  single-select chips
-│ Set          [Any set            ›]  │  opens searchable set picker (sets with owned cards first)
-│ Rarity       [Any rarity         ›]  │  single-select list of rarity strings present in the collection
-│ Condition    (Any)(NM)(LP)(MP)(HP)(DMG)(?)  single-select (API `condition`; ? = `unknown`)
-│ Variant      [Any variant        ›]  │  single-select enum
-│ Raw/graded   (All)(Raw)(Graded)      │  API `grading`
-│ Duplicates   [ ] Only cards I have   │  switch, 44 px row
-│               more than one of        │
-│ Location     [Any location       ›]  │  incl. "No location"
-│ Group        [Any group          ›]  │  only if groups exist
+│ Set          [Any set            ›]  │  pushes a searchable set list (sets you own first)
+│ Rarity       [Any rarity         ›]  │  rarity strings present in the collection
+│ Condition    (Any)(NM)(LP)(MP)(HP)(DMG)(?)   single-select; ? = unknown
+│ Variant      [Any variant        ▾]  │  NativeSelect, enum labels
+│ Raw/graded   (All)(Raw)(Graded)      │
+│ Price        (Any)(Has price)(No price)   priced=some|none in display currency (R7)
+│ Duplicates   Only cards I have       [  ○]   Switch
+│              more than one of        │
+│ Location     [Any location       ▾]  │  NativeSelect incl. "No location"
+│ Group        [Any group          ▾]  │  only if groups exist
 ├──────────────────────────────────────┤
-│ [        Show 37 cards         ]     │  primary, live count (debounced 250 ms)
+│ [        Show 37 cards         ]     │  primary; live count (limit=1 query, debounced 150 ms)
 └──────────────────────────────────────┘
 ```
-- Mobile: changes are staged and applied on "Show N cards" (N = `page.total` from a `limit=1` request with the staged filters, debounced 250 ms). Desktop rail applies instantly.
-- Filter button shows a count dot of active filters ("Filters, 3 active").
-- Duplicates filter semantic: groups with count > 1, grouped across the whole collection before other filters (DATA-MODEL).
+- **Mobile:** changes are staged and applied with "Show N cards". Cancel (or the edge swipe / Android back) discards staged changes without a confirm, because they are only view state.
+- **Wide:** the rail applies changes instantly.
+- **Filter button:** shows a count dot ("Filters, 3 active").
+- **Duplicates semantics:** precise duplicates are computed across the whole collection first (API.md).
+- **"No price" semantics:** a copy with only an EUR price counts as "No price" when the display currency is USD. A caption under the chips says so: "Prices in USD (TCGplayer). Change in Settings."
+- **TCG Pocket:** not a filter here. It follows Settings → "Show TCG Pocket cards"; owned Pocket copies are hidden when the setting is off. When anything is hidden this way, a caption under the count line reads "2 TCG Pocket cards hidden · Show".
 
 ### 4.5 Interactions
-- Pull-to-refresh: not custom-built (browser default is fine).
-- Scroll position and loaded pages are restored when returning from Card Details (keep the list in a client cache keyed by the URL; `history.scrollRestoration='manual'` + saved offset).
-- Keyboard (desktop): `/` focuses search; arrow keys move between tiles in the grid (roving tabindex optional — at minimum Tab order is row-major).
+- No pull-to-refresh (§2.4).
+- Scroll position and loaded pages are restored when returning from Card Details (Query cache keyed by search params, `history.scrollRestoration = 'manual'` plus a saved offset).
+- Keyboard (wide): `/` focuses search. Tab order is row-major.
 
-## 5. Card Details (`/cards/[language]/[cardId]`, `/custom-cards/[customId]`, `/collection/[ownedId]`)
+## 5. Card Details (`/cards/$language/$cardId`, `/custom-cards/$customId`, `/collection/$ownedId`)
 
-Data: card detail endpoint (catalog metadata or owned snapshot if catalog cache is missing, owned copies with grade/acquisition/location, latest price per source × variant with `sourceUpdatedAt`/`capturedAt`, available variants).
+Data: `CatalogRepo.getCard({language, cardId})` → `CardDetail` (metadata, `latestPrices`, `ownedCopies` page, `purchaseHistory`, `syncedAt`, `detailSyncedAt`). Custom cards use `CollectionRepo.getCustom` and the copies list. The copy deep link uses `CollectionRepo.getCopy`, which is snapshot-safe.
 
 ### 5.1 Layout 390 px
 
 ```
 ┌──────────────────────────────────────┐
-│ ‹ Back                     [⋯]       │  top bar transparent over hero, becomes surface on scroll
+│ ‹ Collection                [⋯] [+]  │  translucent top bar over the hero; title appears after scroll
 ├──────────────────────────────────────┤
 │          ┌──────────────┐            │
 │          │              │            │  hero CardArt high.webp, width min(78vw, 320px)
-│          │   Furret     │            │  centered, shadow-3; tap → full-screen zoom viewer
+│          │   Furret     │            │  centred, shadow-3; tap → zoom viewer
 │          │   art        │            │
 │          └──────────────┘            │
 │ Furret                               │  H1
 │ Darkness Ablaze · 136/189 · EN       │  body muted; set name links → set detail
-│ ● Uncommon   Illus. tetsuya koizumi  │  RarityLabel · illustrator (caption, as TCGdex spells it)
+│ ● Uncommon   Illus. tetsuya koizumi  │  RarityLabel · illustrator (as TCGdex spells it)
 ├──────────────────────────────────────┤
 │ You own 3                            │  H2
 │ ┌──────────────────────────────────┐ │
-│ │ Normal          2   NM  NM       │ │  per-variant summary rows (tap scrolls to copies)
+│ │ Normal          2   NM  NM       │ │  per-variant(+detail) rows (tap scrolls to copies)
 │ │ Reverse holo    1   LP           │ │
 │ └──────────────────────────────────┘ │
-│ [        + Add a copy         ]      │  primary, opens add-confirm sheet prefilled
+│ [        + Add a copy         ]      │  primary → confirm sheet (§7.3) prefilled
 ├──────────────────────────────────────┤
-│ Prices                    [USD|EUR]  │  H2 + segmented currency (source) switch
-│ Normal        market $—   low $—     │  rows per variant from latest snapshots
+│ Prices                    [USD|EUR]  │  H2 + segmented source switch
+│ Normal        market $—   low $—     │  rows per variant from latestPrices
 │ Reverse holo  market $—   low $—     │
-│ TCGplayer · updated 30 Oct 2026      │  caption subtle
-│ Your copies are worth $— (3 valued)  │  sum for this card, only valued copies
+│ TCGplayer · as of 30 Oct 2026        │  caption subtle (sourceUpdatedAt)
+│ Your copies are worth $— (3 valued)  │
 ├──────────────────────────────────────┤
 │ Copies (3)                    Select │  H2 + text button for bulk mode
 │ ┌──────────────────────────────────┐ │
-│ │ Normal · NM · Binder A           │ │  copy row 64 px: variant, condition/grade,
-│ │ Paid $— · 12 Oct 2026 · LGS      │ │  location; line 2 purchase info
-│ ├──────────────────────────────────┤ │  tap → Copy editor sheet (§5.4)
-│ │ Normal · NM · Binder A           │ │
+│ │ Normal · NM · Binder A           │ │  copy row ≥ 64 px → copy editor sheet (§5.4)
+│ │ Paid $— · 12 Oct 2026 · LGS      │ │
 │ ├──────────────────────────────────┤ │
 │ │ Reverse holo · PSA 9 · Slab box  │ │
 │ │ Cert 12345678 · Paid —           │ │
 │ └──────────────────────────────────┘ │
 ├──────────────────────────────────────┤
-│ Purchase history                     │  H2; acquisitions newest first, unknown dates last
+│ Purchase history                     │  H2; newest first, unknown dates last
 │ 12 Oct 2026 · Local game store · 2   │
-│ Unknown date · Trade · 1             │
 ├──────────────────────────────────────┤
-│ Card info                        ▾   │  disclosure: category, HP, types, stage,
-│                                      │  regulation mark, card id swsh3-136, variants available
+│ Card info                        ▾   │  disclosure: category, HP, types, stage, regulation
+│                                      │  mark, card id swsh3-136, variants available,
+│                                      │  "Details downloaded 30 Oct" (detailSyncedAt)
 └──────────────────────────────────────┘
 ```
-- If you own 0: "You own 0" section is replaced by a single primary "Add to collection" button; Copies/Purchase history are omitted.
-- Prices section rules: rows only for variants with at least one non-null value; columns shown are those with any data (USD: market, low, mid, high; EUR: trend, avg/mid, low). Whole section empty → "No price data from TCGdex for this card." Graded copies: note "Graded copies aren't valued automatically. Set your own price in the copy." Manual override shows on the copy row ("Your price $—").
-- "Your copies are worth" uses DATA-MODEL valuation rules and states the counted subset: "(2 of 3 copies valued)".
-- `⋯` menu: "View set", "Open on TCGdex" (only if we have a public URL? — no; omit), "Copy card ID". Keep to View set + Copy card ID in Phase 1.
-- Zoom viewer: full-screen black, high.webp, pinch-zoom native (`touch-action: pinch-zoom`), close button 44 px top-right, Esc closes.
+- **Owning 0 copies:** the "You own" section is replaced by one primary "Add to collection" button. Copies and Purchase history are omitted.
+- **Prices:**
+  - Rows appear only for variants with at least one non-null value. Only columns with data are shown (USD: market, low, mid, high; EUR: trend, avg, low).
+  - Whole section empty → "No price data from TCGdex for this card."
+  - Graded copies get the note "Graded copies aren't valued automatically. Set your own price in the copy."
+  - A manual override appears on the copy row ("Your price $—").
+  - Offline: prices still show (local), and the caption adds `OfflineChip` when the date is older than 14 days.
+- **"Your copies are worth"** follows the DATA-MODEL valuation rules and states the subset: "(2 of 3 copies valued)".
+- **`⋯` menu** (sheet): "View set", "Refresh card" (needs network; pull-to-refresh equivalent; request S3), "Copy card ID" (native clipboard, toast "Copied").
+- **Zoom viewer** (`?zoom=1`):
+  - Full-screen black, `high.webp`.
+  - Pinch and double-tap zoom are implemented on the image with transforms, because the WebView's own zoom is disabled.
+  - Close button (44 px, top-left at `--ps-safe-top`). Swipe down to dismiss. Android back closes it.
+  - Reduced motion: no zoom animation.
+- **Pull-to-refresh** refreshes this card's details and prices (§2.4).
 
 ### 5.2 Layout ≥ 1024 px
-Two columns: left 380 px sticky hero (art max-width 340) + Add button under it; right column: title block, You own, Prices, Copies (table), Purchase history, Card info.
+Two columns:
+- Left (380 px, sticky): the hero (art max-width 340) with the Add button under it.
+- Right: title block, You own, Prices, Copies (as a table), Purchase history, Card info.
 
 ### 5.3 States
-- Loading: hero skeleton at exact 63:88 size, 3 text lines, 2 section skeletons.
-- Catalog metadata missing but owned copies exist (cache wiped or not yet synced): render from the owned snapshot; warning-soft banner "Catalog details unavailable — showing what you saved. Sync the catalog to see prices and card info." Price section hidden.
-- Not found (no catalog card and no copies): 404 page "Card not found" / "This card isn't in the catalog on this PC. It may be in a set that hasn't synced yet." / buttons "Search the catalog" and "Create a custom card".
-- Custom card: "Custom" chip (surface-3) next to the title; no price section; Copies + "Edit card details" (opens §9 form in edit mode).
+- **Loading:** hero skeleton at exact 63:88, 3 text lines, 2 section skeletons (after 150 ms).
+- **Catalog metadata missing but copies exist** (the language catalog was removed or isn't installed yet):
+  - Render from the owned snapshot (`catalogAvailable:false`).
+  - Banner (warning-soft): "Card details aren't downloaded — showing what you saved. Download the English catalog to see prices and card info." [Download] → `/settings/catalog`.
+  - The price section is hidden.
+- **Not found** (no catalog card and no copies): "Card not found" / "This card isn't in the downloaded catalog. It may be in a set that's newer than your catalog." / buttons "Search the catalog" and "Create a custom card".
+- **Custom card:** a "Custom" chip (surface-3) next to the title; no price section; Copies; an "Edit card details" button (opens §9 in edit mode).
 
 ### 5.4 Copy editor (sheet / side panel)
 
-Opens from a copy row or `/collection/[ownedId]`. Same field set as Add confirm (§7.3) minus identity (identity is fixed; DATA-MODEL: change identity = delete + re-add). Fields: Variant (chips; changing variant is allowed — it is not identity), Condition, Raw/Graded (+ company, grade, cert), Paid (amount + currency), Purchase (date, source — with the shared-acquisition note "This purchase is shared by 3 copies. Changing the date or source changes it for all of them."), Location, Groups, Your price (manual override amount + currency + "Clear"), Notes.
-Footer: `Delete copy` (text, negative) · `Save` (primary, disabled until dirty). Delete → confirm dialog "Delete this copy of Furret? This can't be undone." [Cancel] [Delete copy]. After save: toast "Saved".
-Bulk mode (from "Select" on the Copies header): checkboxes on rows, sticky footer "Move 2 to location…" and "Delete 2". Confirm dialogs state the count.
+- **Opens** from a copy row, `?copy=<id>` or `/collection/$ownedId`.
+- **Fields** are the same as Add confirm (§7.3) minus identity, which is fixed (changing identity = delete + re-add):
+  - Variant (chips; may change — it is not identity).
+  - Condition, including "Not recorded".
+  - Raw/Graded, plus company, grade and cert.
+  - Paid (amount + currency).
+  - Purchase: date and source, with the shared-acquisition note "This purchase is shared by 3 copies. Changing the date or source changes it for all of them."
+  - Location, Groups.
+  - Your price (manual override + Clear).
+  - Notes.
+- **Header:** Cancel · "Edit copy" · Save (disabled until something changes).
+- **Footer:** `Delete copy` (text, negative).
+- **Delete** → Dialog "Delete this copy of Furret? This can't be undone." [Cancel] [Delete copy] → commit → `haptic('deleted')` → toast "Deleted".
+- **Save** → commit → `haptic('saved')` → toast "Saved".
+- **Bulk mode** (from "Select" on the Copies header):
+  - Rows get checkboxes. A sticky footer offers "Move 2 to location…" and "Delete 2".
+  - Confirm dialogs state the count.
+  - Bulk delete calls `remove` per id and reports partial failure honestly: "Deleted 2 of 3. 1 couldn't be deleted. [Try again]".
 
 ### 5.5 Accessibility
-Hero `alt="Furret — Darkness Ablaze 136/189 card art"`. Price table is a real `<table>` with `<caption class="sr-only">`. Copy rows are buttons whose name reads the row ("Normal, Near Mint, Binder A, paid …, edit"). Sheet focuses its title on open, returns focus to the row on close.
+- Hero alt: `alt="Furret — Darkness Ablaze 136/189 card art"`.
+- The price table is a real `<table>` with `<caption class="sr-only">`.
+- Copy rows are buttons whose name reads the row ("Normal, Near Mint, Binder A, paid …, edit").
+- The sheet focuses its title on open and returns focus to the row on close.
+- JA names are wrapped in `lang="ja"`.
 
 ## 6. Sets
 
-### 6.1 Sets list (`/sets`) — 390 px
+### 6.1 Sets list (`/sets`), 390 px
+
+Data: `CatalogRepo.listSets({language, owned, hideTcgPocket, sort, q})`.
 
 ```
 ┌──────────────────────────────────────┐
-│ Sets                            [⌕]  │
-├──────────────────────────────────────┤
-│ (EN)(JA)        [Collecting | All]   │  language chips (default = languages you own; else EN)
-│ Sort: Newest ▾                       │  Newest (`release_desc`), Name (`name_asc`)
+│                                 [⌕]  │
+│ Sets                                 │  large title
+│ (EN)(JA)        [Collecting | All]   │  language chips (default = installed languages you own)
+│ Sort: Newest ▾                       │  Newest · Name · Most complete
 ├──────────────────────────────────────┤
 │ ┌──────────────────────────────────┐ │
-│ │ [logo] Darkness Ablaze      EN   │ │  row 72 px: logo 56×32 contain (or set initials
-│ │        45 / 201 · 22%            │ │  chip if no logo); counts tabular
+│ │ [logo] Darkness Ablaze      EN   │ │  row 72 px min: logo 56×32 contain (or id chip)
+│ │        45 / 201 · 22%            │ │  counts tabular
 │ │        ▓▓▓▓░░░░░░░░░░░░░░        │ │  4 px progress bar, accent fill
 │ ├──────────────────────────────────┤ │
 │ │ [logo] Base Set             EN   │ │
 │ │        102 / 102 · 100% ✓        │ │  complete → positive check + "Complete"
 │ └──────────────────────────────────┘ │
-│ Show TCG Pocket sets  [ ]            │  footer toggle (digital-only sets hidden by default)
 └──────────────────────────────────────┘
 ```
-- "Collecting" (default when you own ≥ 1 card) = sets with ownedCount > 0; "All" = every synced set. The set list API has no owned filter — **request R5** (`owned=true` on SetListQuery). Fallback: "Collecting" is built from the distinct `(language, setId)` of owned copies, then each set summary fetched (`GET /api/catalog/sets/:language/:setId`), max ~50 sets per screen. "Most complete" sort is part of R5.
-- Count format: `ownedUnique / catalogCount · completionPercent%`. When `completionPercent` is null (catalog incomplete) show `45 / 201 loaded · Catalog incomplete` in `warning` and no percent.
-- Logos: TCGdex has a logo for 157/220 EN sets and **0/184 JA sets** (research, tcgdex-api.md). Without a logo, render a 56×32 `surface-3` chip with the set id in micro mono (`SV1a`, `PMCG1`) — never a stretched placeholder image. Logo URL = `logo + ".webp"`.
-- Duplicates per set appear as a small caption "8 extra" when > 0.
-- TCG Pocket (series id `tcgp`: 15 EN sets, ~2.5k digital-only cards) hidden unless toggled — they are not physical cards. Needs `series` in SetSummary or a `excludeSeries` filter (**request R6**); until then the toggle is not shown and Pocket sets appear in "All".
-- ≥ 1024: 2–3 column grid of set cards (logo larger 120×48, progress ring 48 px + counts).
+- **Views:**
+  - "Collecting" (`owned:true`; the default when you own ≥ 1 card) lists sets with copies, **plus** the sets chosen as "Sets I collect" (`setsFollowed`) even when you own nothing from them yet. Those show "0 / 201 · Collecting".
+  - "All" lists every published set in the installed catalogs.
+  - "Most complete" = `completion_desc`.
+- **Count format:** `ownedUnique / catalogCount · completionPercent%`. When `completionPercent` is null (catalog incomplete), show `45 / 201 loaded · Catalog incomplete` in `warning`, with no percent.
+- **Logos:** TCGdex has logos for 157/220 EN sets and **0/184 JA sets**. Without a logo, render a 56×32 `surface-3` chip with the set id in micro mono (`SV1a`, `PMCG1`). Never a stretched image. Logo URL = `logoUrl` + `.webp`.
+- **Extras:** duplicate extras per set appear as the caption "8 extra" when > 0.
+- **TCG Pocket:** sets in series `tcgp` (15 EN sets, ~2.5k digital-only cards) are hidden while Settings → "Show TCG Pocket cards" is off (the default). A footer row reads "TCG Pocket sets hidden · Show" and links to that setting.
+- **Unpublished shells** (`status:'unpublished'`) never appear in Phase 1.
+- **Pull-to-refresh** checks for new sets (catalog pack update or incremental check, §10.2) when online.
+- **Not installed:** a language without an installed catalog shows a row "Japanese catalog not downloaded · Download" instead of sets.
+- **Wide (≥ 1024):** 2–3 column grid of set cards (logo 120×48, 48 px progress ring and counts).
 
-### 6.2 Set detail (`/sets/[language]/[setId]`) — 390 px
+### 6.2 Set detail (`/sets/$language/$setId`), 390 px
+
+Data: `CatalogRepo.getSet` + `listSetCards({ownership, duplicates})`.
 
 ```
 ┌──────────────────────────────────────┐
 │ ‹ Sets                         [⋯]   │
 ├──────────────────────────────────────┤
-│ [ Darkness Ablaze logo ]             │  logo max 240×80, centered
+│ [ Darkness Ablaze logo ]             │  logo max 240×80, centred
 │ Darkness Ablaze                      │  H1
 │ Sword & Shield · 14 Aug 2020 · EN    │  muted
 │ ┌──────┐  45 of 201 cards            │  progress ring 64 px (accent), % inside
@@ -407,114 +719,152 @@ Hero `alt="Furret — Darkness Ablaze 136/189 card art"`. Price table is a real 
 ├──────────────────────────────────────┤
 │ [All 201|Owned 45|Missing 156|Dupes] │  segmented tabs (counts inside), sticky
 ├──────────────────────────────────────┤
-│ ┌────┐ ┌────┐ ┌────┐                 │  grid ordered by localIdSort
-│ │ 1  │ │ 2  │ │ 3  │                 │  owned: normal tile (+qty badge)
-│ └────┘ └────┘ └────┘                 │  missing: art at 35% opacity, grayscale(1),
-│ ┌────┐ ┌────┐ ┌────┐                 │  1 px dashed border, "+" button 44 px bottom-right
+│ ┌────┐ ┌────┐ ┌────┐                 │  grid by localIdSort
+│ │ 1  │ │ 2  │ │ 3  │                 │  owned: normal tile (+qty)
+│ └────┘ └────┘ └────┘                 │  missing: art 35% opacity, grayscale, dashed border,
+│                                      │  "+" button 44 px bottom-right
 └──────────────────────────────────────┘
 ```
-- Tabs: All (missing cards dimmed), Owned, Missing (full-opacity art — you're shopping here), Duplicates (only groups with extras, qty badge shows count; caption "2 extra").
-- Missing tile "+" → add-confirm sheet for that card (§7.3) without leaving the set; on add the tile animates from dimmed to full (opacity/filter fade 320 ms — color-only, survives reduced motion).
-- Tile tap → Card Details.
-- `⋯` menu: "Add cards from this set" → `/add?set=<language>:<setId>` (search prefiltered to the set, sorted by number — fastest way to log a binder page).
-- Incomplete catalog: banner "This set hasn't fully synced (180 of 201 cards loaded). Completion will show once it finishes." + "Sync now" link to `/settings/data`.
-- Complete set: Missing tab empty state "Set complete" / "You own every card in Darkness Ablaze." (positive check icon).
-- Custom copies tagged with this set name are not counted (DATA-MODEL) — if `customOwnedCount > 0` show caption "+ 2 custom cards not counted".
-- ≥ 1024: header becomes a row (logo · title block · ring + stats); grid 6–8 columns.
+- **Tabs:**
+  - All: missing cards dimmed.
+  - Owned.
+  - Missing: full-opacity art, because this is the shopping list.
+  - Duplicates: groups with extras; the qty badge shows the count, with the caption "2 extra".
+- **Missing tile "+"** → add-confirm sheet for that card (§7.3) without leaving the set. On add: `haptic('added')`, and the tile fades from dimmed to full over 320 ms. That fade is colour/opacity only, so it survives reduced motion.
+- **Tile tap** → Card Details.
+- **`⋯` menu:**
+  - "Add cards from this set" → `/add?set=<language>:<setId>`, the fastest way to log a binder page.
+  - "Collect this set" / "Stop collecting" (toggles `setsFollowed`).
+  - "Refresh this set" (network).
+- **Incomplete catalog:** banner "This set isn't fully downloaded (180 of 201 cards). Completion will show once it is." [Download] (network; request S3, single-set fill-in).
+- **Complete set:** Missing tab empty state "Set complete" / "You own every card in Darkness Ablaze." (positive check).
+- **Custom copies:** copies tagged with this set name are not counted. If `customOwnedCount > 0`, show the caption "+ 2 custom cards not counted".
+- **Wide (≥ 1024):** the header becomes a row; the grid has 6–8 columns.
 
 ### 6.3 States
-Loading skeleton: list rows (logo box + 2 lines + bar); set detail: header skeleton + 12 tile skeletons. Empty (no sets synced): "No sets yet" / "Sync the TCGdex catalog to browse sets and track completion." / "Go to Data & sync". Error/offline: global.
+- **Loading:** skeleton rows; set detail shows a header skeleton and 12 tiles.
+- **No catalog installed:** "No sets yet" / "Download the card catalog to browse sets and track completion." / "Choose languages" → `/settings/catalog`.
+- **Error:** global.
+- **Offline:** fully functional; logos and art may be missing.
 
-## 7. Add flow (`/add`) — the Phase 1 core loop
+## 7. Add flow (`/add`): the Phase 1 core loop
 
-Goal: from the Collection screen to a saved card in **3 taps + typing**: [+] → type "furret 136" → tap result → tap "Add to collection". Everything is editable before commit; nothing is written until the Add button is pressed.
+Goal: go from anywhere to a saved card in **3 taps + typing**: [+] → type "furret 136" → tap result → "Add to collection".
+- Everything is editable before commit. Nothing is written until Add is pressed.
+- `/add` is a **modal route**: it slides up, covers the tab bar, and has ✕ Close top-left. Swipe down on the header, the edge swipe or Android back also close it.
 
-### 7.1 Search step — 390 px
+### 7.1 Search step, 390 px
 
 ```
 ┌──────────────────────────────────────┐
-│ ‹  [⌕ furret 136                 ×]  │  SearchField autofocused (keyboard opens)
-│ (All)(EN)(JA)          in: Any set ▾ │  language chips (remember last), set scope
+│ ✕  [⌕ furret 136                 ×]  │  SearchField autofocused, keyboard opens on enter
+│ (All)(EN)(JA)          in: Any set ▾ │  language chips (remembered), set scope NativeSelect
 ├──────────────────────────────────────┤
-│ ┌──┐ Furret                     EN   │  CardRow (catalog variant): thumb 40×56,
-│ │  │ Darkness Ablaze · 136/189       │  name, set · number, rarity dot
+│ ┌──┐ Furret                     EN   │  CardRow (catalog): thumb, name, set · number,
+│ │  │ Darkness Ablaze · 136/189 · 2020│  release year, rarity dot
 │ └──┘ ● Uncommon        You own 3     │  "You own N" (accent-fg) if owned
-│ ┌──┐ Furret                     EN   │
-│ │  │ …other printings by number      │
-│ └──┘                                 │
 ├──────────────────────────────────────┤
-│ Can't find it?  Create a custom card │  sticky footer link (always visible)
+│ Can't find it?  Create a custom card │  sticky footer above the keyboard (--ps-keyboard-inset)
 └──────────────────────────────────────┘
 ```
-- Query parsing (client maps to `GET /api/catalog/cards`, which searches `q` against the name only, prefix by default, with exact `localId`, `setId`, `language` filters; limit 50):
-  - `swsh3-136` (matches `^[A-Za-z0-9.]+-[A-Za-z0-9]+$` and resolves) → `GET /api/catalog/cards/<language>/swsh3-136` directly (try selected language, then the other).
-  - `136` or `136/189` → `localId=136` (the `/189` part narrows results client-side to sets whose official count is 189). JA numbers are zero-padded (`001`): if `localId=1` returns nothing, retry once with the 3-digit padded value.
-  - `furret 136` → `q=furret&localId=136`; if empty, retry `q=furret` alone.
-  - anything else → `q=<text>&match=prefix`; when that returns 0, automatically retry `match=contains` and label the list "Broader matches".
-  - Set abbreviations (`DAA 136`) are not supported by the API (request R4); treat as name text.
-- Ranking is the API's (exact name, prefix, contains). Result rows also show the set's release year so reprints are distinguishable.
-- Empty query: show "Recent" (last 8 cards added, from recent copies) and, if `?set=` is present, that set's cards in number order (missing first toggle).
-- Results update as you type (debounce 200 ms; stale responses discarded via AbortController). Enter on desktop opens the first result.
-- No results: "No cards found for “furet”" / "Check the spelling, try the collector number (like 136/189), or switch language." / buttons "Search all languages" (if filtered) and "Create a custom card".
-- Catalog not synced: EmptyState "The card catalog isn't downloaded yet" → "Go to Data & sync" (and still offer "Create a custom card").
+- **Query parsing** (client → `CatalogRepo.searchCards` / `getCard`):
+  - `swsh3-136` (matches `^[A-Za-z0-9.+]+-[A-Za-z0-9%]+$`) → `getCard` directly; try the selected language, then the other.
+  - `136` or `136/189` → `localId=136`; the `/189` narrows to sets with official 189. JA numbers are zero-padded (`001`): if `localId=1` finds nothing, retry once with the 3-digit padded value. That is a UI retry, never core repair.
+  - `furret 136` → `q=furret&localId=136`; if that is empty, retry `q=furret` alone.
+  - Anything else → `q=<text>&match=prefix`. When that returns 0, retry automatically with `match=contains` and label the list "Broader matches".
+  - Set abbreviations (`DAA 136`) are not supported (R4); they are treated as name text.
+- **Ranking** is core's (exact, prefix, contains). Rows show the release year so reprints are distinguishable. TCG Pocket results follow the Settings toggle.
+- **Empty query:** show "Recent" (the last 8 cards added). If `?set=` is present, show that set's cards in number order with a "Missing first" toggle.
+- **Typing:** results update as you type (debounce 150 ms; stale results are discarded). On wide screens, Enter opens the first result.
+- **Keyboard:** results scroll under it. The footer and the last row stay reachable (`padding-bottom: max(--ps-keyboard-inset, --ps-safe-bottom)`). Scrolling the results list dismisses the keyboard, as in iOS search.
+- **No results:** "No cards found for “furet”" / "Check the spelling, try the collector number (like 136/189), or switch language." / buttons "Search all languages" (if filtered) and "Create a custom card".
+  - If the catalog is incomplete or older than the newest sets, add: "Newer sets may not be in your catalog yet. Check for updates" → `/settings/catalog`.
+- **Catalog not installed:** EmptyState "The card catalog isn't downloaded yet" / "Download it once to search every card. You can still create a custom card." → "Choose languages" + "Create a custom card".
+- **Catalog downloading:** an inline info banner at the top: "Downloading the English catalog (42 %). Search works when it's done." For the API-fallback path, the banner reads "Search works for sets downloaded so far (34 of 220)".
 
 ### 7.2 Search step ≥ 1024
-Two panes: results list (left, 420 px) and the confirm panel (right) live side by side — clicking a result fills the right pane instantly, so desktop entry is type → click → Enter.
+Two panes: results (left, 420) and the confirm panel (right). Clicking a result fills the right pane, so desktop entry is type → click → Enter.
 
-### 7.3 Confirm sheet (`/add?card=en:swsh3-136`) — 390 px
+### 7.3 Confirm sheet (`/add?card=en:swsh3-136`), 390 px
 
 ```
 ┌──────────────────────────────────────┐
-│ ─────                                │
+│               ▬▬▬                    │
+│ Cancel                               │
 │ ┌────────┐ Furret                    │  art 112×156 (high.webp) left; title H3
 │ │  art   │ Darkness Ablaze · 136/189 │
 │ │        │ ● Uncommon · EN           │
 │ └────────┘ Market $— (Normal)        │  latest price for SELECTED variant, if any
 ├──────────────────────────────────────┤
 │ Variant                               │
-│ (✓ Normal)( Reverse holo )           │  chips from catalog availableVariants;
-│                                      │  "Other…" text button → enum + detail input
+│ (✓ Normal)( Reverse holo )           │  chips from availableVariants; "Other…" text button
 │ Condition                             │
-│ (✓NM)(LP)(MP)(HP)(DMG)               │
+│ (✓ Not set)(NM)(LP)(MP)(HP)(DMG)     │  default "Not set" (= null, badge "?")
 │ Quantity                [ − ][ 1 ][ + ]
-│ Graded                         [  ○] │  switch, off = raw
+│ Graded                         [  ○] │  Switch, off = raw
 ├──────────────────────────────────────┤
 │ More details                      ▾  │  disclosure, collapsed by default
-│   Paid per card   [$ 0.00 ][USD ▾]   │  empty = unknown (NOT 0)
-│   Purchase date   [ 30 Oct 2026  ]   │  empty by default; "Today" chip
+│   Paid per card   [ 0.00 ] [USD ▾]   │  empty = unknown (NOT 0); inputmode=decimal
+│   Purchase date   [ —        ][Today]│  DateField
 │   Bought from     [ e.g. Local game store ]
-│   Location        [ None          ▾ ]│
-│   Group           [ None          ▾ ]│
-│   Notes           [               ]  │
+│   Location        [ None          ▾ ]│  NativeSelect
+│   Group           [ None          ▾ ]│  NativeSelect
+│   Notes           [               ]  │  textarea, grows
 ├──────────────────────────────────────┤
-│ [       Add to collection        ]   │  sticky footer, primary 48 px
+│ [       Add to collection        ]   │  sticky footer, 48 px; above keyboard + home indicator
 └──────────────────────────────────────┘
 ```
-Defaults (tap-tap-add path):
-- **Variant**: if the catalog lists exactly one available variant, it is preselected. If several, preselect by priority `normal → holo → reverse_holo → first_edition → promo_stamped` among those available (Furret → Normal), and the chip row is the first thing under the art so the choice is visible. If the catalog lists none (brief record or JA cards without variant data), preselect `normal` and show caption "Variant not listed in the catalog — check it". Any enum value can be picked via "Other…" (DATA-MODEL: false/missing flags don't prohibit a manual choice).
-- **Condition** NM. **Quantity** 1. **Raw** (Graded off). Everything else empty/None.
-- Graded on → reveals Company chips (PSA BGS CGC SGC ACE TAG Other; Other reveals a required "Company name" field) + Grade text input (`inputmode="decimal"`, placeholder "10", allows labels like "Authentic") + Cert number (optional). If quantity > 1 the cert field is disabled with helper "Add slabs with certificate numbers one at a time" (API rejects graded bulk adds with a cert). Condition chips hide while graded (grade replaces condition on the badge) but the stored condition stays whatever was selected (DATA-MODEL condition is nullable — graded copies save `condition: null` unless the user explicitly set one; implementer: send null when graded and the user never touched condition).
-- "Remember location for this session": when a location is chosen, a checkbox "Use for the next cards too" (default on) keeps it for subsequent adds until the tab closes (sessionStorage). Same for Group and Bought from/date (one checkbox: "Keep purchase details for next card"). This makes binder-page logging fast.
-- Price field: empty means unknown. Placeholder `0.00` in subtle color is fine but must never be submitted as 0 unless typed. Currency select USD/EUR (default from Settings).
-- Button label reflects quantity: "Add to collection" (1), "Add 3 copies" (3). While submitting: spinner + "Adding…", button disabled (prevents double adds).
 
-Commit (one request: bulk add N copies; DATA-MODEL max 100):
-- Success: the sheet's body is replaced by a success state (no navigation):
+Defaults (the tap-tap-add path):
+- **Variant:**
+  - If the catalog lists exactly one available variant, it is preselected (it is the only print).
+  - If it lists several, preselect by priority `normal → holo → reverse_holo → first_edition → promo_stamped` among those available (Furret → Normal). The chip row sits first under the art so the choice is visible.
+  - If it lists none (`detailsComplete:false` brief records), preselect `normal` and show the caption "Variant not listed in the catalog — check it".
+  - Any enum value can be picked via "Other…".
+- **Condition: Not set** (null, shown as `?`). This changed in A2 to follow API.md: no assumed condition, so a fast add never records a condition nobody checked.
+  - One tap sets NM etc.
+  - "Keep for next card" remembers the last chosen condition for the session (see below).
+- **Quantity** 1. **Raw** (Graded off). Everything else is empty or None.
+- **Graded on** reveals:
+  - Company chips: PSA BGS CGC SGC ACE TAG Other. Other reveals a required "Company name".
+  - Grade: text, `inputmode="decimal"`; labels such as "Authentic" are allowed.
+  - Cert number: optional.
+  - If quantity > 1, the cert field is disabled with the helper "Add slabs with certificate numbers one at a time" (core rejects bulk adds with a cert).
+  - Condition chips hide while Graded is on, and the copy saves `condition: null` unless the user had set one.
+- **Session memory:**
+  - When a location is chosen, a checkbox "Use for the next cards too" (default on) keeps it for later adds until the app is closed. The same applies to Group, Condition ("Keep condition for next card") and purchase details ("Keep purchase details for next card").
+  - Stored in memory/sessionStorage, never in the DB. This makes binder-page logging fast.
+- **Price field:** empty means unknown. It is never submitted as 0 unless typed. Currency defaults to Settings → Currency.
+- **Button label** follows quantity: "Add to collection" (1), "Add 3 copies" (3). While committing it shows a spinner and "Adding…" and is disabled, which prevents double adds.
+- **Keyboard:**
+  - The sheet goes to the large detent when a field focuses.
+  - The footer rides above the keyboard (`--ps-sheet-pad-bottom`).
+  - `enterkeyhint="next"` moves between fields; on the last field it is `done`.
+  - The iOS accessory bar (‹ › Done) stays enabled for this multi-field form.
+
+Commit: `CollectionRepo.bulkAdd({quantity, copy})` (max 100, one transaction).
+- **Success.** `haptic('added')` fires after the commit resolves. The sheet body is replaced by a success state (no navigation):
 ```
-│   ✓  Added Furret × 1               │  positive check (pop under normal motion)
+│   ✓  Added Furret × 1               │  positive check (spring pop; fade under reduced motion)
 │   Darkness Ablaze · Normal · NM      │
 │   You now own 4                      │
 │ [ Add another ]  [ Undo ]  [ View ]  │  Add another = primary
 ```
-  - **Add another** (primary, autofocused): closes the sheet, returns to the search step with the query text selected (so the next keystroke replaces it) and the keyboard open; results list scroll position kept. On desktop focus returns to the search field.
-  - **Undo**: deletes exactly the copies just created (one `DELETE /api/owned-cards/:id` per returned copy id; there is no bulk delete API), toast "Removed". Available until the next add or 30 s.
-  - **View**: Card Details.
-  - Toast also fires ("Added Furret · Darkness Ablaze") for screen readers via the live region.
-- Error: inline banner inside the sheet above the button, fields intact: "Couldn't add the card. Your PC didn't respond — try again." [Try again]. Validation errors (400 `VALIDATION_ERROR`) are attached to the offending field (`details.issues[].path`) with `aria-describedby`.
-- Dismiss without adding: if any field differs from defaults → confirm "Discard this card?" [Keep editing] [Discard]; else close silently. Nothing is ever auto-saved.
+  - **Add another** (primary, focused): closes the sheet and returns to search with the query text selected (the next keystroke replaces it) and the keyboard open. The results scroll position is kept.
+  - **Undo:** `remove` per returned copy id, then `haptic('undo')` and toast "Removed". Partial failure is reported ("Removed 2 of 3 — 1 copy is still in your collection. [View]"). Available until the next add or 30 s.
+  - **View:** Card Details.
+  - The live region also announces "Added Furret · Darkness Ablaze".
+- **Error.** `haptic('error')`. An inline banner appears above the button with the fields intact, using the §12 copy (e.g. STORAGE_FULL).
+  - `ValidationError` issues attach to their fields (`aria-describedby`).
+  - **Never auto-retry a bulk add** (API.md). On `PersistenceError`, refetch the card first, then let the user decide.
+- **Dismiss without adding:** if any field differs from its default → "Discard this card?" [Keep editing] [Discard]. Otherwise it closes silently. Nothing is ever auto-saved.
 
 ### 7.4 Accessibility
-Search results are a `listbox`-free plain list of buttons (simpler, robust on mobile SRs). Sheet title is the card name. Chip groups are `radiogroup` (single) with arrow-key support; Graded is a `switch`. Stepper buttons named "Decrease quantity"/"Increase quantity", value announced. Success state moves focus to "Add another".
+- Search results are a plain list of buttons; no `listbox`.
+- The sheet title is the card name.
+- Chip groups are `radiogroup`s with arrow-key support; Graded is a `switch`.
+- Stepper buttons are named "Decrease quantity" / "Increase quantity", and the value is announced.
+- The success state moves focus to "Add another".
 
 ## 8. Storage locations (`/settings/locations`)
 
@@ -523,204 +873,367 @@ Search results are a `listbox`-free plain list of buttons (simpler, robust on mo
 │ ‹ Settings   Storage locations   [+] │
 ├──────────────────────────────────────┤
 │ ┌──────────────────────────────────┐ │
-│ │ Binder A                    124 ›│ │  row 56 px: name, copy count (tabular)
-│ │ Red 9-pocket, SWSH era           │ │  description caption (if any)
+│ │ Binder A                    124 ›│ │  row ≥ 56 px: name, copyCount (tabular)
+│ │ Red 9-pocket, SWSH era           │ │  description caption
 │ ├──────────────────────────────────┤ │
 │ │ Bulk box 1                  210 ›│ │
-│ ├──────────────────────────────────┤ │
-│ │ Slab case                     6 ›│ │
 │ └──────────────────────────────────┘ │
-│ Cards without a location: 72     ›   │  link → /collection?loc=none
+│ Cards without a location: 72     ›   │  → /collection?loc=none
 └──────────────────────────────────────┘
 ```
-- Row tap → `/collection?loc=<id>`. Row trailing `⋯` (44 px) → Rename / Edit description / Delete.
-- [+] → sheet: Name (required, 1–200, unique case-insensitively — inline error "You already have a location called “Binder A”"), Description (optional). Button "Create location".
-- Delete with cards → dialog "Delete “Binder A”? 124 cards will have no location. The cards themselves are not deleted." [Cancel] [Delete location] (DATA-MODEL: SET NULL).
-- Empty: "No storage locations" / "Create one for each binder, box or deck so you can find any card later." / "Create a location".
+- **Row tap** → `/collection?loc=<id>`. The trailing `⋯` (44 px) offers Rename / Edit description / Delete.
+- **[+]** → sheet with Name (required, 1–200, unique case-insensitively; `ConflictError` shows the inline "You already have a location called “Binder A”") and Description. Button "Create location".
+- **Delete with cards** → Dialog "Delete “Binder A”? 124 cards will have no location. The cards themselves are not deleted." [Cancel] [Delete location] → `haptic('deleted')`.
+- **Empty:** "No storage locations" / "Create one for each binder, box or deck so you can find any card later." / "Create a location".
 - No nesting in Phase 1.
 
-## 9. Custom card creation (`/custom-cards/new`, edit at `/custom-cards/[id]?edit=1`)
+## 9. Custom card creation (`/custom-cards/new`, edit at `/custom-cards/$id?edit=1`)
 
-When to show: from Add search ("Can't find it? Create a custom card", prefilled `name` with the query), Card-not-found page, Settings.
+Shown from:
+- Add search ("Can't find it? Create a custom card", prefilled with the query);
+- the Card-not-found page;
+- Settings → Custom cards.
 
 ```
 ┌──────────────────────────────────────┐
-│ ‹  New custom card                   │
+│ ✕  New custom card                   │  modal route
 ├──────────────────────────────────────┤
-│ For cards missing from the catalog — │  body muted, 2 lines
+│ For cards missing from the catalog — │  body muted
 │ misprints, new releases, oddities.   │
 │ Name *        [ Furret            ]  │
 │ Language      (EN)(JA)               │
-│ Set name      [ Darkness Ablaze    ] │  free text with suggestions from synced sets;
-│ Number        [ 136               ]  │  choosing a suggestion fills setId too
-│ Rarity        [ Uncommon         ▾]  │  list of known strings + free text
-│ Image URL     [ https://…         ]  │  optional; preview in 63:88 frame below
-│ ┌────┐                               │  preview: placeholder until a URL loads
-│ │    │                               │
-│ └────┘                               │
+│ Set name      [ Darkness Ablaze    ] │  free text + suggestions from installed sets
+│ Number        [ 136               ]  │
+│ Rarity        [ Uncommon         ▾]  │  known strings + free text
+│ Image URL     [ https://…         ]  │  optional; preview in 63:88 frame
 │ Notes         [                   ]  │
 ├──────────────────────────────────────┤
-│ [ Create and add to collection ]     │  primary → opens §7.3 confirm for the new card
+│ [ Create and add to collection ]     │  primary → opens §7.3 for the new card
 │ [ Create only ]                      │  secondary
 └──────────────────────────────────────┘
 ```
-- Image is a URL in Phase 1 (DATA-MODEL `imageUrl`, http/https only; server never fetches it). Photo upload is out of scope until a media store exists — say so in helper text: "Paste a link to an image. Photo upload comes later."
-- Validation: name required; URL must start with http(s)://.
-- Edit mode: same form, button "Save changes", note "Changes don't alter copies you already own." (DATA-MODEL snapshot rule). Delete: allowed only when no copies reference it; otherwise disabled with "Delete the 2 copies first" (API 409 IN_USE).
-- Custom tiles everywhere carry a "Custom" micro chip in place of the variant chip position if variant is normal.
+- **Image:** a URL in Phase 1 (`imageUrl`, http/https; core never fetches it). Helper text: "Paste a link to an image. Adding your own photo comes later." Photo upload waits for the Phase 7 media store / `.fdx` user images.
+- **Keyboard:** the form is keyboard-avoiding (§17.7). `enterkeyhint="next"` chains the fields.
+- **Validation:** name is required; the URL must be http(s).
+- **Edit mode:** button "Save changes", with the note "Changes don't alter copies you already own." Delete is allowed only when `copyCount = 0`; otherwise it is disabled with "Delete the 2 copies first" (`InUseError`).
+- **Tiles:** custom tiles show a "Custom" micro chip.
 
-## 10. Settings (`/settings`) and Data (`/settings/data`)
+## 10. Settings, Catalog, Data, About
 
-### 10.1 Settings home — 390 px
+### 10.1 Settings home (`/settings`), 390 px
 ```
 ┌──────────────────────────────────────┐
-│ Settings                             │
+│ Settings                             │  large title
 ├──────────────────────────────────────┤
-│ DATA                                 │  section caption
-│ Catalog, import & export        ›    │  → /settings/data ; trailing status "EN ✓ JA ✓"
-│ Storage locations               ›    │  → /settings/locations ; count
-│ Custom cards                    ›    │  opens a sheet listing GET /api/custom-cards (tap → /custom-cards/[id]) + "New custom card"
+│ CARD CATALOG                         │  section caption (micro, muted, uppercase)
+│ Catalog & prices               ›     │  → /settings/catalog ; trailing "EN ✓ · JA —"
+│                                      │     or "Downloading 42 %"
+├──────────────────────────────────────┤
+│ YOUR DATA                            │
+│ Import, export & backup        ›     │  → /settings/data
+│ Storage locations              ›     │  → /settings/locations ; count
+│ Custom cards                   ›     │  sheet listing CollectionRepo.listCustom + "New custom card"
 ├──────────────────────────────────────┤
 │ PREFERENCES                          │
-│ Theme          (Dark)(Light)(System) │  default Dark
-│ Price source   (TCGplayer $)(Cardmarket €)   display currency for tiles/dashboard
-│ Default language for search (All)(EN)(JA)
-│ Default currency for what I paid  (USD)(EUR)
+│ Appearance     (Dark)(Light)(System) │  default Dark
+│ Currency       (USD · TCGplayer)(EUR · Cardmarket)   defaultCurrency: display + paid default
+│ Search language        (All)(EN)(JA) │
+│ Show TCG Pocket cards          [  ○] │  hideTcgPocket=true by default (off = hidden)
+│ Haptics                        [●  ] │  native only (hidden on web)
 ├──────────────────────────────────────┤
 │ ABOUT                                │
-│ flashydex 0.1.0                       │
-│ Card data and images: TCGdex         │  link https://tcgdex.dev
-│ Not affiliated with Nintendo, The Pokémon Company or Creatures. │
+│ About FlashyDex                ›     │  → /settings/about ; trailing "1.0.0"
+│ Privacy policy                 ›     │  → /settings/privacy
+│ Licenses                       ›     │  → /settings/licenses
+├──────────────────────────────────────┤
+│ DANGER ZONE                          │  caption in --ps-negative
+│ Remove a downloaded catalog…         │  negative text rows
+│ Erase all FlashyDex data…            │
+├──────────────────────────────────────┤
+│ FlashyDex is not affiliated with     │  caption subtle, always visible at the bottom
+│ Nintendo, Creatures, GAME FREAK or   │
+│ The Pokémon Company.                 │
 └──────────────────────────────────────┘
 ```
-Preferences are device-local (`localStorage`), applied instantly, no Save button (they are view preferences, not collection data — the "never auto-saves" rule concerns collection mutations).
+- **Preferences apply instantly.** There is no Save button: these are settings, not collection data.
+  - `hideTcgPocket` and `defaultCurrency` save through `SettingsRepo.update`.
+  - Appearance, Search language and Haptics are device preferences. Request S5 asks to add them to AppSettings; meanwhile they live in Capacitor Preferences / `localStorage` with the `ps-` prefix, and theme is mirrored to `localStorage["ps-theme"]` for the no-flash script.
+- **Rows:** every row is ≥ 48 tall with a chevron for navigation. Switch rows put the label on the left and the switch on the right, and the whole row toggles.
+- **Large text:** at `ax`, segmented preferences become NativeSelects so they never overflow.
 
-### 10.2 Data — sync section
+### 10.2 Catalog & prices (`/settings/catalog`)
+
+The catalog is per language. The primary path is a **catalog pack**: a versioned `.db.zst` downloaded, verified and activated atomically (COMPRESSION-STORAGE). The **TCGdex direct path** (`SyncService`) handles:
+- prices;
+- sets newer than the pack;
+- one-set fill-ins;
+- a full fallback when no pack is available.
+
 ```
-│ CARD CATALOG (TCGdex)                │
+┌──────────────────────────────────────┐
+│ ‹ Settings      Catalog & prices     │
+├──────────────────────────────────────┤
+│ LANGUAGES                            │
 │ ┌──────────────────────────────────┐ │
-│ │ English   220 sets · 23,736 cards│ │  counts from the catalog
-│ │ Synced 30 Oct 2026, 14:05     ✓  │ │
-│ │ Japanese  184 sets · 12,781 cards│ │
-│ │ Synced 30 Oct 2026, 14:41     ✓  │ │
+│ │ English                     ✓    │ │  installed
+│ │ Catalog 2026.10.30 · 23,736 cards│ │  pack version · card count
+│ │ 58 MB on this device             │ │  uncompressed footprint
+│ │ Update available · 3 MB   Update │ │  only when manifest has a newer version
+│ ├──────────────────────────────────┤ │
+│ │ Japanese                [Download]│ │  not installed
+│ │ 12,781 cards · 9 MB download     │ │  from manifest; "uses 31 MB"
+│ │ Many older Japanese cards have no│ │
+│ │ pictures in the catalog yet.     │ │
 │ └──────────────────────────────────┘ │
-│ [ Sync catalog ]   Mode: Quick ▾     │  Quick = incremental, Full refresh = refresh
-│ Downloads card lists and prices. Your collection is never changed by a sync.
+├──────────────────────────────────────┤
+│ PRICES                               │
+│ TCGplayer prices as of 30 Oct 2026   │  newest sourceUpdatedAt among owned cards
+│ [ Update prices ]  For: (My cards)(Sets I collect)(Everything)
+│ My cards: 412 cards · about 20 s     │  estimate = cards ÷ 25 per s (direct TCGdex)
+├──────────────────────────────────────┤
+│ SETS I COLLECT                       │
+│ All sets                       ›     │  or "12 sets" → sheet (§15.5 picker)
+│ Used for the Sets tab and for price  │
+│ updates. Doesn't change the download.│
+├──────────────────────────────────────┤
+│ Check for updates              ›     │  manifest + new-set check; also pull-to-refresh
+│ Last checked today, 14:05            │
+└──────────────────────────────────────┘
 ```
-Running state (polls status every 2 s; `role="progressbar"` with `aria-valuenow`, plus a polite live region announcing every 10 %):
-```
-│ Syncing English and Japanese…        │
-│ ▓▓▓▓▓▓▓▓░░░░░░░░░░░░  34 / 220 sets  │  determinate when setsTotal known; else indeterminate
-│ 6,120 of 23,736 cards · 3 failed     │  cardsDone / cardsTotal · cardsFailed (warning color if >0)
-│ You can leave this page — the sync keeps running on your PC.
-│ [ Cancel sync ]                      │  secondary; confirm "Stop the sync? Cards already downloaded are kept."
-```
-End states:
-- Completed: positive banner "Catalog up to date — 23,736 English and 12,781 Japanese cards." (real counts).
-- Completed with warnings: "Synced with 3 warnings" + disclosure listing `warnings[].message`.
-- Failed / interrupted: warning banner "Sync stopped at 34 of 220 sets (3 cards failed). Everything downloaded so far is kept." [Resume] (resumes same run id) [Details].
-- Cancelled: info "Sync cancelled. Downloaded data is kept." [Resume].
-- Another sync active (409): the running card is shown instead of the button.
-- Cancel-requested: button becomes "Stopping…" disabled.
 
-### 10.3 Import (dry-run first)
+**Pack download/install, running state** (`ProgressCard` replaces the language row):
+```
+│ English                              │
+│ ▓▓▓▓▓▓▓▓░░░░░░░░░░░░  8.4 / 14.2 MB  │  determinate (bytes) during download
+│ Downloading · about 1 min left       │  stage line: Downloading → Checking → Installing → Ready
+│ [ Pause ]  [ Cancel ]                │  Pause only if resumable (HTTP Range); else Cancel only
+```
+- Stages (they map to the request S1 states): Downloading (bytes) → Checking (size + SHA-256; indeterminate) → Installing (decompress to temp; determinate by bytes if available) → Activating (instant) → **Ready**.
+- The `aria-valuetext` reads, e.g., "English catalog, downloading, 8.4 of 14.2 megabytes".
+- **Space check first.** If free space < uncompressed size × 2 (temp + final): Dialog "Not enough space" / "The English catalog needs about 120 MB free. Free up space in Settings → General → iPhone Storage." [OK]. The download is never started.
+- **Cellular.** On a cellular connection with a download > 50 MB: Dialog "Download on cellular?" / "The English catalog is 64 MB." [Wait for Wi-Fi] [Download now]. This needs the `@capacitor/network` connection type; on web there is no prompt.
+- **Cancel** → Dialog "Stop downloading? Your current catalog stays as it is." [Keep downloading] [Stop].
+- **Failure.** The working catalog is untouched (atomic activation) and the copy says so:
+  - Network: "Download interrupted. [Retry]".
+  - Hash or size mismatch: "The download was damaged and wasn't installed. Your current catalog is unchanged. [Retry]".
+  - Schema: "This catalog needs a newer version of FlashyDex. Update the app from the App Store." with no retry.
+- **Update available:** "Update · 3 MB" (or "18 MB" if a full pack). Same flow. Search keeps working on the old catalog until activation, which is instant.
+
+**TCGdex direct jobs** (`SyncService`: prices, newer sets, one set, fallback crawl):
+```
+│ Updating prices · My cards           │
+│ ▓▓▓▓▓▓▓▓░░░░░░░░░░░░  120 / 412 cards│  cardsDone / cardsTotal
+│ 3 failed · Details                   │  cardsFailed (warning), disclosure lists warnings[]
+│ [ Pause ]                            │  = SyncService.cancel (keeps progress)
+```
+- **Pause** = `SyncService.cancel`. It shows "Stopping…" until `cancelled`, then becomes **Resume** (= `resume`, same run). The copy says "Paused" rather than "Cancelled": nothing is lost.
+- **Completed:** toast plus `haptic('synced')`: "Prices updated for 409 of 412 cards." (real counts). With warnings, the toast reads "…3 couldn't be updated" and links to the warning list.
+- **Failed / interrupted:** "Stopped at 120 of 412 cards. Everything downloaded so far is kept." [Resume] [Details].
+- **Another job active** (`ActiveWorkError`): the running card shows instead of a second start. A new request is queued ("Starts after the current download") — request S4.
+
+**Fallback when no pack is available** (manifest unreachable or no pack for the language, but TCGdex is reachable):
+- The language row offers "Download from TCGdex · about 23,700 cards · 50 MB · 15–25 min".
+- It runs `SyncService.start({languages, selection})` for all sets, or only "Sets I collect" (the row offers both, each with its estimate).
+- Estimate formula:
+  - download ≈ cards × 2.1 KB (measured average of card-detail JSON, 2026-10-30);
+  - time ≈ cards ÷ 40 to cards ÷ 25 seconds (concurrency 8 at the measured ~0.26 s latency);
+  - shown as a rounded range.
+- Search becomes available set by set as the download progresses.
+- A long crawl offers "Keep screen on while downloading" (default on while this screen is open; `@capacitor-community/keep-awake`, request T5). The app pauses in the background (§16.3).
+
+### 10.3 Import, export & backup (`/settings/data`)
+
+**Import (dry-run first):**
 ```
 │ IMPORT                               │
-│ Bring in cards from a flashydex JSON export or a CSV file.  [Format guide]→ docs link
-│ [ Choose file ]                      │  accept=".json,.csv,application/json,text/csv"
+│ Bring in cards from a FlashyDex JSON export or a CSV file.   Format guide ›
+│ [ Choose file ]                      │  Platform.filesystem.pick({kind:'transfer'})
 ```
-After choosing → upload to dry-run → **preview** (full-height sheet / dialog):
+- **The file picker is native:** iOS presents the document picker (Files, iCloud Drive, other providers) limited to JSON/CSV; Android uses the system picker; web uses `<input type=file accept=".json,.csv,application/json,text/csv">`. Picker cancel → nothing happens (`null`).
+- After picking → `TransferService.dryRun` → **preview** (large sheet):
 ```
 │ Import preview — collection.csv      │
 │ 412 rows read                        │
 │ ✓ 398 will be added                  │  positive
-│ ↻ 6 match existing copies            │  info — policy below decides
-│ ⚠ 5 need attention                   │  warning (e.g. unknown card id → will become custom card)
+│ ↻ 6 match cards you already have     │  info — policy below decides
+│ ⚠ 5 need attention                   │  warning (e.g. unknown card id → custom card)
 │ ✕ 3 will be skipped (errors)         │  negative
 │ If a row matches a copy you already have:
-│ (Skip it)(Update my copy)            │  conflictPolicy `skip` (default) | `update` — changing it re-runs the dry-run
-│ ▸ Row details (first 100)            │  table: row #, card, outcome, message
-│ [ Import 398 cards ]   [ Cancel ]    │  commit button shows the exact count for the chosen policy
+│ (Skip it)(Update my copy)            │  conflictPolicy skip|update — changing it re-runs dry-run
+│ ▸ Row details (first 100)            │
+│ [ Import 398 cards ]   [ Cancel ]    │  commit shows the exact count
 ```
-- Nothing is written before "Import N cards". Commit uses the preview id; if the collection changed since the preview (409 stale revision) → "Your collection changed since this preview. [Preview again]".
-- Result: "Imported 398 cards. 3 rows skipped." [Download skipped rows] (if API provides) [View collection].
-- Errors: unsupported file → "This file isn't a flashydex export or a CSV with the expected columns. See the format guide." Too large (413) → "That file is too large (max 25 MB)."
+- Nothing is written before "Import N cards". Commit = `TransferService.commit({id, planHash, confirm:true})`; it is safe to replay (receipt).
+- On success: `haptic('added')` and the result "Imported 398 cards. 3 rows skipped." [View collection].
+- Error copy is in §12: STALE_PREVIEW → "Preview again"; PREVIEW_EXPIRED (30 min); PAYLOAD_TOO_LARGE (25 MB); IMPORT_INVALID.
 
-### 10.4 Export
+**Export:**
 ```
 │ EXPORT                               │
-│ [ Download JSON ]  Complete — use this for backups and moving to another PC.
-│ [ Download CSV ]   One row per card, for spreadsheets. Some details aren't included.
+│ [ Share JSON ]  Complete — use this to move to another device or app.
+│ [ Share CSV ]   One row per card, for spreadsheets. Some details aren't included.
 ```
-Filenames come from the server (`flashydex-<UTC compact>.json` / `.csv`, API.md). Button shows spinner while the blob downloads; error toast on failure.
+- `TransferService.exportFile` → `shareExport`. On native this opens the **iOS/Android share sheet** (Save to Files, AirDrop, Mail…); on web the browser downloads the file.
+- Filenames: `flashydex-<UTC compact>.json/.csv`.
+- While the file is being written, the button shows a spinner and "Preparing…".
+- Outcomes are reported honestly:
+  - `shared` → toast "Export ready" (no claim that it was saved);
+  - `downloaded` → "Downloaded flashydex-…json";
+  - `cancelled` → nothing;
+  - error → `haptic('error')` + toast.
+- On iPad, the share popover anchors to the pressed button.
 
-### 10.5 Backup and restore
+**Backup & restore (`.fdx`, COMPRESSION-STORAGE):**
 ```
 │ BACKUP & RESTORE                     │
-│ [ Download backup ]  A complete copy of the database file (.sqlite), including the catalog.
-│ [ Restore from backup… ]             │  negative-outlined secondary button
+│ [ Back up now ]  Saves your collection, settings and custom cards
+│                  in one .fdx file. Card catalogs aren't included —
+│                  they download again after a restore.
+│ Last backup: 28 Oct 2026 · 412 cards │  if known (request S6)
+│ [ Restore from backup… ]             │  negative-outlined secondary
+│ Your collection is also included in  │  caption subtle; wording must match actual OS
+│ your iPhone's iCloud/device backup.  │  backup behaviour (request S7) — omit if not true
 ```
-Restore flow: choose `.sqlite` → upload to restore dry-run → dialog:
+- **Back up now:** create the `.fdx` → share sheet (as Export). A caption under the button suggests "Save it to Files or iCloud Drive". Until Stage A3 ships `.fdx`, this button produces the JSON backup from `BackupService.create` and is labelled "Back up (JSON)".
+- **Restore:**
+  1. Pick the file (`kind:'database'`; `.fdx`, or JSON while A3 is pending) → `previewRestore`.
+  2. Dialog:
 ```
 │ Restore this backup?                 │
-│ Backup:  412 cards · made 28 Oct 2026│  from dry-run metadata
-│ Current: 431 cards                   │
-│ Restoring replaces everything in flashydex with the backup.
-│ A copy of your current data is saved first.
-│ Type RESTORE to confirm  [         ] │
+│ Backup:  412 cards · made 28 Oct 2026│  from preview metadata
+│ Now:     431 cards                   │
+│ Restoring replaces your collection,  │
+│ settings and custom cards. A safety  │
+│ copy of your current data is kept.   │
+│ Type RESTORE to confirm  [         ] │  autocapitalize=characters
 │ [ Cancel ]   [ Restore backup ]      │  danger-solid, enabled only after typing
 ```
-During restore: full-screen blocking overlay "Restoring backup… Don't close this page." then reload. Failure: "Restore failed. Your previous data is unchanged." (ARCHITECTURE guarantees re-open of the previous copy).
+  3. During the restore: blocking overlay (§1.4). Success → toast "Backup restored — 412 cards". If a catalog for the backup's cards isn't installed, the Dashboard shows the download card.
+  4. Failure → "Restore failed. Your data is unchanged." (core reopens the prior file).
+- **Unsupported on this device** (`UnsupportedCapabilityError` for raw restore): explain "This backup can be merged with Import instead." [Go to Import].
 
-### 10.6 Data page ≥ 1024
-Two-column: left catalog sync card + backup/restore; right import + export.
+### 10.4 About (`/settings/about`)
+```
+┌──────────────────────────────────────┐
+│ ‹ Settings          About            │
+├──────────────────────────────────────┤
+│            [FlashyDex mark]          │  64 px, same artwork as the icon
+│              FlashyDex               │  H2
+│        Version 1.0.0 (12)            │  App.getInfo() version (build) on native;
+│                                      │  web: package version + "web"
+├──────────────────────────────────────┤
+│ FlashyDex is not affiliated with     │  body, exact BRIEF sentence
+│ Nintendo, Creatures, GAME FREAK or   │
+│ The Pokémon Company.                 │
+│ Card names, numbers and images are   │  body muted
+│ the property of their respective     │
+│ owners and are shown for collection  │
+│ tracking only.                       │
+├──────────────────────────────────────┤
+│ DATA SOURCES                         │
+│ Card catalog and images: TCGdex   ↗  │  https://tcgdex.dev (in-app browser)
+│ Prices: TCGplayer (USD) and          │  caption: "Provided through TCGdex. FlashyDex
+│ Cardmarket (EUR), via TCGdex         │  isn't affiliated with TCGplayer or Cardmarket.
+│                                      │  Prices may be out of date."
+│ Catalog versions: EN 2026.10.30 ·    │
+│ JA not downloaded                    │
+├──────────────────────────────────────┤
+│ Privacy policy                 ›     │
+│ Licenses                       ›     │
+│ Database version 3                   │  schema_migrations latest (support info), caption
+└──────────────────────────────────────┘
+```
+- Readable offline and before onboarding.
+- The disclaimer text is selectable.
+- The 64 px mark is decorative (`alt=""`).
+
+### 10.5 Privacy policy (`/settings/privacy`)
+- **The in-app text is bundled** (works offline). Its source is `docs/PRIVACY-POLICY.md` after the owner fills in the brackets; this doc doesn't duplicate the policy wording.
+- **Layout:** H1 "Privacy policy", a "Last updated" line, then the policy text rendered as headings + paragraphs in body text, max 65ch, selectable.
+- **The top of the screen is a short summary card** (surface, radius lg), written in this voice:
+  - "FlashyDex doesn't collect your data. There's no account, no ads and no analytics."
+  - "Your collection, notes and prices you enter stay on this device."
+  - "To download card data, images and prices, the app connects directly to TCGdex (api.tcgdex.net and assets.tcgdex.net). TCGdex sees your device's IP address, like any website you visit. Price data comes from TCGplayer and Cardmarket through TCGdex."
+  - "Exports and backups go only where you share them."
+  - A sentence about OS backup that matches reality (request S7).
+- **"View online ↗"** opens the hosted URL (`FLASHYDEX_PRIVACY_URL` build constant; the owner hosts it) in the in-app browser. The row is hidden when the constant is empty.
+- No consent toggles exist, because nothing is collected.
+
+### 10.6 Licenses (`/settings/licenses`)
+- A list of entries, each with name, version, license name and a disclosure revealing the full license text (selectable, monospace caption).
+- Always first:
+  - **TCGdex** — card data; cards-database MIT © 2021 TCGdex. A note says the MIT licence covers TCGdex's software and data files, not the card artwork.
+  - **Pokeum** — MIT © 2026 TBLgGamin. Listed if any code is adapted; RECOGNITION-DESIGN plans Phase 2 adaptations. Mirrors `THIRD_PARTY_NOTICES.md`.
+  - **Inter** — SIL OFL 1.1 (Android/web).
+  - **lucide** — ISC.
+- Then every bundled npm dependency, from a build-generated `licenses.json` (request T6), plus Capacitor plugins and SQLCipher (via `@capacitor-community/sqlite`).
+- Long lists are virtualized; a search field filters by name.
+
+### 10.7 Danger zone
+- **Remove a downloaded catalog…** → a sheet listing installed languages, each with its size.
+  - Confirm Dialog: "Remove the English catalog? This frees 58 MB. Your cards stay in your collection — you'll see what you saved, without prices and card info, until you download it again." [Cancel] [Remove].
+  - It deletes `catalog-en.db` only (the catalog is replaceable; personal data lives in `flashydex-user.db`). Request S8.
+- **Erase all FlashyDex data…** → full-screen confirm:
+  - "This deletes your collection, custom cards, locations, settings and downloaded catalogs from this device. It can't be undone. Back up first if you might want them later."
+  - [Back up first] (→ backup flow), a "Type ERASE to confirm" field, and [Erase everything] (danger-solid, enabled after typing).
+  - Then the blocking overlay → `haptic('deleted')` → the app restarts at `/welcome`. Request S8.
+  - Until S8 exists the row is hidden. Deleting the app also removes all data, and the row's caption says so.
 
 ## 11. Scanner (`/scan`) — Phase 3 design, disabled in Phase 1
 
-Phase 1 ships only the nav slot (disabled) and the "Scanner coming" sheet (§11.6). Everything else here is the target for Phase 3 so the shell, tokens and add-confirm sheet are built compatible with it now.
+Phase 1 ships only the disabled tab slot and the "Scanner coming" sheet (§11.6). Everything else here is the Phase 3 target; the shell, tokens and add-confirm sheet are built compatible with it now.
+
+Camera: Phase 3 uses `@capacitor/camera` or a native preview plugin. The plugin is not linked in Phase 1, so no permission strings and no prompt; the draft strings are in APP-STORE-COMPLIANCE.md.
 
 ### 11.1 Layout 390 px (Phase 3)
 ```
 ┌──────────────────────────────────────┐
-│ ✕          Looking for a card…   ⚡ ↺│  translucent top bar over video: close, status pill,
-│                                      │  torch (if supported), switch camera
+│ ✕          Looking for a card…   ⚡ ↺│  translucent bar over video (safe-area top): close,
+│                                      │  status pill, torch, switch camera
 │    ┌────────────────────────┐        │
-│    ┃                        ┃        │  framing guide: 63:88, 78% of width, corner brackets
+│    ┃                        ┃        │  framing guide: 63:88, 78% width, corner brackets
 │    ┃                        ┃        │  4 px accent; outside darkened 55%
 │    ┃                        ┃        │  guide turns positive when a card quad is detected
-│    ┃                        ┃        │
 │    └────────────────────────┘        │
-│        Fill the frame with the card  │  hint caption
-│                                      │
-│ [🖼 Photo]      ( ◉ )      [≡ 12]    │  upload photo · shutter 72 px · session tray (count)
-│ Continuous  [●  ]   EN|JA|Auto       │  continuous toggle, language hint
+│        Fill the frame with the card  │
+│ [🖼 Photo]      ( ◉ )      [≡ 12]    │  photo picker · shutter 72 px · session tray
+│ Continuous  [●  ]   EN|JA|Auto       │  bottom controls above --ps-safe-bottom
 └──────────────────────────────────────┘
 ```
-Status pill copy sequence: "Looking for a card…" → "Hold steady" (quad found) → "Identifying…" → "Match found" / "Pick the right card" / "No match — try again or search".
+Status pill copy sequence: "Looking for a card…" → "Hold steady" → "Identifying…" → "Match found" / "Pick the right card" / "No match — try again or search".
 
 ### 11.2 Result sheet (peeks over the bottom 55 %)
-- **Confident** (status confident): art thumb, name, set · number, language, confidence meter "96% match" with a text label (High ≥ threshold / Check / Low), variant chips with the hint preselected only when the variant hint is confident (else preselected by the §7.3 rule and labelled "Looks like Reverse holo? — confirm"), condition NM, qty stepper, **Add card** primary. Still requires a tap (never auto-saves). In continuous mode with the Settings option "Quick add confident matches" (off by default, Phase 3 decision) the Add button shows a 2 s ring countdown that the user can cancel — that is still an explicit opt-in, and only for confident results.
-- **Uncertain**: "Pick the right card" + up to **3** candidate tiles side-by-side (art, name, set·number, % match) + "None of these — search" → `/add?q=<best name>`. Nothing is preselected.
-- **No match / no card**: "Couldn't identify this card" + [Try again] [Search manually].
-- Every field editable before Add; Add reuses the exact §7.3 component.
-- After Add in continuous mode: sheet collapses to a toast "Added Furret · ×1" [Undo], camera resumes, the session tray count increments with a pop. Tray opens a list of this session's adds (ScanSession) with per-row Undo/Edit.
+- **Confident:**
+  - Shows art thumb, name, set · number, language and a confidence meter ("96% match" with a text label).
+  - Variant chips: the hint is preselected only when it is confident; otherwise preselect by the §7.3 rule and label it "Looks like Reverse holo? — confirm".
+  - Condition "Not set", qty stepper, **Add card** primary.
+  - Still needs a tap; it never auto-saves.
+  - "Quick add confident matches" (off by default) shows a 2 s ring countdown that can be cancelled.
+- **Uncertain:** "Pick the right card" with up to **3** candidate tiles (art, name, set·number, % match), plus "None of these — search" → `/add?q=<best name>`. Nothing is preselected.
+- **No match / no card:** "Couldn't identify this card" + [Try again] [Search manually].
+- Every field is editable before Add; Add reuses the exact §7.3 component, including `haptic('added')`.
+- **After Add in continuous mode:** the sheet collapses to the toast "Added Furret · ×1" [Undo], the camera resumes, and the session tray count increments with a pop.
 
 ### 11.3 ≥ 1024 (webcam)
-Video left (max 640 px wide), result panel right (420 px) always visible.
+Video on the left (max 640 px wide); the result panel on the right (420 px), always visible.
 
 ### 11.4 Error states
-- **Camera needs HTTPS**: when `window.isSecureContext` is false (phone on `http://<pc-ip>:3200`): "The live camera needs a secure (HTTPS) connection. You can still take a photo." [Take a photo] (uses `<input type="file" accept="image/*" capture="environment">`, which works on plain HTTP) [How to enable HTTPS] → docs.
-- Permission denied: "Camera access is blocked. Allow it in your browser's site settings, or take a photo instead."
-- No camera: "No camera found on this device." [Upload a photo].
-- Recognition service down (503): "Card recognition is offline on your PC. Search manually or try again later." [Search manually].
-- Slow (> 4 s): status pill "Still working…"; timeout at 10 s → No-match state with retry.
+- **Permission denied:** "Camera access is off for FlashyDex. Turn it on in Settings → FlashyDex → Camera, or choose a photo instead." [Open Settings] (App settings deep link) [Choose photo].
+- **No camera:** "No camera found on this device." [Choose photo].
+- **Recognition unavailable** (model not downloaded, or the optional endpoint unreachable): "Card recognition isn't ready. Search manually or try again later." [Search manually].
+- **Slow (> 4 s):** "Still working…". Timeout at 10 s → No-match state with retry.
+- **Web over plain HTTP:** the live camera needs a secure context, so offer "Choose a photo" (`<input type=file accept="image/*" capture="environment">`).
 
 ### 11.5 Accessibility
-Status pill is a polite live region. Shutter: "Take photo" button. Candidates are radio-like buttons ("Furret, Darkness Ablaze 136 of 189, 62 percent match"). Torch/switch buttons have names and pressed state. Respect reduced motion: guide color change without pulse.
+- The status pill is a polite live region.
+- The shutter is a "Take photo" button.
+- Candidates are radio-like buttons ("Furret, Darkness Ablaze 136 of 189, 62 percent match").
+- Torch and switch-camera buttons have names and a pressed state.
+- Reduced motion: the guide changes colour without pulsing.
 
 ### 11.6 Phase 1: "Scanner coming" sheet (the only scanner UI that ships now)
 ```
-│ ─────                                │
+│               ▬▬▬                    │
 │ [ScanLine icon, muted]               │
 │ Camera scanning is coming            │  H3
 │ Scanning arrives in a later update.  │
@@ -729,55 +1242,321 @@ Status pill is a polite live region. Shutter: "Take photo" button. Candidates ar
 │ [ Add a card by search ]             │  primary → /add
 │ [ Close ]                            │  text button
 ```
-Playwright: the Scan nav button has `aria-disabled="true"`, no `href`, and opening it never calls `getUserMedia`.
+Playwright: the Scan tab button has `aria-disabled="true"` and no `href`, and opening it never calls `getUserMedia` or a Camera plugin method.
 
 ## 12. Global states and copy library
 
-Error messages map API `error.code` → friendly text (fallback to "Something went wrong. Try again."):
+Errors map a `DomainError.code` (API.md) to friendly text. Fallback: "Something went wrong. Try again." with the code under "Details". Never "Oops". Never blame the user.
 
-| Code / condition | Title | Body |
+| Code / condition | Title | Body (actions) |
 |---|---|---|
-| network failure / fetch rejected | Can't reach flashydex | Your phone couldn't connect to the PC. Check you're on the same Wi-Fi and flashydex is running. |
-| `DB_BUSY` (503) | Busy for a moment | flashydex is saving something else. Trying again… (auto-retry once after `Retry-After`) |
-| `MAINTENANCE` (503) | Restoring a backup | The app will be back in a moment. |
-| `WORKER_UNAVAILABLE` (503) | Couldn't start the sync | The background worker didn't start on your PC. Try again; if it keeps failing, run `npm run sync` on the PC. |
-| `NOT_FOUND` (404) | Not found | This item doesn't exist anymore. It may have been deleted. |
-| `VALIDATION_ERROR` (400) | (inline on fields) | per-field message from `details.issues[].path` |
-| `IN_USE` (409) | Can't delete yet | It's still used by N cards. (N = `details.dependentCount`) |
-| `CONFLICT` (409, `details.field=name`) | (inline) | You already have one called “…”. |
-| `STALE_PREVIEW` (409) | Your collection changed | Preview again to see the latest. |
-| `PREVIEW_EXPIRED` (410) | Preview expired | Previews last 10 minutes. Choose the file again. |
-| `ACTIVE_SYNC` (409) | A sync is already running | (show the running sync card) |
-| `PAYLOAD_TOO_LARGE` (413) | File too large | The limit is 25 MB for imports, 512 MB for backups. |
-| `IMPORT_INVALID` / `BACKUP_INVALID` (422) | This file can't be used | It isn't a valid flashydex export/backup. See the format guide. |
+| network unreachable (offline, `HTTP_FAILED`) | You're offline | "Your collection works offline. Downloads and price updates continue when you're connected." (Try again) |
+| TCGdex 5xx / timeout | TCGdex isn't responding | "The card database is having trouble. Your collection is fine — try again later." (Try again) |
+| catalog server (pack host) unreachable | Can't reach the catalog download | "Try again later, or download directly from TCGdex (slower)." (Try again · Download from TCGdex) |
+| `DB_BUSY` | Busy for a moment | "FlashyDex is saving something else. Try again." (Try again) — no auto-retry for adds |
+| `STORAGE_FULL` | Your device is full | "Nothing was saved. Free up space in Settings → General → iPhone Storage (Android: Settings → Storage), then try again." |
+| `PERSISTENCE_FAILED` | Your last change may not have saved | "FlashyDex reloaded your data. Check the card, then try again if it's missing." (View) |
+| `DB_UNAVAILABLE` / `MIGRATION_FAILED` (startup) | FlashyDex couldn't open your data | "Your collection hasn't been deleted. Close and reopen the app. If this keeps happening, update FlashyDex from the App Store." (Try again · Contact info in About) — full-screen, never an empty app |
+| `MAINTENANCE` | Restoring a backup | blocking overlay copy (§1.4) |
+| `ACTIVE_SYNC` / `ACTIVE_WORK` | A download is already running | show the running ProgressCard; offer "Start after it" (S4) |
+| `NOT_FOUND` | Not found | "This item doesn't exist anymore. It may have been deleted." |
+| `VALIDATION_ERROR` | (inline on fields) | per-field message from `issues[].path` |
+| `IN_USE` | Can't delete yet | "It's still used by N cards." (N = `dependentCount`) |
+| `CONFLICT` (name) | (inline) | "You already have one called “…”." |
+| `STALE_PREVIEW` | Your collection changed | "Preview again to see the latest." (Preview again) |
+| `PREVIEW_EXPIRED` | Preview expired | "Import previews last 30 minutes, restore previews 10. Choose the file again." |
+| `IMPORT_INVALID` / `INVALID_JSON` / `INVALID_CSV` | This file can't be imported | "It isn't a FlashyDex export or a CSV with the expected columns. See the format guide." |
+| `BACKUP_INVALID` | This backup can't be used | "It isn't a FlashyDex backup, or it's damaged." |
+| `PAYLOAD_TOO_LARGE` | File too large | "The limit is 25 MB for imports and 512 MB for backups." |
+| `FILE_IO` / `SHARE_FAILED` | Couldn't share the file | "Try again. If it keeps failing, restart FlashyDex." |
+| `UNSUPPORTED_CAPABILITY` | Not available on this device | context-specific alternative (e.g. Import instead of raw restore) |
+| `CANCELLED` | — | silent (user cancelled) |
+| pack hash/size mismatch | The download was damaged | "It wasn't installed. Your current catalog is unchanged." (Retry) |
+| pack needs newer app | Update FlashyDex | "This catalog needs a newer version of the app." |
+| web: second tab (instance lock) | FlashyDex is open in another tab | "Close the other tab to use FlashyDex here." (web only) |
 
-Button vocabulary (consistent verbs): Add to collection · Add N copies · Add another · Save · Delete copy · Create location · Create and add to collection · Sync catalog · Resume · Cancel sync · Choose file · Import N cards · Download JSON · Download CSV · Download backup · Restore backup · Clear filters · Show N cards · Try again.
-Never: "Submit", "OK" for destructive actions, "Oops".
+**Button vocabulary** (consistent verbs): Add to collection · Add N copies · Add another · Save · Delete copy · Create location · Create and add to collection · Download · Update · Update prices · Pause · Resume · Retry · Cancel · Choose file · Import N cards · Share JSON · Share CSV · Back up now · Restore backup · Remove · Erase everything · Clear filters · Show N cards · Try again.
+Never use "Submit", "OK" for destructive actions, or "Oops".
 
-Skeleton rule: skeletons mirror final geometry exactly (same tile count per row, same row heights) and crossfade to content in 320 ms. Show skeletons only after 150 ms (avoid flash on fast LAN responses).
+**Skeleton rule:** skeletons mirror the final geometry exactly and crossfade to content in 320 ms. Show them only after 150 ms; local reads are usually faster.
 
-## 13. Accessibility checklist (implementer must meet; Playwright + axe where noted)
+## 13. Accessibility checklist (implementer must meet; Playwright + axe + device)
 
-- Landmarks: `header`, `nav[aria-label=Primary]`, `main`, sheet `role=dialog`. One H1 per page.
-- Focus: visible `:focus-visible` ring (2 px `--ps-focus-ring`, 2 px offset) on every interactive element; never `outline:none` without replacement. Sheets trap focus and restore it.
-- Targets ≥ 44 × 44 (Playwright: query all `a,button,[role=button],input,select,[role=switch]` in the viewport at 390 px and assert bounding box ≥ 44 in both dimensions, allowing inline text links inside paragraphs).
-- Labels: every input has a visible `<label>`; icon buttons have `aria-label`; badges have `aria-label` with long names.
-- Color is never the only signal (rarity labels, condition text, gain/loss signs, missing tiles also dashed + "Missing" in accessible name).
-- Contrast tokens verified (DESIGN-TOKENS §3).
-- Live regions: toasts (`status`), sync progress, collection result count, scanner status.
-- Reduced motion: no transform animations; fades kept.
-- Zoom: layout survives 200 % text zoom at 390 px without horizontal scroll (truncation allowed in tiles, full text available in details).
-- Language: `<html lang="en">`; JA card names wrapped in `<span lang="ja">` when the card language is `ja` so screen readers switch voices.
-- Run `@axe-core/playwright` on `/`, `/collection`, `/cards/en/swsh3-136`, `/sets`, `/add`, `/settings/data` with zero serious/critical violations.
+- **Landmarks:** `header`, `nav[aria-label="Tabs"]`, `main`, sheets `role=dialog`. One H1 per page (the large title, or the card name).
+- **Focus:** visible `:focus-visible` ring (2 px `--ps-focus-ring`, 2 px offset) on every interactive element. Sheets trap focus and restore it. Route changes move focus to the new page's H1 (`tabIndex=-1`) and announce the title.
+- **Targets:** ≥ 44 × 44 pt. Playwright queries all `a,button,[role=button],input,select,[role=switch]` in the viewport at 390 px and asserts the bounding box is ≥ 44 in both dimensions (inline text links inside paragraphs excepted).
+- **Labels:** every input has a visible `<label>`. Icon buttons have `aria-label`. Badges have `aria-label` with the long names.
+- **Colour** is never the only signal (rarity, condition, gain/loss signs; missing tiles are also dashed and say "Missing" in the accessible name).
+- **Contrast:** token pairs are verified (DESIGN-TOKENS §3, including the chrome over worst-case art).
+- **Live regions:** toasts (`status`); sync start, completion and failure (not percentages); collection result count; scanner status.
+- **VoiceOver (iOS) / TalkBack (Android)** device pass:
+  - Tab bar items read "Home, tab, selected" style names (link + `aria-current`).
+  - Scan reads "Scan, coming in a later update, dimmed".
+  - The Add button, sync pill, share actions, steppers, switches and sheets all have names and states.
+  - Every swipe or long-press action has a button alternative.
+  - Headings are navigable with the rotor.
+  - JA names are wrapped in `<span lang="ja">`.
+- **Dynamic Type / font scale** (DESIGN-TOKENS §4.2):
+  - Test at iOS Large (default), xxxLarge and AX3, and Android 1.3× and 2.0×.
+  - No clipped controls; buttons grow (min-height) and labels may wrap.
+  - The primary Add button stays visible above the keyboard and home indicator.
+  - The grid goes to 2 columns at `ax`; the stat tiles go to 1 column.
+  - No viewport lock (`maximum-scale`/`user-scalable=no` forbidden).
+  - The web layout survives 200 % browser text at 390 px with no horizontal scroll.
+- **Reduced motion:** no transform animations (page, sheet, pop, pull stretch); fades remain; haptics remain.
+- **Increased contrast** (iOS): tokens switch (DESIGN-TOKENS §3.4); verify the subtle text and borders.
+- **axe:** run `@axe-core/playwright` on `/`, `/collection`, `/cards/en/swsh3-136`, `/sets`, `/add`, `/settings`, `/settings/catalog`, `/settings/data`, `/settings/about`, `/settings/privacy` and `/welcome` (each step). Zero serious or critical violations.
 
-## 14. Acceptance hooks for Playwright (390 × 844)
+## 14. Acceptance hooks (Playwright 390 × 844 and 1280 × 800; device checks marked M)
 
-Stable selectors the implementer must add (`data-testid`): `bottom-nav`, `nav-scan` (aria-disabled), `add-button`, `search-input`, `result-row`, `confirm-sheet`, `variant-chip-<enum>`, `condition-chip-<NM…>`, `qty-input`, `add-submit`, `add-another`, `card-tile`, `qty-badge`, `price`, `filter-button`, `filter-sheet`, `sync-start`, `sync-progress`, `import-file`, `import-preview`, `import-commit`, `export-json`, `export-csv`, `backup-download`, `restore-file`.
+Stable selectors (`data-testid`):
+- Shell: `tab-bar`, `tab-scan` (aria-disabled), `add-button`, `sync-pill`.
+- Search and add: `search-input`, `result-row`, `confirm-sheet`, `variant-chip-<enum>`, `condition-chip-<NM…|unset>`, `qty-input`, `add-submit`, `add-another`, `undo`.
+- Collection: `card-tile`, `qty-badge`, `price`, `filter-button`, `filter-sheet`, `sort-button`.
+- Catalog: `catalog-language-<en|ja>`, `catalog-download-<en|ja>`, `catalog-progress`, `prices-update`.
+- Data: `import-file`, `import-preview`, `import-commit`, `export-json`, `export-csv`, `backup-create`, `restore-file`.
+- Onboarding: `welcome-start`, `welcome-skip`, `notice-continue`, `lang-<en|ja>`, `sets-all`, `sets-pick`, `onboarding-finish`.
+- About: `about-disclaimer`.
 
-Key flows to script:
-1. Tap-tap-add: `/collection` → `add-button` → type "furret" → first `result-row` (Furret, Darkness Ablaze) → `add-submit` (no other interaction) → success shows "Added Furret" → `add-another` focuses `search-input` with text selected. Verify one new owned copy: variant normal, condition NM, raw, no price.
-2. Null price: a card with no price snapshot renders no `price` element in its tile and no "$0.00" anywhere on the page.
-3. No horizontal overflow on every route listed in §1.1.
-4. Scan slot: `nav-scan` has `aria-disabled="true"`; activating it shows the "Camera scanning is coming" sheet; `navigator.mediaDevices.getUserMedia` is never called (spy).
-5. Discard: open confirm, change condition to LP, close → "Discard this card?" appears; Discard → no copy created.
-6. Theme: default `data-theme="dark"`; switching to Light persists across reload.
+Key flows:
+1. **Tap-tap-add:** `/collection` → `add-button` → type "furret" → first `result-row` (Furret, Darkness Ablaze) → `add-submit` with no other interaction → "Added Furret" → `add-another` focuses `search-input` with its text selected. Verify one new copy: variant normal, **condition null**, raw, no price.
+2. **Null price:** a card with no price snapshot renders no `price` element in its tile and no "$0.00" anywhere on the page.
+3. **No horizontal overflow** on every route in §1.1, including at `--ps-text-scale: 2` (`data-text-size="ax"`).
+4. **Scan slot:** `tab-scan` has `aria-disabled="true"`; activating it shows "Camera scanning is coming"; `navigator.mediaDevices.getUserMedia` is never called (spy).
+5. **Discard:** open confirm, change condition to LP, press Cancel → "Discard this card?"; Discard → no copy created. Repeat with the browser back button (stands in for the edge swipe / Android back): the same dialog appears.
+6. **Theme:** default `data-theme="dark"`; switching to Light persists across reload.
+7. **First run:**
+   - A fresh DB opens `/welcome`.
+   - The notice step shows the exact disclaimer sentence.
+   - Skipping lands on `/` with the "Download the card catalog" empty state, and `/welcome` is never shown again.
+   - Back from `/` does not return to `/welcome`.
+8. **Offline (web: `context.setOffline(true)`):** with a catalog present, search, add, edit, delete and export all work. "Update prices" shows the offline toast. No network error dialog appears on any tab root.
+9. **Safe areas:** with `--safe-area-inset-top: 47px; --safe-area-inset-bottom: 34px` injected on `<html>`, the top bar content starts ≥ 47 px from the top, the tab bar's last interactive pixel is ≥ 34 px above the bottom, and the sheet footer button clears 34 px.
+10. **Back closes sheets:** open the filter sheet, `page.goBack()` → the sheet is closed and the URL has no `sheet=`.
+11. **(M) iPhone:**
+    - VoiceOver pass of first run → add → export share sheet.
+    - AX3 Dynamic Type pass of Add confirm.
+    - Edge-swipe back from Card Details to Collection keeps the scroll position.
+    - Airplane-mode cold launch shows the collection.
+    - Haptic on add, undo and delete (felt).
+
+## 15. First run / onboarding (`/welcome/*`)
+
+### 15.1 Startup gate (`__root.beforeLoad`)
+1. **Splash stays up** while startup runs: the DB opens, migrations run and `SettingsRepo.get` returns. Then `SplashScreen.hide({fadeOutDuration:200})` after the first route paints (DESIGN-TOKENS §10.3). There is no in-app loading screen unless startup takes > 3 s; then a centred mark with "Opening your collection…".
+2. **Startup failure** → full-screen `DB_UNAVAILABLE` / `MIGRATION_FAILED` error (§12).
+3. **`onboardingCompletedAt == null`** → redirect to `/welcome`, unless the target is `/settings/about`, `/settings/privacy` or `/settings/licenses`.
+4. **An interrupted catalog job from a previous session** → the sync pill shows "Download paused · Resume". Resume is user-initiated (ARCHITECTURE).
+
+### 15.2 Shared layout of every step (modal, no tab bar)
+```
+┌──────────────────────────────────────┐
+│ ‹                      ● ● ○ ○   Skip│  back (not on step 1), 4-dot progress, Skip (text button)
+│                                      │
+│ [illustration/mark area, ≤ 30% h]    │  only on step 1; other steps start with the H1
+│ Title (H1)                           │
+│ Body (body, muted, max 34ch)         │
+│ … step content …                     │
+│                                      │
+│ [          Primary action         ]  │  sticky footer, above home indicator
+│            secondary text button     │
+└──────────────────────────────────────┘
+```
+- **Progress dots:** `aria-label="Step 2 of 4"`.
+- **Back:** the edge swipe goes to the previous step, because each step is a pushed route.
+- **Skip,** on any step, sets `onboardingCompleted:true` (and `disclaimerAcknowledged:true`, because the notice is always shown before Skip is available on step 2+; on step 1, Skip jumps to the notice first). It then `replace`s to `/`. The app is fully usable for custom cards and import, and the Dashboard shows the download card. **The disclaimer is shown at least once before entering the app; acknowledgement never blocks local use.**
+- **Large text:** the content scrolls and the footer stays pinned.
+- **Reduced motion:** steps crossfade.
+
+### 15.3 Step 1 — Welcome (`/welcome`)
+```
+│            [FlashyDex mark]          │  96 px mark on --ps-bg (same as splash → seamless)
+│ Your card collection, in your pocket │  H1
+│ • Search every English and Japanese  │  three rows, 24 px muted icons
+│   card                               │
+│ • Track copies, condition, grades    │
+│   and what you paid                  │
+│ • Everything stays on this device —  │
+│   no account, works offline          │
+│ [            Get started          ]  │  → /welcome/notice
+│        Restore from a backup         │  text button → restore flow (§10.3), then step 3
+```
+
+### 15.4 Step 2 — Before you start (`/welcome/notice`)
+```
+│ Before you start                     │  H1
+│ ┌──────────────────────────────────┐ │  surface card
+│ │ FlashyDex is not affiliated with │ │  body, fg — exact BRIEF sentence
+│ │ Nintendo, Creatures, GAME FREAK  │ │
+│ │ or The Pokémon Company.          │ │
+│ └──────────────────────────────────┘ │
+│ Card data, images and prices come    │  body muted
+│ from TCGdex, a community database.   │
+│ Prices come from TCGplayer and       │
+│ Cardmarket and may be out of date.   │
+│ Your collection stays on this device.│
+│ FlashyDex doesn't collect any data.  │
+│ Read the privacy policy ›            │  → /settings/privacy (pushed; back returns here)
+│ [             Continue            ]  │  SettingsRepo.update({disclaimerAcknowledged:true})
+```
+
+### 15.5 Step 3 — Languages (`/welcome/languages`)
+```
+│ Which cards do you collect?          │  H1
+│ ┌──────────────────────────────────┐ │  selectable cards (checkbox role), ≥ 72 px
+│ │ [✓] English                      │ │
+│ │     220 sets · about 23,700 cards│ │  counts from bundled bootstrap metadata/manifest
+│ │     14 MB download · 58 MB on device│  manifest compressedBytes / uncompressedBytes
+│ ├──────────────────────────────────┤ │
+│ │ [ ] Japanese                     │ │
+│ │     184 sets · about 12,800 cards│ │
+│ │     9 MB download · 31 MB on device│
+│ │     Many older Japanese cards    │ │  caption, warning-free muted
+│ │     have no pictures yet.        │ │
+│ └──────────────────────────────────┘ │
+│ Include TCG Pocket (digital) cards [○]│  Switch → hideTcgPocket (default off = hidden)
+│ Total: 14 MB · about 1 min on Wi-Fi  │  live total; time = bytes ÷ 1–5 MB/s, rounded range
+│ [            Continue             ]  │  saves languages → step 4
+│      Not now — I'll add cards myself │  text button = Skip (no download)
+```
+- **Defaults:** English is selected; Japanese is selected too if the device language is Japanese. At least one must be selected for Continue; the "Not now" path needs none.
+- **Sizes** come from the catalog manifest. If the manifest is unreachable (offline), the sizes show "—" and the caption "You're offline. Choose now — the download starts when you're connected."
+- **No packs published** (manifest returns no pack for a language): the card switches to the TCGdex fallback figures ("about 50 MB · 15–25 min", §10.2).
+- **Values are explicit estimates.** "about" is always shown, with real numbers and no invented precision.
+
+### 15.6 Step 4 — Sets you collect (`/welcome/sets`)
+```
+│ Which sets do you collect?           │  H1
+│ This helps FlashyDex show your sets  │  body muted
+│ first and keep their prices fresh.   │
+│ It doesn't change the download.      │
+│ (● All sets)  ( Only sets I pick )   │  segmented; default All
+│ ─ when "Only sets I pick" ─          │
+│ [⌕ Search sets                    ×] │  SearchField (local list)
+│ (EN)(JA)                             │  language chips (selected languages only)
+│ ┌──────────────────────────────────┐ │
+│ │ [✓] [logo] Darkness Ablaze 2020  │ │  checkbox rows ≥ 56 px, newest first,
+│ │ [ ] [logo] Rebel Clash     2020  │ │  grouped by series headers (sticky)
+│ └──────────────────────────────────┘ │
+│ 12 sets selected                     │  caption, aria-live
+│ [         Start download          ]  │  → starts pack install(s), finishes onboarding
+│            Skip this step            │  = All sets
+```
+- **The set list** comes from bundled bootstrap metadata or the manifest set index (request S9). Offline with no index: only "All sets" is offered, with the caption "You can pick sets later in Settings."
+- **Fallback path** (no packs): this step becomes the **download selection**. "All sets" shows the full estimate; "Only sets I pick" shows a live estimate for the picked sets, e.g. "12 sets · 2,140 cards · about 4.5 MB · 1–2 min" (formula in §10.2).
+- **Start download:**
+  - `SettingsRepo.update({languages, setsFollowed | syncAllSets, onboardingCompleted:true})`.
+  - Start the pack install(s), or `SyncService.start` on the fallback path.
+  - `replace` to `/`.
+  - The Dashboard shows the `ProgressCard`; every other tab shows the sync pill.
+  - **The app is usable immediately:** custom cards, import, settings. Search works as soon as a language activates (packs) or set by set (fallback).
+- **Offline at Start:** the settings are saved and the pill shows "Waiting for connection"; the download starts automatically when the network returns (§16.2).
+
+## 16. Offline and network behaviour; pause/resume
+
+### 16.1 Principle
+FlashyDex is local-first.
+- **Works offline:** browsing, search over installed catalogs, every collection mutation, valuations from stored prices, import/export/backup/restore, settings, about, privacy and licenses.
+- **Needs the network:** catalog pack download and update, TCGdex price updates and set fill-ins, and card images not yet in the WebView cache.
+- Offline is never an error screen. The UI marks network-bound pieces with `OfflineChip` and keeps everything else normal.
+
+Detection:
+- Native: `@capacitor/network` `getStatus()` plus a `networkStatusChange` listener (request T1).
+- Web: `navigator.onLine` with `online`/`offline` events.
+- **On every platform, a failed request also counts as "offline" until the next success.**
+
+### 16.2 Per-screen matrix
+
+| Screen | Offline behaviour |
+|---|---|
+| Dashboard | All stats from local data. Price caption adds `OfflineChip` and the date. "Update"/pull → offline toast. Download card shows "Waiting for connection". |
+| Collection | Fully functional. Uncached art → "Image not loaded" placeholder; retries once when online. |
+| Card Details | Fully functional from local data. Prices labelled with their date; "Refresh card" disabled with "Connect to refresh". High-res art may be placeholder. |
+| Sets / Set detail | Fully functional for installed catalogs. "Refresh this set" / pull → offline toast. Logos may be missing (id chip). |
+| Add | Search and add work over installed catalogs. If the catalog is incomplete: banner "Some sets aren't downloaded yet. Connect to finish the download." Custom card always available. |
+| Settings → Catalog | Download/Update/Update prices buttons disabled with inline reason "Connect to the internet to download" (button stays focusable, `aria-disabled`, reason in `aria-describedby`). Installed languages, versions, sizes visible. "Remove" works. |
+| Settings → Data | Import, export (share sheet: Files, AirDrop work offline), backup, restore — all work. |
+| About / Privacy / Licenses | Bundled; work. External links ("View online", TCGdex) show offline toast instead of opening. |
+| First run | Steps 1–2 work. Step 3–4: sizes "—", set picker limited (§15.5–15.6); Start saves the choice and waits. |
+| Scanner (Phase 3) | On-device recognition works offline if the model is installed; the optional endpoint does not. |
+
+### 16.3 Pause, resume and lifecycle of catalog work
+
+The pause behaviour per job type:
+- **Pack download:**
+  - Pause (user): stop the transfer. Partial bytes are kept only if the host supports HTTP Range (request S1); otherwise the button is just Cancel.
+  - Network lost: auto-pause → "Waiting for connection" → auto-resume when online (same session).
+- **TCGdex job** (prices, fill-in, fallback crawl):
+  - Pause (user): `SyncService.cancel` → "Paused"; Resume = `SyncService.resume(id)` (same run, keeps progress).
+  - Network lost: the engine stops scheduling. The pill shows "Waiting for connection" and resumes automatically when online, if the app is in the foreground and the run was interrupted by the network in this session.
+
+What happens when the app moves between foreground and background:
+- **To background** (`App` `pause`/`appStateChange`): work suspends. It is foreground-only in Phase 1; iOS gives no guaranteed background time. Nothing is shown.
+- **Back to foreground** (`resume`): jobs suspended in this session continue automatically. The pill reappears.
+- **Cold start after the app was killed:**
+  - An interrupted job shows "Download paused · Resume" (user taps; ARCHITECTURE says resume is user-requested).
+  - A pack download restarts its transfer, or continues it if Range-resumable. Verification always reruns.
+- **Long fallback crawl:** "Keep screen on while downloading" (keep-awake, only while the app is in the foreground and the job runs). The copy says why: "Your phone may lock and pause the download."
+
+### 16.4 Image cache
+Phase 1 relies on the WebView HTTP cache. It can be evicted, so art can disappear offline, and the placeholder handles that.
+
+Phase 7 adds a bounded 150–250 MB LRU cache (COMPRESSION-STORAGE). Settings → Catalog will then show "Image cache: 84 MB of 200 MB · Clear". The UI copy never promises offline art in Phase 1.
+
+## 17. iOS/Android native conventions (consolidated; implementer checklist)
+
+1. **Safe areas everywhere.** Top bar `padding-top: --ps-safe-top`. Tab bar `padding-bottom: --ps-safe-bottom`. Sheets and modal footers `--ps-sheet-pad-bottom`. Full-screen viewers place their close buttons inside the safe area. Page gutters use `--ps-page-left/right` (landscape notch). Toasts sit at `--ps-toast-bottom`. Config: `viewport-fit=cover`, iOS `contentInset:'never'`, Android `adjustMarginsForEdgeToEdge:'force'` (DESIGN-TOKENS §5.2).
+2. **Status bar.** The style follows the theme (§2 of DESIGN-TOKENS). Content scrolls under translucent chrome on iOS. Tapping the status bar scrolls to top.
+3. **Back affordances.**
+   - iOS: `‹` + previous title in the top bar, plus the native edge swipe (§1.5).
+   - Android: arrow icon, plus the system back/predictive back gesture via the `backButton` precedence (§1.5).
+   - Never rely on browser chrome.
+4. **Bottom sheets** with drag handle, detents, discard protection and a visible Close (§2.3). Confirmations use a centred Dialog, which reads as an alert.
+5. **Haptics:** only the mapping in DESIGN-TOKENS §7.3: add (success), undo (light), delete (warning), save (light), error, iOS selection ticks, pull/drag threshold, long-press. Fired after the commit. Settings toggle.
+6. **Share and files.**
+   - Export and backup use the native share sheet (`@capacitor/share` with a Filesystem cache URI).
+   - Import and restore use the native document picker.
+   - Never ask for Photos or broad file access.
+   - The collection DB is never exposed in Files (`UIFileSharingEnabled` off).
+7. **Keyboard.**
+   - iOS `Keyboard.resize = 'none'`, with `--ps-keyboard-inset` from keyboard events. Android `adjustResize`.
+   - Sticky footers and sheets ride above the keyboard, and focused fields are scrolled into view.
+   - The tab bar is hidden while the keyboard is open.
+   - `enterkeyhint`, `inputmode` (`numeric`/`decimal`), `autocapitalize`, `autocomplete="off"` are set per field.
+   - Tapping outside an input or scrolling a results list dismisses the keyboard.
+8. **Pull-to-refresh** only where data can be fetched (§2.4).
+9. **External links** open in `@capacitor/browser` (SFSafariViewController / Custom Tabs), never in the app's WebView and never `target=_blank` (request T2).
+10. **Targets** are ≥ 44 pt (HIG) / 48 dp (primary). The spacing between adjacent targets is ≥ 8.
+11. **Dynamic Type / font scale:** `TextZoom.getPreferred()` drives `--ps-text-scale`, and Android WebView text zoom is pinned to 1 (DESIGN-TOKENS §4.2). There is no viewport zoom lock, but WebView pinch-zoom of the whole UI stays off (Capacitor `zoomEnabled:false`). Only the card zoom viewer zooms.
+12. **VoiceOver/TalkBack:** §13. Plus: no `title`-only labels, no hover-only affordances, and the reading order equals the visual order.
+13. **Reduced motion / increased contrast** honoured through tokens. Reduce Transparency: when `prefers-reduced-transparency: reduce` is supported, iOS chrome turns solid (same as increased contrast).
+14. **No web-wrapper tells:**
+    - no text selection or long-press callout on chrome and art;
+    - no tap highlight;
+    - no 300 ms delay (`touch-action: manipulation`);
+    - no white flash (`backgroundColor #0b0d12`, splash hidden after the first paint);
+    - no rubber-band white (html bg);
+    - no hover-only menus;
+    - no browser-style focus rings on touch (`:focus-visible` only);
+    - no visible URLs;
+    - native selects and date pickers;
+    - instant local navigation with platform transitions.
+15. **Orientation:** iPhone and Android phones are portrait-only in Phase 1 (request T3). iPad (if universal) and web support every orientation, using the wide shell at ≥ 1024.
+16. **Permissions:** none are requested in Phase 1 (no camera, photos, notifications or tracking).
+
+## 18. App icon and splash
+
+The full spec, with colours, variants and exclusions, is in DESIGN-TOKENS §10.3. In short:
+- **Mark — "foil glint":** two overlapping card silhouettes (63:88, real corner ratio) in off-white, with one diagonal yellow→amber specular streak, on `--ps-bg` `#0b0d12`.
+- **Never:**
+  - a Poké Ball or any split-circle/band motif;
+  - characters, silhouettes, ears or tails;
+  - a lightning bolt (reads as the yellow electric mouse);
+  - the Pokémon logo yellow+blue pairing;
+  - a Pokédex-device look;
+  - real card art or card backs;
+  - the words Pokémon/Poké.
+- **iOS 18+:** Light (default) / Dark (transparent background) / Tinted (grayscale). Preferably an Icon Composer layered file so the Clear variants generate cleanly.
+- **Android:** adaptive (background `#0b0d12` + foreground in the 66 dp safe zone) plus a monochrome layer.
+- **Splash:** the mark alone, centred on `#0b0d12` (iOS LaunchScreen, Android 12 SplashScreen). Hidden with a 200 ms fade after the first route paints. Welcome step 1 shows the same mark at the same place on the same background, so first launch feels like the splash "opening up".
+- **Store screenshots:** no card art and no Pokémon names. Use real UI with custom cards using the app's placeholder art, onboarding, the Sets list with id chips, and settings (DESIGN-TOKENS §10.3; APP-STORE-COMPLIANCE "Screenshots").

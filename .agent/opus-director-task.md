@@ -11,6 +11,8 @@ Read `.agent/reports/opus-ux-requests.md` (N1–N2, R1–R10, T1–T2) and `.age
 - **R1**: ADD a grouped collection endpoint/mode (`groupBy=card` → one tile per (language, catalog id, variant) with quantity + copy ids; default for the grid). Write it into `docs/API.md` Director notes; `sonnet-data` implements, `sonnet-ui` uses it. Duplicate tiles are not acceptable.
 - **R5–R7**: implement the "no price" filter and "hide TCG Pocket (`tcgp` series)" toggle (cheap, in the filter sheet). Owned/complete set filters: implement if `sonnet-data` can do it with existing query shape, else documented fallback.
 - **T1 (HTTPS on LAN)**: out of Phase 1. Terra will handle `mkcert` later. Don't spend builder time on it.
+- **Default condition on quick-add = unspecified (Sol), not NM (Opus UX).** Condition chips sit in the add sheet one tap away. Nothing the user didn't choose is recorded.
+- Apply Sol's "UX follow-up" list from `.agent/reports/sol-architecture-v2-report.md` and the A3 pack/.fdx flows from `docs/CATALOG-PACKS.md` when writing the UI brief; UX.md may lag those — Sol's contracts win on data semantics, UX.md wins on layout/copy.
 - Remaining R-items: decide yourself, log in `.agent/DIRECTOR-DECISIONS.md`.
 
 ## Hard rules
