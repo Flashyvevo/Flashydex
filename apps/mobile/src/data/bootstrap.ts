@@ -1,10 +1,11 @@
 import { createServices, timed, toDomainError, type DomainError, type Environment, type Services } from '@flashydex/core';
 import { platform } from '../platform/app-platform';
 import { catalogSource, createInstallPort, createUserDriver } from '../platform/app-database';
+import { uuidV4 } from '../lib/uuid';
 
 export const appEnvironment: Environment = {
   clock: { now: () => new Date().toISOString() },
-  ids: { uuid: () => globalThis.crypto.randomUUID() }
+  ids: { uuid: () => uuidV4() }
 };
 
 /** Dev only: one console.info line with every `fdx:*` startup measure (ms). */

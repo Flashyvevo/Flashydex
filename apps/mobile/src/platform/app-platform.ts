@@ -5,6 +5,7 @@ import { Share } from '@capacitor/share';
 import { PlatformError, SizeLimitError, type FileRef, type Platform } from '@flashydex/core';
 import { sha256 } from 'hash-wasm';
 import localforage from 'localforage';
+import { uuidV4 } from '../lib/uuid';
 
 /**
  * Capacitor / web implementation of core's `Platform` (docs/API.md "Platform adapter").
@@ -60,7 +61,7 @@ async function pickBytes(accept: string): Promise<{ name: string; mime: string; 
 
 export const platform: Platform = {
   clock: { now: () => new Date().toISOString() },
-  ids: { uuid: () => globalThis.crypto.randomUUID() },
+  ids: { uuid: () => uuidV4() },
   hash: { sha256: (bytes) => sha256(bytes) },
 
   filesystem: {
@@ -68,7 +69,7 @@ export const platform: Platform = {
       const picked = await pickBytes(kind === 'backup' ? '.fdx,application/zip,application/octet-stream' : '.json,.csv,application/json,text/csv,text/plain');
       if (!picked) return null;
       if (picked.bytes.byteLength > maxBytes) throw new SizeLimitError('The selected file is too large', { maxBytes });
-      const id = globalThis.crypto.randomUUID();
+      const id = uuidV4();
       await store.setItem(id, picked.bytes);
       const safeName = picked.name.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 200) || 'file';
       registry.set(id, { name: safeName, mime: picked.mime.slice(0, 100), area: 'picked' });
@@ -83,7 +84,7 @@ export const platform: Platform = {
       return bytes;
     },
     async write({ name, mime, bytes, area }) {
-      const id = globalThis.crypto.randomUUID();
+      const id = uuidV4();
       try {
         await store.setItem(id, bytes);
         if (isNative() && area === 'exports') {
