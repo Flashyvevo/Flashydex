@@ -16,7 +16,7 @@ function Notice() {
       await update.mutateAsync({ disclaimerAcknowledged: true });
       void navigate({ to: '/welcome/languages' });
     } catch {
-      toast.show({ message: 'Couldn’t save. Try again.', tone: 'negative' });
+      toast.show({ message: 'Couldn’t save that choice. Try again.', tone: 'negative' });
     }
   };
   return (

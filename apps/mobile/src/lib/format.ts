@@ -6,7 +6,7 @@ export type Variant = 'normal' | 'holo' | 'reverse_holo' | 'first_edition' | 'pr
 export type Condition = 'NM' | 'LP' | 'MP' | 'HP' | 'DMG';
 
 export const LANGUAGE_NAMES: Record<Language, string> = { en: 'English', ja: 'Japanese' };
-export const LANGUAGE_BADGE: Record<Language, string> = { en: 'EN', ja: 'JA' };
+export const LANGUAGE_BADGE: Record<Language, string> = { en: 'EN', ja: 'JP' };
 
 const locale = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US';
 
@@ -79,8 +79,8 @@ export const VARIANT_LABEL: Record<Variant, string> = {
   normal: 'Normal',
   holo: 'Holo',
   reverse_holo: 'Reverse holo',
-  first_edition: 'First edition',
-  promo_stamped: 'Stamped promo',
+  first_edition: '1st edition',
+  promo_stamped: 'Stamp',
   shadowless: 'Shadowless',
   other: 'Other'
 };
@@ -90,14 +90,14 @@ export const VARIANT_CHIP: Record<Variant, string | null> = {
   reverse_holo: 'Rev',
   first_edition: '1st',
   promo_stamped: 'Stamp',
-  shadowless: 'Shdwl',
+  shadowless: 'SL',
   other: ''
 };
 export const VARIANT_PRIORITY: Variant[] = ['normal', 'holo', 'reverse_holo', 'first_edition', 'promo_stamped'];
 
 export function variantLabel(variant: Variant, detail?: string | null): string {
   if (variant === 'other' && detail) return detail;
-  if (variant === 'first_edition' && detail && /holo/i.test(detail)) return 'First edition holo';
+  if (variant === 'first_edition' && detail && /holo/i.test(detail)) return '1st edition holo';
   return VARIANT_LABEL[variant];
 }
 export function variantChipText(variant: Variant, detail?: string | null): string | null {
@@ -121,7 +121,7 @@ export const CONDITION_LABEL: Record<Condition | 'unknown', string> = {
   MP: 'Moderately Played',
   HP: 'Heavily Played',
   DMG: 'Damaged',
-  unknown: 'Condition not recorded'
+  unknown: 'Condition not set'
 };
 
 export type RarityTier = 'common' | 'uncommon' | 'rare' | 'holo' | 'ultra' | 'illustration' | 'secret' | 'promo' | 'unknown';

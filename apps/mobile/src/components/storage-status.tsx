@@ -20,7 +20,42 @@ export function StorageStatusUi() {
         </div>
       )}
       {status.reason === 'persistence_failed' && <PersistenceFailed />}
+      {status.maintenance?.kind === 'restore' && <RestoreMaintenance />}
+      {status.maintenance?.kind === 'catalog_activation' && status.reason === 'ok' && (
+        <div className="pointer-events-none fixed inset-x-0 top-0 flex justify-center px-3" style={{ zIndex: 'var(--ps-z-blocking)', paddingTop: 'calc(var(--ps-safe-top) + 4px)' }}>
+          <div role="status" aria-live="polite" data-testid="catalog-activation-notice" className="rounded-full bg-surface-3 px-3 py-1 text-caption text-fg-muted shadow-2">
+            Updating the {status.maintenance.language === 'ja' ? 'Japanese' : status.maintenance.language === 'en' ? 'English' : ''} catalog…
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+/** Restore in progress (E1): blocks the whole app so nothing can be edited under the replacement. Core also refuses writes with MAINTENANCE. */
+function RestoreMaintenance() {
+  useEffect(() => {
+    const root = document.getElementById('root');
+    root?.setAttribute('inert', '');
+    return () => root?.removeAttribute('inert');
+  }, []);
+  return createPortal(
+    <div
+      role="alertdialog"
+      aria-modal
+      aria-live="assertive"
+      aria-labelledby="maintenance-title"
+      aria-describedby="maintenance-body"
+      className="fixed inset-0 flex items-center justify-center bg-bg px-6"
+      style={{ zIndex: 'var(--ps-z-blocking)' }}
+      data-testid="maintenance-overlay"
+    >
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+        <h2 id="maintenance-title" className="text-h3 font-semibold">Restoring your backup…</h2>
+        <p id="maintenance-body" className="text-body text-fg-muted">Don’t close FlashyDex. This takes a moment.</p>
+      </div>
+    </div>,
+    document.body
   );
 }
 

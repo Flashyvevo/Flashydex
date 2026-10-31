@@ -38,7 +38,7 @@ function Sets() {
         disclaimerAcknowledged: true
       });
     } catch {
-      toast.show({ message: 'Couldn’t save your choice. Try again.', tone: 'negative' });
+      toast.show({ message: 'Couldn’t save that choice. Try again.', tone: 'negative' });
       return;
     }
     // One global install at a time (D12): chain the languages; the promise outlives this screen.

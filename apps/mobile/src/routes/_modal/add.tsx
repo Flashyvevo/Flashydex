@@ -7,7 +7,7 @@ import { CardRow, LangBadge, RarityLabel } from '../../components/card';
 import { ModalPage, useCloseOrBack } from '../../components/page';
 import { Banner, EmptyState, ErrorState, LinkButton, NativeSelect, SearchField, SegmentedControl, Skeleton } from '../../components/ui';
 import { useCardSearch, useCatalogCard, useCatalogInstall, useCatalogStatus, useCollection, useSetCards, useSets } from '../../data';
-import { collectorNumber, formatInt, type Language } from '../../lib/format';
+import { collectorNumber, LANGUAGE_BADGE, formatInt, type Language } from '../../lib/format';
 import { useDebounced, useDelayedFlag } from '../../lib/hooks';
 import { prefs, type SearchLanguage } from '../../lib/prefs';
 import { useSheetParam, useSetSearch } from '../../lib/sheets';
@@ -145,7 +145,7 @@ function AddPage() {
   return (
     <ModalPage title="Add a card" onClose={close} noFooterPad>
       <div className="sticky z-(--ps-z-sticky) -mx-4 flex flex-col gap-2 bg-bg px-4 pb-2" style={{ top: 'var(--ps-topbar-total)' }}>
-        <SearchField value={text} onChange={setText} placeholder="Search name, number or id" label="Search the catalog" autoFocus inputRef={inputRef} onEnter={() => rows[0] && openCard(rows[0].language, rows[0].id)} />
+        <SearchField value={text} onChange={setText} placeholder="Search name or number" label="Search the catalog" autoFocus inputRef={inputRef} onEnter={() => rows[0] && openCard(rows[0].language, rows[0].id)} />
         <div className="flex flex-col gap-2">
           <SegmentedControl
             label="Language"
@@ -158,15 +158,15 @@ function AddPage() {
             options={[
               { value: 'all', label: 'All', aria: 'All languages', testId: 'lang-all' },
               { value: 'en', label: 'EN', aria: 'English', testId: 'lang-en' },
-              { value: 'ja', label: 'JA', aria: 'Japanese', testId: 'lang-ja' }
+              { value: 'ja', label: 'JP', aria: 'Japanese', testId: 'lang-ja' }
             ]}
           />
           <NativeSelect
-            label="In"
+            label="Set"
             value={setScope ?? ''}
             onChange={(v) => setSearch({ set: v || undefined })}
             testId="add-set-scope"
-            options={[{ value: '', label: 'Any set' }, ...(setScope && !sets.data?.data.some((s) => `${s.language}:${s.id}` === setScope) ? [{ value: setScope, label: setScope }] : []), ...(sets.data?.data ?? []).map((s) => ({ value: `${s.language}:${s.id}`, label: `${s.name} (${s.language.toUpperCase()})` }))]}
+            options={[{ value: '', label: 'Any set' }, ...(setScope && !sets.data?.data.some((s) => `${s.language}:${s.id}` === setScope) ? [{ value: setScope, label: setScope }] : []), ...(sets.data?.data ?? []).map((s) => ({ value: `${s.language}:${s.id}`, label: `${s.name} (${LANGUAGE_BADGE[s.language]})` }))]}
           />
         </div>
       </div>
@@ -185,7 +185,7 @@ function AddPage() {
           <EmptyState
             icon={DatabaseZap}
             title="The card catalog isn’t downloaded yet"
-            body="Download it once to search every card. You can still create a custom card."
+            body="Download it once to search the cards in that catalog. You can still create a custom card."
             action={<LinkButton to="/settings/catalog" variant="primary" full>Choose languages</LinkButton>}
             secondary={<LinkButton to="/custom-cards/new" search={{ name: debounced.trim() || undefined } as never} variant="text">Create a custom card</LinkButton>}
           />
@@ -209,7 +209,7 @@ function AddPage() {
               secondary={language ? <button type="button" className="inline-flex min-h-(--ps-tap) items-center px-3 text-accent-fg" onClick={() => setSearch({ lang: 'all' })}>Search all languages</button> : undefined}
             />
             <p className="px-6 text-center text-caption text-fg-muted">
-              Newer sets may not be in your catalog yet. <Link to="/settings/catalog" className="text-accent-fg">Check for updates</Link>
+              Newer sets may not be in your catalog yet. <Link to="/settings/catalog" className="text-accent-fg">Check for a newer catalog</Link>
             </p>
           </>
         ) : (
@@ -281,7 +281,7 @@ function EmptyQuery({ setCards, loadingSet, recent, onOpen, onOpenCustom }: { se
     );
   }
   if (recent.length === 0) {
-    return <p className="px-2 py-10 text-center text-body text-fg-muted">Type a card name, a collector number like 136/189, or a card id like swsh3-136.</p>;
+    return <p className="px-2 py-10 text-center text-body text-fg-muted">Type a name, or a number like 136/189.</p>;
   }
   const seen = new Set<string>();
   const unique = recent.filter((c) => {

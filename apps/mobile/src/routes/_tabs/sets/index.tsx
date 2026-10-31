@@ -56,7 +56,7 @@ function SetsPage() {
   return (
     <Page title="Sets" large>
       <div className="flex flex-wrap items-center justify-between gap-2 py-1">
-        <ChipGroup label="Language" hideLabel value={search.lang ?? 'all'} onChange={(v) => setSearch({ lang: v === 'all' ? undefined : v })} options={[{ value: 'all', label: 'All' }, { value: 'en', label: 'EN' }, { value: 'ja', label: 'JA' }]} />
+        <ChipGroup label="Language" hideLabel value={search.lang ?? 'all'} onChange={(v) => setSearch({ lang: v === 'all' ? undefined : v })} options={[{ value: 'all', label: 'All' }, { value: 'en', label: 'EN' }, { value: 'ja', label: 'JP' }]} />
         <SegmentedControl label="Show" value={show} onChange={(v) => setSearch({ show: v === 'collecting' ? undefined : v })} options={[{ value: 'collecting', label: 'Collecting', aria: 'Collecting', testId: 'show-collecting' }, { value: 'all', label: 'All', aria: 'All sets', testId: 'show-all' }]} />
       </div>
       <div className="flex flex-wrap gap-1 pb-2">
@@ -71,7 +71,7 @@ function SetsPage() {
         </div>
       ))}
 
-      {sets.isError && <ErrorState error={sets.error} onRetry={() => void sets.refetch()} />}
+      {sets.isError && <ErrorState error={sets.error} title="Couldn’t load your sets" body="Your data hasn’t changed." onRetry={() => void sets.refetch()} />}
       {sets.isPending && skeleton && (
         <div className="flex flex-col gap-2" aria-hidden>
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}
@@ -124,7 +124,7 @@ function SetRow({ set: s }: { set: SetSummary }) {
             <>
               {formatInt(s.ownedUnique)} / {formatInt(s.catalogCount)} · {formatPercent(s.completionPercent)}
               {complete && <CheckCircle2 size={14} className="text-positive" aria-label="Complete" />}
-              {s.duplicateExtras > 0 && <span> · {s.duplicateExtras} extra</span>}
+              {s.duplicateExtras > 0 && <span> · {s.duplicateExtras} extra {s.duplicateExtras === 1 ? 'copy' : 'copies'}</span>}
             </>
           )}
         </span>

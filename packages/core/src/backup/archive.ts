@@ -66,7 +66,23 @@ export async function buildArchive(input: {
 }
 
 /* ------------------------------------------------------------------------------------------------ read */
-type CentralEntry = { name: string; method: number };
+type CentralEntry = { name: string; method: number; flags: number; crc: number; compressedSize: number; localOffset: number };
+
+/** Standard CRC-32 (IEEE 802.3, the ZIP checksum). Exported for tests. */
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+export function crc32(bytes: Uint8Array): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) c = (CRC_TABLE[(c ^ (bytes[i] as number)) & 0xff] as number) ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
 
 /** Central directory scan: names, flags, symlinks. Sizes are NOT trusted anywhere. */
 function readCentralDirectory(data: Uint8Array, limits: FdxLimits): CentralEntry[] {
@@ -98,7 +114,9 @@ function readCentralDirectory(data: Uint8Array, limits: FdxLimits): CentralEntry
     if ((flags & 1) !== 0 || (flags & 0x40) !== 0) throw new BackupError('BACKUP_INVALID', 'Encrypted backups are not supported');
     if (method !== 0 && method !== 8) throw new BackupError('BACKUP_INVALID', 'Unsupported compression method');
     if ((madeBy >> 8) === 3 && ((external >>> 16) & 0xf000) === 0xa000) throw new BackupError('BACKUP_UNSAFE_ENTRY', 'Symbolic links are not allowed in a backup');
-    out.push({ name, method });
+    out.push({
+      name, method, flags, crc: view.getUint32(offset + 16, true), compressedSize: view.getUint32(offset + 20, true), localOffset: view.getUint32(offset + 42, true)
+    });
     offset += 46 + nameLen + extraLen + commentLen;
   }
   return out;
@@ -118,6 +136,34 @@ function capFor(name: string, limits: FdxLimits): number {
   return limits.imageBytes;
 }
 
+/**
+ * N08: every entry's LOCAL header must agree with the central directory (name, method, and - unless a data descriptor follows - CRC-32 and
+ * compressed size). Checked before any byte is inflated.
+ */
+function verifyLocalHeaders(data: Uint8Array, central: CentralEntry[]): void {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const damaged = () => new BackupError('BACKUP_INVALID', 'The archive entries do not match its directory');
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  for (const entry of central) {
+    const at = entry.localOffset;
+    if (at + 30 > data.byteLength || view.getUint32(at, true) !== 0x04034b50) throw damaged();
+    const localFlags = view.getUint16(at + 6, true);
+    const localMethod = view.getUint16(at + 8, true);
+    const nameLen = view.getUint16(at + 26, true);
+    if (at + 30 + nameLen > data.byteLength || decoder.decode(data.subarray(at + 30, at + 30 + nameLen)) !== entry.name) throw damaged();
+    if (localMethod !== entry.method) throw damaged();
+    if ((localFlags & 8) === 0) { // no data descriptor: the local header carries the real values
+      if (view.getUint32(at + 14, true) !== entry.crc || view.getUint32(at + 18, true) !== entry.compressedSize) throw damaged();
+    }
+  }
+}
+
+/** DEFLATE cannot expand by more than ~1032:1 (RFC 1951: a 258-byte match costs >= 2 bits). The slice size below is derived from this. */
+const MAX_INFLATE_RATIO = 1032;
+const MAX_INPUT_SLICE = 1024;
+/** Largest output one `push` of `s` compressed bytes can produce, for a stated bound in tests/docs: s * 1032 (+ the 32 KiB window). */
+export const MAX_INFLATE_CHUNK = MAX_INPUT_SLICE * MAX_INFLATE_RATIO;
+
 /** Inflate every entry with a running byte counter on the ACTUAL output; aborts the moment a cap is crossed. */
 function inflateAll(data: Uint8Array, names: Set<string>, limits: FdxLimits): Map<string, Uint8Array> {
   const result = new Map<string, Uint8Array>();
@@ -126,6 +172,8 @@ function inflateAll(data: Uint8Array, names: Set<string>, limits: FdxLimits): Ma
   unzip.register(UnzipPassThrough);
   let expanded = 0;
   let failure: BackupError | null = null;
+  /** Output the entry being inflated may still produce before a cap fires (min of its own cap and the aggregate cap). */
+  let budget = 0; // 0 = between entries (header bytes only): 1-byte slices until the next entry announces its cap
   unzip.onfile = (file) => {
     if (failure) return;
     if (result.has(file.name) || !names.has(file.name)) { failure = new BackupError('BACKUP_INVALID', 'The archive entries do not match its directory'); return; }
@@ -133,11 +181,13 @@ function inflateAll(data: Uint8Array, names: Set<string>, limits: FdxLimits): Ma
     const chunks: Uint8Array[] = [];
     let size = 0;
     result.set(file.name, new Uint8Array(0));
+    budget = Math.min(cap, limits.expandedBytes - expanded);
     file.ondata = (error, chunk, final) => {
       if (failure) return;
       if (error) { failure = new BackupError('BACKUP_INVALID', 'The archive could not be decompressed'); file.terminate(); return; }
       size += chunk.byteLength;
       expanded += chunk.byteLength;
+      budget = Math.min(cap - size, limits.expandedBytes - expanded);
       if (size > cap || expanded > limits.expandedBytes) {
         failure = new BackupError('SIZE_LIMIT', 'The backup expands beyond the allowed size');
         file.terminate();
@@ -149,15 +199,20 @@ function inflateAll(data: Uint8Array, names: Set<string>, limits: FdxLimits): Ma
         let at = 0;
         for (const c of chunks) { out.set(c, at); at += c.byteLength; }
         result.set(file.name, out);
+        budget = 0;
       }
     };
     file.start();
   };
   try {
-    // Feed in slices so a bomb is stopped without inflating the rest of the archive.
-    const slice = 1024 * 1024;
-    for (let at = 0; at < data.byteLength && !failure; at += slice) {
-      unzip.push(data.subarray(at, Math.min(at + slice, data.byteLength)), at + slice >= data.byteLength);
+    // N04: feed COMPRESSED input in slices whose worst-case expansion (slice * 1032) never exceeds the remaining output budget (and never
+    // 1 KiB), so a hostile stream can make fflate allocate at most ~1 MiB per push instead of its whole payload, and a bomb is stopped as soon
+    // as the cumulative output crosses the cap.
+    for (let at = 0; at < data.byteLength && !failure;) {
+      const slice = Math.max(1, Math.min(MAX_INPUT_SLICE, Math.floor(budget / MAX_INFLATE_RATIO)));
+      const end = Math.min(at + slice, data.byteLength);
+      unzip.push(data.subarray(at, end), end >= data.byteLength);
+      at = end;
     }
   } catch (error) {
     if (failure) throw failure;
@@ -208,9 +263,12 @@ export async function parseArchive(
   }
   for (const required of FIXED) if (!names.has(required)) throw new BackupError('BACKUP_INVALID', `The backup is missing ${required}`);
   if (names.size - FIXED.size > limits.images) throw new BackupError('SIZE_LIMIT', 'The backup has too many images');
+  verifyLocalHeaders(data, central);
 
   const files = inflateAll(data, names, limits);
   for (const n of names) if (!files.has(n)) throw new BackupError('BACKUP_INVALID', 'The archive entries do not match its directory');
+  // N08: the CRC-32 of every inflated entry must equal the (already local/central-consistent) recorded value.
+  for (const entry of central) if (crc32(files.get(entry.name)!) !== entry.crc) throw new BackupError('BACKUP_INVALID', 'An archive entry failed its checksum');
 
   // ---- manifest
   const rawManifest = decodeJson(files.get('manifest.json')!, 'manifest.json');

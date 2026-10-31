@@ -43,7 +43,7 @@ function LanguageCard({ language, checked, onToggle, manifest, offline }: { lang
           {manifest ? `${formatBytes(manifest.compressedBytes)} download · about ${formatBytes(manifest.uncompressedBytes)} on device` : `— download · — on device`}
         </span>
         {offline && !manifest && <span className="block text-caption text-fg-muted">You’re offline. Choose now — the download starts when you’re connected.</span>}
-        {language === 'ja' && <span className="block text-caption text-fg-muted">Many older Japanese cards have no pictures yet.</span>}
+        {language === 'ja' && <span className="block text-caption text-fg-muted">Many older Japanese cards have no pictures in the catalog yet.</span>}
       </span>
     </button>
   );
@@ -76,7 +76,7 @@ function Languages() {
       await update.mutateAsync({ languages: langs.length ? langs : ['en'], hideTcgPocket: !pocket });
       void navigate({ to: '/welcome/sets' });
     } catch {
-      toast.show({ message: 'Couldn’t save your choice. Try again.', tone: 'negative' });
+      toast.show({ message: 'Couldn’t save that choice. Try again.', tone: 'negative' });
     }
   };
 

@@ -327,7 +327,8 @@ describe('R10 admission + fencing for sync', () => {
 
   it('fencing inside the catalog write: epoch bumped after the pending commit -> catalog untouched; resume drops the stale batch and refetches', async () => {
     const t = await setup();
-    const fenced = t.mk(t.h, { faultAfterPendingCommit: () => t.h.t.databases.bumpEpoch('en') });
+    // A real replacement moves BOTH the in-process epoch and the PERSISTED receipt generation (Stage E / N02: the persisted identity decides replay).
+    const fenced = t.mk(t.h, { faultAfterPendingCommit: async () => { t.h.t.databases.bumpEpoch('en'); await t.h.t.user.run("UPDATE installed_catalogs SET generation = generation + 1 WHERE language = 'en'"); } });
     const run = await fenced.start(REFRESH());
     expect(run).toMatchObject({ status: 'failed', lastError: { code: 'STALE_READ' } });
     expect(await catRows(t.h, "SELECT COUNT(*) FROM catalog_cards WHERE set_id = 'swsh3'")).toEqual([[1]]);

@@ -261,6 +261,10 @@ export class TransferService {
     const user = this.ctx.databases.user;
     const now = this.ctx.env.clock.now();
 
+    // 0. Stage E / N05: while persistence is uncertain no receipt (in-memory or read back from the live handle) may be turned into a success.
+    const latched = user.persistenceBlock();
+    if (latched) throw latched;
+
     // 1. receipt FIRST: an exact replay returns the original result even after expiry or a changed revision.
     const receipt = (await user.rows('SELECT plan_hash, result_json, expires_at FROM data_operation_receipts WHERE id = ?', [id]))[0];
     if (receipt && String(receipt[2]) > now) {

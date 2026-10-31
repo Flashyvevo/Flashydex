@@ -309,6 +309,12 @@ export class CatalogInstallService {
           throw error;
         }
         emit({ phase: 'validating_active', cancellable: false });
+        // N01: the ACTIVATED file is validated (cheap check: object fingerprint + catalog_meta language/version) BEFORE the receipt is
+        // committed and before the previous copy can ever be discarded. A failure restores the previous catalog and keeps the old receipt.
+        if (!(await this.fileIsValid(activated.activeRef, language, staged.version))) {
+          await this.undoSwap(language, prepared);
+          throw new CatalogError('PACK_INVALID', 'The installed catalog failed its final check, so the previous catalog was kept');
+        }
         const commitAt = this.ctx.env.clock.now();
         try {
           await this.user.transaction(async (tx) => {
@@ -361,17 +367,44 @@ export class CatalogInstallService {
     try {
       const disk = await this.port.inspect(language);
       const candidatePresent = journal.candidateRef !== null && disk.candidateRefs.includes(journal.candidateRef);
-      if (candidatePresent) {
-        // Activation did not complete. Between the two renames the old active may sit in `previous` with no active file.
-        if (disk.activeRef === null && disk.previousRef !== null) await this.port.restorePrevious(language);
-        await this.port.discardCandidate(journal.candidateRef as string);
-      } else if (journal.oldReceipt) {
-        if (disk.previousRef !== null) await this.port.restorePrevious(language);
-      } else {
-        await this.port.remove(language); // first install: nothing to go back to
+      const old = journal.oldReceipt;
+      if (!old) {
+        // First install: nothing to go back to. A still-staged candidate means the swap never started (keep whatever else is there);
+        // otherwise (rename consumed it, or a web `put` already wrote the active key) the uncommitted active file is removed.
+        const activeIsTarget = disk.activeRef !== null && (await this.fileIsValid(disk.activeRef, language, journal.targetVersion));
+        if (candidatePresent && !activeIsTarget) {
+          if (disk.activeRef === null && disk.previousRef !== null) await this.port.restorePrevious(language);
+          await this.port.discardCandidate(journal.candidateRef as string);
+        } else {
+          await this.port.remove(language);
+        }
+        return;
       }
+      // N01: decide by CONTENT identity, not by "candidate present" (the web adapter legitimately leaves active + previous + candidate).
+      // The active file is kept when it is still the old catalog; otherwise a VALIDATED previous is restored. When neither is usable
+      // every file stays where it is (nothing is ever deleted on a guess) and boot recovery re-checks.
+      const activeIsOld = disk.activeRef !== null && (await this.fileIsValid(disk.activeRef, language, old.version));
+      if (!activeIsOld && disk.previousRef !== null && (await this.fileIsValid(disk.previousRef, language, old.version))) {
+        await this.port.restorePrevious(language);
+      }
+      if (candidatePresent) await this.port.discardCandidate(journal.candidateRef as string);
     } catch {
       /* boot recovery will retry from the journal */
+    }
+  }
+
+  /** Cheap check of the file behind `ref`: object allowlist/SQL + exactly one catalog_meta row for this language and version. Never throws. */
+  private async fileIsValid(ref: string | null, language: Language, version: string | null): Promise<boolean> {
+    if (ref === null || version === null) return false;
+    let driver: SqlDriver | null = null;
+    try {
+      driver = await this.port.openForValidation(ref);
+      await validateActiveCatalog(driver, { language, version });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      await driver?.close().catch(() => undefined);
     }
   }
 
@@ -425,6 +458,8 @@ export class CatalogInstallService {
       const journal = parseJson<Journal | null>(jobs[0]?.[1] as string | undefined, null);
       if (!jobId || !journal || !journal.oldReceipt) throw new CatalogError('NO_ROLLBACK', 'There is no previous catalog to restore');
       const old = journal.oldReceipt;
+      // N01: never swap a damaged previous over a working active catalog.
+      if (!(await this.fileIsValid(disk.previousRef, language, old.version))) throw new CatalogError('NO_ROLLBACK', 'The previous catalog is damaged and cannot be restored');
       await this.user.transaction(async (tx) => {
         await tx.run("UPDATE catalog_install_jobs SET state = 'rolling_back', journal_json = ?, updated_at = ? WHERE id = ?", [JSON.stringify({ ...journal, phase: 'rolling_back' }), this.ctx.env.clock.now(), jobId]);
       });
@@ -548,10 +583,23 @@ export class CatalogInstallService {
     }
 
     // 2. Committed receipt + a previous copy still on disk: the commit is durable, finish the cleanup.
-    const receipt = await this.installed(language);
+    let receipt = await this.installed(language);
     if (receipt.status === 'installed' && disk.activeRef !== null && disk.previousRef !== null) {
-      await this.port.discardPrevious(language);
-      act('discarded-previous');
+      if (await this.fileIsValid(disk.activeRef, language, receipt.version)) {
+        await this.port.discardPrevious(language);
+        act('discarded-previous');
+      } else {
+        // N01: the active file is unusable, so the retained previous may be the ONLY valid catalog: never discard it before it is
+        // validated; a validated previous replaces the active file together with ITS receipt (from the committed journal).
+        const job = await this.latestJob(language, "('committed','installed')");
+        const old = job?.journal && job.journal.targetVersion === receipt.version ? job.journal.oldReceipt : null;
+        if (job?.journal && old && (await this.fileIsValid(disk.previousRef, language, old.version)) && (await this.port.restorePrevious(language))) {
+          await this.writeReceipt(language, old, job.id, job.journal);
+          receipt = await this.installed(language);
+          act('restored-previous-invalid-active');
+        }
+      }
+      disk = await this.port.inspect(language);
     }
     // 3. Stray staging candidates (no install is running at boot).
     for (const ref of disk.candidateRefs) {

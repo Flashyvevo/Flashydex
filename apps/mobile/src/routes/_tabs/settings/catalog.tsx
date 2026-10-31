@@ -85,7 +85,7 @@ function CatalogPage() {
       <div className="mt-5">
         <Group>
           <NavRow
-            label="Check for updates"
+            label="Check for a newer catalog"
             testId="check-updates"
             value={manifest.isFetching ? 'Checking…' : <RefreshCw size={16} aria-hidden />}
             onClick={() => void manifest.refetch()}
@@ -194,7 +194,7 @@ function LanguageRow({
           </div>
           {isInstalled ? (
             <div className="text-caption text-fg-muted">
-              Catalog {installed?.version ?? ''}
+              Downloaded · v{installed?.version ?? ''}
               {entry && entry.currentVersion === installed?.version ? ` · about ${formatBytes(entry.uncompressedBytes)} on this device` : ''}
             </div>
           ) : (
@@ -288,7 +288,7 @@ function PricesSection() {
                 : run.status === 'cancelled' || run.status === 'interrupted'
                   ? `Paused at ${formatInt(run.cardsDone)}${run.cardsTotal ? ` of ${formatInt(run.cardsTotal)}` : ''} cards. Everything downloaded so far is kept.`
                   : run.status === 'failed'
-                    ? `Stopped at ${plural(run.cardsDone, 'card')}. Everything downloaded so far is kept.`
+                    ? `Stopped at ${plural(run.cardsDone, 'card')}${run.lastError ? ` — ${describeError(run.lastError).title}` : ''}. Everything downloaded so far is kept.`
                     : run.cardsFailed > 0
                       ? `${formatInt(run.cardsFailed)} failed`
                       : 'Downloading prices'
@@ -311,7 +311,7 @@ function PricesSection() {
           />
         ) : (
           <>
-            <p className="text-small text-fg-muted">{owned > 0 ? `My cards: ${formatInt(owned)} ${owned === 1 ? 'card' : 'cards'} · about ${Math.max(1, Math.ceil(owned / 25))} s` : 'Prices are saved for the cards you own.'}</p>
+            <p className="text-small text-fg-muted">Prices for the cards you own.</p>
             <Button className="mt-3" variant="primary" full softDisabled={reason !== null} aria-describedby={reason ? 'prices-reason' : undefined} loading={update.isPending} onClick={() => void start()} data-testid="prices-update">
               Update prices
             </Button>

@@ -3,7 +3,7 @@ import { CheckCircle2, ChevronDown } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAddCopies, useCatalogCard, useCustomCard, useGroups, useLocations, useRemoveCopy, useSettings } from '../data';
 import { describeError, errorCode, validationIssues } from '../lib/errors';
-import { CONDITION_ORDER, VARIANT_LABEL, collectorNumber, formatMoney, plural, preselectVariant, type Condition, type Currency, type Language, type Variant } from '../lib/format';
+import { CONDITION_ORDER, LANGUAGE_BADGE, VARIANT_LABEL, collectorNumber, formatMoney, plural, preselectVariant, type Condition, type Currency, type Language, type Variant } from '../lib/format';
 import { haptic } from '../lib/native';
 import { readAddSession, writeAddSession, type AddSession } from '../lib/prefs';
 import { CardArt, RarityLabel } from './card';
@@ -237,7 +237,7 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
       leading={done ? 'Close' : 'Cancel'}
       onClose={onClose}
       dirty={dirty}
-      discardTitle="Discard this card?"
+      discardTitle="Discard this copy?"
       wide="panel"
       testId="confirm-sheet"
       footer={form && info ? footer : undefined}
@@ -265,7 +265,7 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
               <p className="text-small text-fg-muted">{[info.setName, collectorNumber(info.localId, info.setOfficialCount)].filter(Boolean).join(' · ')}</p>
               <div className="mt-1 flex items-center gap-2 text-caption text-fg-muted">
                 <RarityLabel rarity={info.rarity} />
-                <span>{info.language.toUpperCase()}</span>
+                <span>{LANGUAGE_BADGE[info.language]}</span>
               </div>
               {marketLine && <p className="mt-1 text-small text-fg-muted">{marketLine}</p>}
             </div>
@@ -280,7 +280,7 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
                 testIdPrefix="variant-chip"
                 options={(info.available.length ? info.available : (['normal'] as Variant[])).map((v) => ({ value: v, label: VARIANT_LABEL[v] }))}
               />
-              {info.available.length === 0 && <p className="text-caption text-warning">Variant not listed in the catalog — check it</p>}
+              {info.available.length === 0 && <p className="text-caption text-warning">This print isn’t listed. Pick the closest one.</p>}
               <button type="button" onClick={() => set('otherOpen', !form.otherOpen)} className="mt-1 inline-flex min-h-(--ps-tap) items-center text-small text-accent-fg">
                 Other…
               </button>
@@ -294,8 +294,8 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
                     options={(Object.keys(VARIANT_LABEL) as Variant[]).map((v) => ({ value: v, label: VARIANT_LABEL[v] }))}
                   />
                   {form.variant === 'other' && (
-                    <Field label="Variant detail (required)" htmlFor="variant-detail" error={needsDetail ? 'Describe the print' : issueFor('variantDetail')}>
-                      <TextInput id="variant-detail" value={form.variantDetail} onChange={(e) => set('variantDetail', e.target.value)} />
+                    <Field label="What print is this? (required)" htmlFor="variant-detail" error={needsDetail ? 'Say what print this is' : issueFor('variantDetail')}>
+                      <TextInput id="variant-detail" placeholder="Stamp, cosmos holo, misprint" value={form.variantDetail} onChange={(e) => set('variantDetail', e.target.value)} />
                     </Field>
                   )}
                 </div>
@@ -346,7 +346,7 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
             {moreOpen && (
               <div className="flex flex-col gap-3 pt-1">
                 <div className="grid grid-cols-[1fr_auto] items-end gap-2">
-                  <Field label="Paid per card" htmlFor="paid" error={priceInvalid ? 'Enter an amount like 4.50' : issueFor('purchasePrice')}>
+                  <Field label="Paid per copy" htmlFor="paid" error={priceInvalid ? 'Enter an amount like 4.50' : issueFor('purchasePrice')}>
                     <TextInput id="paid" inputMode="decimal" placeholder="0.00" value={form.price} invalid={priceInvalid} onChange={(e) => set('price', e.target.value)} />
                   </Field>
                   <div className="w-28">

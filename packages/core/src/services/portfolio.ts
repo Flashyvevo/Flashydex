@@ -13,6 +13,12 @@ export class PortfolioService {
   constructor(private readonly ctx: ServiceContext) {}
 
   async dashboard(input: Input<typeof DashboardInput> = {}): Promise<DashboardDto> {
+    parse(DashboardInput, input);
+    // E2 / N07: valuation reads the catalog quotes; a handle retired mid-read is retried once, then a typed STALE_READ.
+    return this.ctx.databases.protectedRead(['en', 'ja'], () => this.dashboardOnce(input));
+  }
+
+  private async dashboardOnce(input: Input<typeof DashboardInput> = {}): Promise<DashboardDto> {
     const { currency } = parse(DashboardInput, input);
     const user = this.ctx.databases.user;
     const settings = await user.read((r) => readSettings(r));

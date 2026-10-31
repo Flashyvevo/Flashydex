@@ -35,7 +35,12 @@ const OWNED_FROM = `FROM owned_cards o
   LEFT JOIN grades g ON g.owned_card_id = o.id`;
 
 /** Hydrate full OwnedDtos for at most a page of ids (callers never pass an unbounded list; chunked by 100 regardless). */
-export async function hydrateOwned(ctx: ServiceContext, ids: readonly string[]): Promise<Map<string, OwnedDto>> {
+export function hydrateOwned(ctx: ServiceContext, ids: readonly string[]): Promise<Map<string, OwnedDto>> {
+  // E2 / N07: copy hydration reads catalog availability/quotes through whatever handles exist; protect the whole operation.
+  return ctx.databases.protectedRead(['en', 'ja'], () => hydrateOwnedOnce(ctx, ids));
+}
+
+async function hydrateOwnedOnce(ctx: ServiceContext, ids: readonly string[]): Promise<Map<string, OwnedDto>> {
   const out = new Map<string, OwnedDto>();
   if (ids.length === 0) return out;
   const user = ctx.databases.user;

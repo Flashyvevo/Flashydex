@@ -167,7 +167,7 @@ function DataPage() {
           icon={FileJson}
           trailingIcon={Share2}
           label={exporting === 'json' ? 'Preparing…' : 'Share JSON'}
-          description="Complete — use this to move to another device or app."
+          description="Use this to move your collection to another device. Notes and prices you entered are included."
           loading={exporting === 'json'}
           disabled={exporting === 'csv'}
           onClick={() => void doExport('json')}
@@ -177,7 +177,7 @@ function DataPage() {
           icon={FileSpreadsheet}
           trailingIcon={Share2}
           label={exporting === 'csv' ? 'Preparing…' : 'Share CSV'}
-          description="One row per card, for spreadsheets. Some details aren’t included."
+          description="One row per copy, for spreadsheets. Price history isn’t included."
           loading={exporting === 'csv'}
           disabled={exporting === 'json'}
           onClick={() => void doExport('csv')}
@@ -258,7 +258,7 @@ function ImportPreview({ open, report, file, policy, busy, error, onPolicy, comm
       footer={
         <div className="flex flex-col gap-2">
           <Button variant="primary" full disabled={!report.valid || toAdd === 0} loading={committing} onClick={onCommit} data-testid="import-commit">
-            Import {plural(toAdd, 'card')}
+            Import {plural(toAdd, 'copy', 'copies')}
           </Button>
           <Button variant="text" onClick={onClose}>Cancel</Button>
         </div>
@@ -269,7 +269,7 @@ function ImportPreview({ open, report, file, policy, busy, error, onPolicy, comm
         <ul className="flex flex-col gap-1 text-body" data-testid="import-counts">
           <li>{formatInt(owned.read)} rows read</li>
           <li className="text-positive">✓ {formatInt(owned.create)} will be added</li>
-          <li className="text-info">↻ {formatInt(owned.update + owned.skip)} match cards you already have</li>
+          <li className="text-info">↻ {formatInt(owned.update + owned.skip)} match copies you already have</li>
           {attention > 0 && <li className="text-warning">⚠ {formatInt(attention)} need attention</li>}
           {owned.error > 0 && <li className="text-negative">✕ {formatInt(owned.error)} will be skipped (errors)</li>}
         </ul>
@@ -281,9 +281,9 @@ function ImportPreview({ open, report, file, policy, busy, error, onPolicy, comm
           <details className="rounded-lg bg-surface">
             <summary className="flex min-h-(--ps-tap) cursor-pointer items-center px-4 text-body">Row details (first {Math.min(100, report.errors.length + report.warnings.length)})</summary>
             <ul className="selectable divide-y divide-border px-4 pb-2 text-small">
-              {[...report.errors.map((i) => ({ ...i, kind: 'Error' })), ...report.warnings.map((i) => ({ ...i, kind: 'Warning' }))].map((i, n) => (
+              {[...report.errors.map((i) => ({ ...i, kind: 'Can’t import' })), ...report.warnings.map((i) => ({ ...i, kind: 'Check this' }))].map((i, n) => (
                 <li key={n} className="py-2">
-                  <span className={i.kind === 'Error' ? 'text-negative' : 'text-warning'}>{i.kind}</span> {i.row ? `row ${i.row}: ` : ''}{i.message}
+                  <span className={i.kind === 'Can’t import' ? 'text-negative' : 'text-warning'}>{i.kind}</span> {i.row ? `row ${i.row}: ` : ''}{i.message}
                 </li>
               ))}
             </ul>

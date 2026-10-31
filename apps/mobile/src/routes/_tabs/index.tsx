@@ -77,7 +77,7 @@ function Dashboard() {
           <div className="lg:grid lg:grid-cols-2 lg:gap-6">
             <ValueBlock d={d} onUpdate={() => void updatePrices()} updating={update.isPending} unavailable={syncCaps.pricesOnly ? null : (syncCaps.reason ?? 'Price updates aren’t available yet')} />
             <div className="mt-5 grid grid-cols-2 gap-2 lg:mt-0 [[data-text-size=ax]_&]:grid-cols-1" data-testid="stat-tiles">
-              <StatTile label="Total cards" value={formatInt(d.totalCards)} to="/collection" />
+              <StatTile label="Total copies" value={formatInt(d.totalCards)} to="/collection" />
               <StatTile label="Unique cards" value={formatInt(d.uniqueCards)} />
               <StatTile label="Duplicates" value={formatInt(d.duplicates)} to="/collection" search={{ dupes: true }} />
               <PaidTile d={d} />
@@ -90,7 +90,7 @@ function Dashboard() {
             icon={DatabaseZap}
             title="Download the card catalog"
             testId="no-catalog"
-            body={`FlashyDex needs the card list before you can search. It downloads once (about 14 MB for English) and then works offline.${net.online ? '' : ' Connect to the internet to download it.'}`}
+            body={`FlashyDex needs the catalog before you can search. It downloads once, then search works offline.${net.online ? '' : ' Connect to the internet to download it.'}`}
             action={
               <LinkButton to="/settings/catalog" variant="primary" full>
                 Choose languages
@@ -181,7 +181,7 @@ function ValueBlock({ d, onUpdate, updating, unavailable }: { d: Dash; onUpdate:
           {gain && primary ? (
             <p className={cx('mt-1 text-small', gain.tone === 'positive' ? 'text-positive' : gain.tone === 'negative' ? 'text-negative' : 'text-fg-muted')} data-testid="gain-loss">
               <span className="sr-only">{gain.tone === 'negative' ? 'Loss of ' : 'Gain of '}</span>
-              {gain.text} on {formatInt(primary.comparableCopies)} {primary.comparableCopies === 1 ? 'card' : 'cards'} with a known cost
+              {gain.text} on {formatInt(primary.comparableCopies)} {primary.comparableCopies === 1 ? 'copy' : 'copies'} with a known cost
             </p>
           ) : (
             <p className="mt-1 text-small text-fg-muted">
@@ -201,7 +201,7 @@ function ValueBlock({ d, onUpdate, updating, unavailable }: { d: Dash; onUpdate:
           <p className="flex flex-wrap items-center gap-x-2 text-caption text-fg-subtle">
             <span>{SOURCE[d.displayCurrency]} prices</span>
             <Button variant="text" className="min-h-(--ps-tap) px-1 text-caption" loading={updating} softDisabled={unavailable !== null} aria-describedby={unavailable ? 'dash-update-reason' : undefined} onClick={onUpdate} aria-label="Update prices" data-testid="dash-update-prices">
-              Update
+              Update prices
             </Button>
             {unavailable && <span id="dash-update-reason" className="text-caption text-fg-muted" data-testid="dash-update-reason">{unavailable}</span>}
           </p>

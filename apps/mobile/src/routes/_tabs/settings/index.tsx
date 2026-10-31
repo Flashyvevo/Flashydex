@@ -7,7 +7,7 @@ import { ChipGroup, Group, LinkButton, NavRow, SectionCaption, Switch, ErrorStat
 import { useCatalogInstall, useCatalogManifest, useCatalogStatus, useCustomCards, useLocations, useSettings, useUninstallCatalog, useUpdateSettings } from '../../../data';
 import { describeProgress } from '../../../lib/catalog';
 import { describeError } from '../../../lib/errors';
-import { LANGUAGE_NAMES, formatBytes, formatInt, type Currency, type Language } from '../../../lib/format';
+import { LANGUAGE_BADGE, LANGUAGE_NAMES, formatBytes, formatInt, type Currency, type Language } from '../../../lib/format';
 import { DISCLAIMER } from '../../../lib/legal';
 import { haptic, isNative } from '../../../lib/native';
 import { prefs, useHapticsPref, useSearchLanguagePref, type SearchLanguage } from '../../../lib/prefs';
@@ -35,7 +35,7 @@ function SettingsHome() {
   const searchLang = useSearchLanguagePref();
   const version = useQuery({ queryKey: ['app-version'], queryFn: appVersion, staleTime: Infinity });
 
-  const catalogValue = install.active && install.progress ? `Downloading${describeProgress(install.progress.language, install.progress).percent !== null ? ` ${describeProgress(install.progress.language, install.progress).percent} %` : '…'}` : `EN ${en.data?.installed.status === 'installed' ? '✓' : '—'} · JA ${ja.data?.installed.status === 'installed' ? '✓' : '—'}`;
+  const catalogValue = install.active && install.progress ? `Downloading${describeProgress(install.progress.language, install.progress).percent !== null ? ` ${describeProgress(install.progress.language, install.progress).percent} %` : '…'}` : `EN ${en.data?.installed.status === 'installed' ? '✓' : '—'} · JP ${ja.data?.installed.status === 'installed' ? '✓' : '—'}`;
   const save = (patch: Parameters<typeof update.mutate>[0]) => update.mutate(patch, { onError: (e) => toast.show({ message: describeError(e).body, tone: 'negative' }) });
   const anyInstalled = en.data?.installed.status === 'installed' || ja.data?.installed.status === 'installed';
 
@@ -64,8 +64,8 @@ function SettingsHome() {
           testIdPrefix="currency"
           options={[{ value: 'USD', label: 'USD · TCGplayer' }, { value: 'EUR', label: 'EUR · Cardmarket' }]}
         />
-        <ChipGroup label="Search language" value={searchLang} onChange={(v) => prefs.setSearchLanguage(v as SearchLanguage)} testIdPrefix="searchlang" options={[{ value: 'all', label: 'All' }, { value: 'en', label: 'EN' }, { value: 'ja', label: 'JA' }]} />
-        <Switch checked={settings.data ? !settings.data.hideTcgPocket : false} disabled={!settings.isSuccess} onChange={(v) => save({ hideTcgPocket: !v })} label="Show TCG Pocket cards" testId="pocket-switch" />
+        <ChipGroup label="Search language" value={searchLang} onChange={(v) => prefs.setSearchLanguage(v as SearchLanguage)} testIdPrefix="searchlang" options={[{ value: 'all', label: 'All' }, { value: 'en', label: 'EN' }, { value: 'ja', label: 'JP' }]} />
+        <Switch checked={settings.data ? !settings.data.hideTcgPocket : false} disabled={!settings.isSuccess} onChange={(v) => save({ hideTcgPocket: !v })} label="Include TCG Pocket (digital) cards" testId="pocket-switch" />
         {isNative() && <Switch checked={haptics} onChange={(v) => { prefs.setHaptics(v); if (v) haptic('select'); }} label="Haptics" testId="haptics-switch" />}
       </div>
 
@@ -99,7 +99,7 @@ function CustomSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
             <li key={c.id}>
               <LinkButton to="/custom-cards/$customId" params={{ customId: c.id } as never} variant="text" className="w-full justify-between rounded-none px-4 text-fg">
                 <span className="min-w-0 truncate">{c.name}</span>
-                <span className="text-small text-fg-muted">{c.language.toUpperCase()} · ×{c.copyCount}</span>
+                <span className="text-small text-fg-muted">{LANGUAGE_BADGE[c.language]} · ×{c.copyCount}</span>
               </LinkButton>
             </li>
           ))}

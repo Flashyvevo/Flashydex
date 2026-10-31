@@ -62,7 +62,7 @@ export class DatabaseSet {
   }
 
   /** Run `fn` with the language barrier(s) held (serialized per language, ordered en<ja so two holders cannot deadlock). */
-  async withBarrier<T>(languages: readonly Language[], fn: () => Promise<T>): Promise<T> {
+  async withBarrier<T>(languages: readonly Language[], fn: () => Promise<T>, options: { announce?: boolean } = {}): Promise<T> {
     const ordered = [...new Set(languages)].sort() as Language[];
     const acquire = async (index: number): Promise<T> => {
       const language = ordered[index];
@@ -75,9 +75,12 @@ export class DatabaseSet {
       let open!: () => void;
       const done = new Promise<void>((resolve) => { open = resolve; });
       this.barriers.set(language, { done });
+      // E1: install / rollback / uninstall activations are reported through storage.status().maintenance (informational; personal writes continue).
+      const endAnnounce = options.announce ? this.user.beginCatalogActivation(language) : null;
       try {
         return await acquire(index + 1);
       } finally {
+        endAnnounce?.();
         this.barriers.delete(language);
         open();
         release();
@@ -128,20 +131,51 @@ export class DatabaseSet {
 
   /**
    * Multi-domain read (user + catalog): captures collection revision + catalog epochs, runs `fn`, and if either moved retries once;
-   * a second movement throws STALE_READ (the UI refetches once silently).
+   * a second movement throws STALE_READ (the UI refetches once silently). A handle retired mid-read (raw driver error while a catalog
+   * generation moved) is treated as movement too (E2 / N07).
    */
   async consistentRead<T>(languages: readonly Language[], fn: () => Promise<T>): Promise<T> {
     const snapshot = async () => ({
       revision: Number((await this.user.scalar<number>("SELECT collection_revision FROM app_state WHERE id = 'collection'")) ?? 0),
-      epochs: languages.map((l) => this.epochs[l])
+      epochs: languages.map((l) => this.epochs[l]),
+      generations: languages.map((l) => this.generations[l])
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const before = await snapshot();
-      const result = await fn();
+      let result: T;
+      try {
+        result = await fn();
+      } catch (error) {
+        const now = await snapshot().catch(() => null);
+        if (now && now.generations.some((g, i) => g !== before.generations[i])) continue; // the handle was retired under us: run it again
+        throw error;
+      }
       const after = await snapshot();
-      if (before.revision === after.revision && before.epochs.every((e, i) => e === after.epochs[i])) return result;
+      if (before.revision === after.revision && before.epochs.every((e, i) => e === after.epochs[i]) && before.generations.every((g, i) => g === after.generations[i])) return result;
     }
     throw new CatalogError('STALE_READ', 'The data changed while it was being read. Try again.');
+  }
+
+  /**
+   * E2 / N07: run a public multi-statement CATALOG read so that a handle retired mid-operation (install / rollback / uninstall activation, or a
+   * sync's writable-handle swap) never surfaces as a raw driver error. If a catalog handle generation moved while `fn` ran (with or without an
+   * error) the WHOLE operation is retried once (the retry waits at the barrier via `catalog()`, so it reads the new catalog or gets a typed
+   * MAINTENANCE); a second movement is a typed `STALE_READ`. Errors with no generation movement propagate unchanged.
+   */
+  async protectedRead<T>(languages: readonly Language[], fn: () => Promise<T>): Promise<T> {
+    const moved = (before: number[]) => languages.some((l, i) => this.generations[l] !== before[i]);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const before = languages.map((l) => this.generations[l]);
+      let result: T;
+      try {
+        result = await fn();
+      } catch (error) {
+        if (moved(before)) continue;
+        throw error;
+      }
+      if (!moved(before)) return result;
+    }
+    throw new CatalogError('STALE_READ', 'The catalog changed while it was being read. Try again.');
   }
 
   /**

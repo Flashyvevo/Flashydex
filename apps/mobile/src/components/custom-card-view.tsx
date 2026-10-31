@@ -143,7 +143,7 @@ function EditInner({ card, onClose }: { card: CustomDto; onClose: () => void }) 
       <div className="flex flex-col gap-4 pt-2">
         <p className="text-caption text-fg-muted">Changes don’t alter copies you already own.</p>
         <Field label="Name" htmlFor="cc-name" error={issues.find((i) => String(i.path).includes('name'))?.message}><TextInput id="cc-name" value={d.name} onChange={set('name')} /></Field>
-        <ChipGroup label="Language" value={card.language} onChange={() => undefined} options={[{ value: 'en', label: 'EN', disabled: true }, { value: 'ja', label: 'JA', disabled: true }]} />
+        <ChipGroup label="Language" value={card.language} onChange={() => undefined} options={[{ value: 'en', label: 'EN', disabled: true }, { value: 'ja', label: 'JP', disabled: true }]} />
         <Field label="Set name" htmlFor="cc-set"><TextInput id="cc-set" value={d.setName} onChange={set('setName')} /></Field>
         <Field label="Number" htmlFor="cc-num"><TextInput id="cc-num" value={d.localId} onChange={set('localId')} /></Field>
         <Field label="Rarity" htmlFor="cc-rar"><TextInput id="cc-rar" value={d.rarity} onChange={set('rarity')} /></Field>

@@ -24,7 +24,7 @@ export function useServicesIfReady(): Services | null {
 }
 
 type StorageStatus = ReturnType<Services['storage']['status']>;
-const NOT_READY: StorageStatus = { writable: true, reason: 'ok', message: null };
+const NOT_READY: StorageStatus = { writable: true, reason: 'ok', message: null, maintenance: null };
 
 /** Live `services.storage` status (persistence latch, instance-lock write block, maintenance). */
 export function useStorageStatus(): StorageStatus {
@@ -34,7 +34,10 @@ export function useStorageStatus(): StorageStatus {
   const snapshot = (): StorageStatus => {
     const next = services ? services.storage.status() : NOT_READY;
     const last = cache.current;
-    if (last.writable === next.writable && last.reason === next.reason && last.message === next.message) return last;
+    const a = last.maintenance;
+    const b = next.maintenance;
+    const sameMaintenance = a === b || (!!a && !!b && a.kind === b.kind && a.language === b.language && a.since === b.since);
+    if (last.writable === next.writable && last.reason === next.reason && last.message === next.message && sameMaintenance) return last;
     cache.current = next;
     return next;
   };

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { existsSync, renameSync, rmSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, renameSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Language } from '@flashydex/schemas';
 import { CATALOG_SCHEMA_FINGERPRINT } from '../db/catalog-fingerprint.generated';
@@ -17,7 +17,7 @@ export class KillSignal extends Error {
 }
 
 export type FakePortHook =
-  | 'stage:start' | 'stage:end' | 'activate:start' | 'activate:between' | 'activate:end' | 'restore:start' | 'restore:end' | 'discardPrevious' | 'discardCandidate' | 'remove';
+  | 'stage:start' | 'stage:end' | 'activate:start' | 'activate:between' | 'activate:put' | 'activate:end' | 'restore:start' | 'restore:end' | 'discardPrevious' | 'discardCandidate' | 'remove';
 
 /** Counts of the synthetic catalog `stage()` writes (1 set, 5 cards, no variant rows). TESTS ONLY. */
 export const FAKE_PACK_COUNTS = { sets: 1, cards: 5, variants: 0, prices: 0, unpublishedSets: 0 };
@@ -43,6 +43,12 @@ export class FakeDiskPort implements CatalogInstallPort {
   /** Override catalog_meta values written to a candidate. */
   metaOverride: Partial<{ language: string; version: string; schemaVersion: number }> = {};
   dead = false;
+  /**
+   * `rename` (native): active->previous and candidate->active are renames; the candidate is consumed.
+   * `web` (IndexedDB key writes, apps/mobile web-store.ts): previous = COPY of active, active = COPY of candidate (a put), THEN the candidate
+   * key is removed. Between the active put and the candidate removal (`activate:put` hook) active + previous + candidate all exist.
+   */
+  style: 'rename' | 'web' = 'rename';
   private counter = 0;
 
   constructor(private readonly dir: string, private readonly env: Environment, readonly requestedUrl = 'https://example.test/manifest.json') {}
@@ -147,6 +153,19 @@ export class FakeDiskPort implements CatalogInstallPort {
     const active = this.activePath(language);
     const previous = this.previousPath(language);
     const had = existsSync(active);
+    if (this.style === 'web') {
+      if (had) {
+        rmSync(previous, { force: true });
+        copyFileSync(active, previous);
+      }
+      await this.hook('activate:between');
+      if (this.activateError && this.activateErrorAt === 'between') throw this.activateError;
+      copyFileSync(this.candidatePath(candidateRef), active);
+      await this.hook('activate:put');
+      rmSync(this.candidatePath(candidateRef), { force: true });
+      await this.hook('activate:end');
+      return { activeRef: `active:${language}`, previousRef: had ? `previous:${language}` : null };
+    }
     if (had) {
       rmSync(previous, { force: true });
       renameSync(active, previous);
@@ -164,8 +183,13 @@ export class FakeDiskPort implements CatalogInstallPort {
     await this.hook('restore:start');
     const previous = this.previousPath(language);
     if (!existsSync(previous)) return false;
-    rmSync(this.activePath(language), { force: true });
-    renameSync(previous, this.activePath(language));
+    if (this.style === 'web') {
+      copyFileSync(previous, this.activePath(language)); // put active, THEN remove the previous key
+      rmSync(previous, { force: true });
+    } else {
+      rmSync(this.activePath(language), { force: true });
+      renameSync(previous, this.activePath(language));
+    }
     await this.hook('restore:end');
     return true;
   }

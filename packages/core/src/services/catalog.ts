@@ -9,6 +9,8 @@ import { CHUNK, identityKey, loadQuotes, manifestIds, parse, parseJson, prefixUp
 import { hydrateOwned } from './owned-read';
 
 type Language = 'en' | 'ja';
+/** E2: the catalog handle generations a read must be protected against (all languages when none is named). */
+const languagesOf = (language: Language | undefined): Language[] => (language ? [language] : ['en', 'ja']);
 const VARIANT_ORDER = ['normal', 'holo', 'reverse_holo', 'first_edition', 'promo_stamped', 'shadowless', 'other'] as const;
 
 type SetRow = {
@@ -139,6 +141,10 @@ export class CatalogRepo {
   }
 
   async listSets(input: Input<typeof SetListQuery>): Promise<Page<SetSummary>> {
+    return this.ctx.databases.protectedRead(languagesOf(parse(SetListQuery, input).language), () => this.listSetsOnce(input));
+  }
+
+  private async listSetsOnce(input: Input<typeof SetListQuery>): Promise<Page<SetSummary>> {
     const q = parse(SetListQuery, input);
     const settings = await this.ctx.databases.user.read((r) => readSettings(r));
     const hidePocket = q.hideTcgPocket ?? settings.hideTcgPocket;
@@ -190,6 +196,10 @@ export class CatalogRepo {
   }
 
   async getSet(input: Input<typeof SetKey>): Promise<SetSummary & { missingPreview: CardSummary[] }> {
+    return this.ctx.databases.protectedRead([parse(SetKey, input).language], () => this.getSetOnce(input));
+  }
+
+  private async getSetOnce(input: Input<typeof SetKey>): Promise<SetSummary & { missingPreview: CardSummary[] }> {
     const key = parse(SetKey, input);
     const db = await this.ctx.databases.catalog(key.language);
     if (!db) throw new NotFoundError('CatalogSet', key.setId, `The ${key.language} catalog is not installed`);
@@ -222,6 +232,10 @@ export class CatalogRepo {
   }
 
   async listSetCards(input: Input<typeof SetCardsQuery>): Promise<Page<CardSummary>> {
+    return this.ctx.databases.protectedRead([parse(SetCardsQuery, input).language], () => this.listSetCardsOnce(input));
+  }
+
+  private async listSetCardsOnce(input: Input<typeof SetCardsQuery>): Promise<Page<CardSummary>> {
     const q = parse(SetCardsQuery, input);
     const db = await this.ctx.databases.catalog(q.language);
     if (!db) throw new NotFoundError('CatalogSet', q.setId, `The ${q.language} catalog is not installed`);
@@ -233,6 +247,10 @@ export class CatalogRepo {
 
   /* ----------------------------------------------------------------------------------------------- cards */
   async searchCards(input: Input<typeof CardSearchQuery>): Promise<Page<CardSummary>> {
+    return this.ctx.databases.protectedRead(languagesOf(parse(CardSearchQuery, input).language), () => this.searchCardsOnce(input));
+  }
+
+  private async searchCardsOnce(input: Input<typeof CardSearchQuery>): Promise<Page<CardSummary>> {
     const q = parse(CardSearchQuery, input);
     const settings = await this.ctx.databases.user.read((r) => readSettings(r));
     const hidePocket = q.hideTcgPocket ?? settings.hideTcgPocket;
@@ -284,6 +302,10 @@ export class CatalogRepo {
   }
 
   async getCard(input: Input<typeof CardDetailQuery>): Promise<CardDetail> {
+    return this.ctx.databases.protectedRead([parse(CardDetailQuery, input).language], () => this.getCardOnce(input));
+  }
+
+  private async getCardOnce(input: Input<typeof CardDetailQuery>): Promise<CardDetail> {
     const q = parse(CardDetailQuery, input);
     const db = await this.ctx.databases.catalog(q.language);
     if (!db) throw new NotFoundError('CatalogCard', q.cardId, `The ${q.language} catalog is not installed`);

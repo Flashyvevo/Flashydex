@@ -1,7 +1,17 @@
 import { ConflictError, DomainError, MaintenanceError, PersistenceError, StorageError, UnsupportedCapabilityError, toDomainError } from '../errors';
 
 export type StorageReason = 'ok' | 'persistence_failed' | 'instance_lock' | 'maintenance';
-export type StorageStatus = { writable: boolean; reason: StorageReason; message: string | null };
+/** Stage E / E1: what is currently being maintained. `restore` blocks personal writes; `catalog_activation` is informational (reads wait/retry per E2). */
+export type MaintenanceInfo = { kind: 'restore' | 'catalog_activation'; language: 'en' | 'ja' | null; since: string };
+export type StorageStatus = { writable: boolean; reason: StorageReason; message: string | null; maintenance: MaintenanceInfo | null };
+
+/** Held by the restore while the personal-write maintenance gate is closed; the ONLY way to write through it. */
+export interface MaintenanceGate {
+  /** The privileged transaction: allowed through the gate (still subject to the instance lock and the persistence latch). */
+  transaction<T>(fn: (tx: Exec) => Promise<T>): Promise<T>;
+  /** Wait for everything already queued on this connection (queued ordinary writes reject MAINTENANCE when they reach the head), then reopen the gate. */
+  exit(): Promise<void>;
+}
 
 /**
  * SqlDriver = one SQLite connection behind the Drizzle `sqlite-proxy` callback contract.
@@ -76,7 +86,11 @@ class Executor implements Exec {
 export class Db {
   private tail: Promise<unknown> = Promise.resolve();
   private readonly direct: Executor;
-  private maintenance = false;
+  /** Test/ops kill switch (legacy `setMaintenance`): blocks writes with reason 'maintenance' but is not a reported gate. */
+  private killSwitch = false;
+  private restoreGate: { info: MaintenanceInfo; token: symbol } | null = null;
+  private readonly activations = new Map<symbol, MaintenanceInfo>();
+  private cachedStatus: StorageStatus | null = null;
   private persistenceFailed = false;
   private instanceLock: { message: string } | null = null;
   private readonly listeners = new Set<(s: StorageStatus) => void>();
@@ -114,8 +128,36 @@ export class Db {
   }
 
   setMaintenance(on: boolean): void {
-    this.maintenance = on;
+    this.killSwitch = on;
     this.notify();
+  }
+
+  /**
+   * E1: close the personal-write gate for a restore. Every ordinary write (including ones already queued) rejects MAINTENANCE until `exit()`.
+   * Resolves once work that was already running has drained; the returned gate runs the restore's own privileged transaction.
+   */
+  async enterRestoreGate(): Promise<MaintenanceGate> {
+    if (this.readOnly) throw new StorageError('DB_UNAVAILABLE', `${this.label} is read-only`);
+    if (this.restoreGate) throw new MaintenanceError();
+    const token = Symbol('restore-gate');
+    this.restoreGate = { token, info: { kind: 'restore', language: null, since: new Date().toISOString() } };
+    this.notify();
+    await this.lock(async () => undefined); // drain: the in-flight transaction finishes; anything queued behind it now sees the gate
+    return {
+      transaction: (fn) => this.runTransaction(fn, token),
+      exit: async () => {
+        await this.lock(async () => undefined);
+        if (this.restoreGate?.token === token) { this.restoreGate = null; this.notify(); }
+      }
+    };
+  }
+
+  /** E1: announce a catalog activation barrier (informational; personal writes continue). Returns the end function. */
+  beginCatalogActivation(language: 'en' | 'ja'): () => void {
+    const key = Symbol('activation');
+    this.activations.set(key, { kind: 'catalog_activation', language, since: new Date().toISOString() });
+    this.notify();
+    return () => { if (this.activations.delete(key)) this.notify(); };
   }
 
   /** D42: the page does not own the writer lock; every personal write is refused with INSTANCE_LOCK. */
@@ -125,10 +167,20 @@ export class Db {
   }
 
   status(): StorageStatus {
-    if (this.instanceLock) return { writable: false, reason: 'instance_lock', message: this.instanceLock.message };
-    if (this.persistenceFailed) return { writable: false, reason: 'persistence_failed', message: 'The last change may not have been saved. FlashyDex must reload your data before more changes.' };
-    if (this.maintenance) return { writable: false, reason: 'maintenance', message: 'Storage is being maintained.' };
-    return { writable: true, reason: 'ok', message: null };
+    const maintenance: MaintenanceInfo | null = this.restoreGate?.info ?? this.activations.values().next().value ?? null;
+    let next: StorageStatus;
+    if (this.instanceLock) next = { writable: false, reason: 'instance_lock', message: this.instanceLock.message, maintenance };
+    else if (this.persistenceFailed) next = { writable: false, reason: 'persistence_failed', message: 'The last change may not have been saved. FlashyDex must reload your data before more changes.', maintenance };
+    else if (this.restoreGate) next = { writable: false, reason: 'maintenance', message: 'Restoring your backup.', maintenance };
+    else if (this.killSwitch) next = { writable: false, reason: 'maintenance', message: 'Storage is being maintained.', maintenance };
+    else next = { writable: true, reason: 'ok', message: null, maintenance };
+    const last = this.cachedStatus;
+    if (
+      last && last.writable === next.writable && last.reason === next.reason && last.message === next.message &&
+      last.maintenance?.kind === next.maintenance?.kind && last.maintenance?.language === next.maintenance?.language && last.maintenance?.since === next.maintenance?.since
+    ) return last;
+    this.cachedStatus = next; // referentially stable while nothing changed (useSyncExternalStore friendly)
+    return next;
   }
 
   subscribe(listener: (s: StorageStatus) => void): () => void {
@@ -141,11 +193,17 @@ export class Db {
     for (const l of [...this.listeners]) { try { l(s); } catch { /* observer errors are isolated */ } }
   }
 
+  /** The PERSISTENCE_FAILED error while the persistence latch is set, else null. Receipt replays check this FIRST (Stage E / N05). */
+  persistenceBlock(): DomainError | null {
+    return this.persistenceFailed ? new PersistenceError('The last change may not have been saved. Recover storage before continuing.') : null;
+  }
+
   /** The error every write gets while the Db is blocked, or null. */
-  writeBlockError(): DomainError | null {
+  writeBlockError(privilege?: symbol): DomainError | null {
     if (this.instanceLock) return new StorageError('INSTANCE_LOCK', this.instanceLock.message);
     if (this.persistenceFailed) return new PersistenceError('The last change may not have been saved. Recover storage before making more changes.');
-    if (this.maintenance) return new MaintenanceError();
+    if (this.restoreGate && privilege !== this.restoreGate.token) return new MaintenanceError();
+    if (this.killSwitch) return new MaintenanceError();
     return null;
   }
 
@@ -189,11 +247,15 @@ export class Db {
    * failure surfaces as PersistenceError, never as a silent success.
    */
   transaction<T>(fn: (tx: Exec) => Promise<T>): Promise<T> {
+    return this.runTransaction(fn, undefined);
+  }
+
+  private runTransaction<T>(fn: (tx: Exec) => Promise<T>, privilege: symbol | undefined): Promise<T> {
     if (this.readOnly) throw new StorageError('DB_UNAVAILABLE', `${this.label} is read-only`);
-    const blocked = this.writeBlockError();
+    const blocked = this.writeBlockError(privilege);
     if (blocked) return Promise.reject(blocked);
     return this.lock(async () => {
-      const again = this.writeBlockError(); // a latch set while this call was queued must still stop it
+      const again = this.writeBlockError(privilege); // a latch / gate set while this call was queued must still stop it
       if (again) throw again;
       await this.direct.run('BEGIN IMMEDIATE');
       let result: T;

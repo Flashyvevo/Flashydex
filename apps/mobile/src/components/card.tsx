@@ -55,7 +55,7 @@ const COND_CLASS: Record<Condition | 'unknown', string> = {
 };
 
 export function ConditionBadge({ condition, plus, label }: { condition: Condition | null; plus?: boolean; label?: string }) {
-  if (condition === null && !plus) return null; // unknown condition is omitted, never shown as a bare "?" (UX section 12: "Condition not recorded")
+  if (condition === null && !plus) return null; // unknown condition is omitted, never shown as a bare "?" (UX section 12: "Condition not set")
   const key = condition ?? 'unknown';
   const aria = label ?? (plus ? `Mixed conditions, best ${CONDITION_LABEL[key]}` : CONDITION_LABEL[key]);
   return (

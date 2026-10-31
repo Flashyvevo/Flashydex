@@ -6,7 +6,7 @@ import { useToast } from './overlay';
 import { canGoBack } from './page';
 import { cx } from './ui';
 
-/** Shared layout of every first-run step (UX §15.2): back, 4 dots, Skip, content, sticky footer. */
+/** Shared layout of every first-run step (UX §15.2): back, 4 dots, Skip (not on step 1), content, sticky footer. */
 export function OnboardingShell({
   step,
   title,
@@ -33,15 +33,11 @@ export function OnboardingShell({
   }, [title]);
 
   const skip = async () => {
-    if (step === 1) {
-      void navigate({ to: '/welcome/notice' });
-      return;
-    }
     try {
       await update.mutateAsync({ onboardingCompleted: true, disclaimerAcknowledged: true });
       void navigate({ to: '/', replace: true });
     } catch {
-      toast.show({ message: 'Couldn’t save. Try again.', tone: 'negative' });
+      toast.show({ message: 'Couldn’t save that choice. Try again.', tone: 'negative' });
     }
   };
 
@@ -62,9 +58,13 @@ export function OnboardingShell({
             <span key={n} aria-hidden className={cx('size-2 rounded-full', n === step ? 'bg-accent' : 'bg-surface-3')} />
           ))}
         </div>
-        <button type="button" data-testid="welcome-skip" onClick={() => void skip()} disabled={update.isPending} className="inline-flex min-h-(--ps-tap) min-w-(--ps-tap) items-center justify-center px-3 text-body text-accent-fg">
-          Skip
-        </button>
+        {step > 1 ? (
+          <button type="button" data-testid="welcome-skip" onClick={() => void skip()} disabled={update.isPending} className="inline-flex min-h-(--ps-tap) min-w-(--ps-tap) items-center justify-center px-3 text-body text-accent-fg">
+            Skip
+          </button>
+        ) : (
+          <span className="size-(--ps-tap)" />
+        )}
       </header>
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 pb-6 pt-4" style={{ paddingLeft: 'var(--ps-page-left)', paddingRight: 'var(--ps-page-right)' }}>
         {hero}

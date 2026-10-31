@@ -46,12 +46,20 @@ type Warning = { code: string; language: Language; cardId: string | null; messag
 type PendingCard = { id: string; payloadHash: string; prices: CatalogLatestPriceRow[]; mapped: MappedCard | null; warnings: Array<{ code: string; cardId: string | null; message: string }> };
 export type PendingBatch = {
   language: Language; setId: string; epoch: number; createdAt: string; setRow: CatalogSetRow | null;
+  /**
+   * N02: the PERSISTED installed-content identity (`installed_catalogs`: generation|status|version|sha256) this batch was fetched against.
+   * `epoch` is only the in-process handle counter and is meaningless after a restart; a replay is allowed iff the identity still matches.
+   */
+  identity: string | null;
   cards: PendingCard[]; failed: Array<{ id: string; code: string }>;
 };
 type Checkpoint = {
   version: 3; languages: Language[]; selection: SyncDto['selection'];
-  /** `generation` = the catalog EPOCH captured when the run (re)started. */
-  catalogGenerations: Array<{ language: Language; generation: number }>; pendingBatch: PendingBatch | null;
+  /** `generation` = the catalog EPOCH (in-process) captured when the run (re)started. */
+  catalogGenerations: Array<{ language: Language; generation: number }>;
+  /** Persisted installed-content identity per language captured when the run (re)started; every fenced user commit re-checks it (N02). */
+  catalogIdentities?: Array<{ language: Language; identity: string }>;
+  pendingBatch: PendingBatch | null;
   lists: never[]; sets: SetState[]; warnings: Warning[]; discovered?: boolean;
 };
 
@@ -157,6 +165,18 @@ export class SyncService {
 
   private epochs(languages: readonly Language[]): Checkpoint['catalogGenerations'] {
     return languages.map((language) => ({ language, generation: this.ctx.databases.epoch(language) }));
+  }
+
+  /** N02: the persisted installed-content identity of one language (survives restarts; changes on every install/rollback/uninstall/recovery receipt write). */
+  private async identityOf(q: Pick<Exec, 'rows'>, language: Language): Promise<string> {
+    const r = (await q.rows('SELECT generation, status, version, sha256 FROM installed_catalogs WHERE language = ?', [language]))[0];
+    return r ? `${String(r[0])}|${String(r[1])}|${String(r[2] ?? '')}|${String(r[3] ?? '')}` : 'none';
+  }
+
+  private async identities(languages: readonly Language[]): Promise<NonNullable<Checkpoint['catalogIdentities']>> {
+    const out: NonNullable<Checkpoint['catalogIdentities']> = [];
+    for (const language of languages) out.push({ language, identity: await this.identityOf(this.user, language) });
+    return out;
   }
 
   /* ------------------------------------------------------------------------------------------ API */
@@ -377,18 +397,24 @@ export class SyncService {
       if (!row || !cp) throw new InvalidStateError('The update state is unreadable');
       const mode = row.mode;
 
-      // Replay a durable pending batch EXACTLY as first observed (R07) - unless the catalog was replaced since (then the batch is dropped and refetched).
+      // Replay a durable pending batch EXACTLY as first observed (R07) - unless the installed catalog was replaced since (then the batch is
+      // dropped and refetched). N02: "replaced" is decided by the PERSISTED installed identity, never by the in-process epoch counter.
+      cp.catalogIdentities ??= [];
       if (cp.pendingBatch) {
         const pending = cp.pendingBatch;
-        if (pending.epoch === this.ctx.databases.epoch(pending.language) && cp.sets.some((s) => s.language === pending.language && s.setId === pending.setId)) {
+        const identityNow = await this.identityOf(this.user, pending.language);
+        if (pending.identity === identityNow && cp.sets.some((s) => s.language === pending.language && s.setId === pending.setId)) {
+          pending.epoch = this.ctx.databases.epoch(pending.language); // same content: adopt this process's handle counter for the write fence
           cp.catalogGenerations = this.epochs(cp.languages);
+          cp.catalogIdentities = await this.identities(cp.languages);
           await this.executePending(id, token, cp, pending, mode);
         } else {
           cp.pendingBatch = null;
           this.warn(cp, { code: 'BATCH_DISCARDED', language: pending.language, cardId: null, message: 'A saved batch belonged to a replaced catalog and was fetched again' });
         }
       }
-      cp.catalogGenerations = this.epochs(cp.languages); // fence everything from here on against THIS epoch
+      cp.catalogGenerations = this.epochs(cp.languages); // fence everything from here on against THIS epoch ...
+      cp.catalogIdentities = await this.identities(cp.languages); // ... and THIS persisted installed identity
       await this.persist(id, token, cp, []);
 
       if (mode === 'incremental' && cp.discovered !== true) await this.discover(id, token, cp);
@@ -397,8 +423,14 @@ export class SyncService {
         if (set.status === 'done' || set.status === 'unpublished') continue;
         if (!(await this.processSet(id, token, cp, set, mode))) return; // cancelled
       }
-      const failed = cp.sets.reduce((n, s) => n + s.cardsFailed, 0);
-      await this.finish(id, token, failed > 0 ? 'failed' : 'completed', failed > 0 ? { code: 'PARTIAL_FAILURE', message: `${failed} card${failed === 1 ? '' : 's'} could not be updated` } : null);
+      // N06: a failed (or never-finished) SET or discovery unit is a failed run too, not only failed cards. Resumable, with an actionable error.
+      const failedCards = cp.sets.reduce((n, s) => n + s.cardsFailed, 0);
+      const failedSets = cp.sets.filter((s) => s.status === 'failed' || s.status === 'pending' || s.status === 'running').length;
+      const parts: string[] = [];
+      if (failedSets > 0) parts.push(`${failedSets} set${failedSets === 1 ? '' : 's'} could not be fetched`);
+      if (failedCards > 0) parts.push(`${failedCards} card${failedCards === 1 ? '' : 's'} could not be updated`);
+      const failed = failedSets > 0 || failedCards > 0;
+      await this.finish(id, token, failed ? 'failed' : 'completed', failed ? { code: 'PARTIAL_FAILURE', message: `${parts.join(' and ')}. Try again to resume.` } : null);
     } catch (error) {
       if (error instanceof Fenced) return; // a newer attempt owns the run
       const domain = error instanceof DomainError ? error : toDomainError(error);
@@ -450,12 +482,13 @@ export class SyncService {
     this.assertEpoch(cp, set.language);
     const pending: PendingBatch = {
       language: set.language, setId: set.setId, epoch: this.ctx.databases.epoch(set.language), createdAt: this.ctx.env.clock.now(),
+      identity: cp.catalogIdentities?.find((i) => i.language === set.language)?.identity ?? null,
       setRow: mode !== 'prices_only' && set.setRow && !set.setApplied ? set.setRow : null,
       cards: results.filter((r): r is Extract<FetchedCard, { ok: true }> => r.ok).map((r) => ({ id: r.id, payloadHash: r.payloadHash, prices: r.prices, mapped: mode === 'prices_only' ? null : r.mapped, warnings: r.warnings })),
       failed: results.filter((r): r is Extract<FetchedCard, { ok: false }> => !r.ok).map((r) => ({ id: r.id, code: r.code }))
     };
     cp.pendingBatch = pending;
-    await this.persist(id, token, cp, []); // USER commit #1: the exact payload, durable BEFORE the catalog is touched
+    await this.persist(id, token, cp, [], [set.language]); // USER commit #1: the exact payload, durable BEFORE the catalog is touched (fenced on the installed identity)
     await this.opts.faultAfterPendingCommit?.();
     await this.executePending(id, token, cp, pending, mode);
   }
@@ -499,7 +532,11 @@ export class SyncService {
     await this.user.transaction(async (tx: Exec) => {
       const r = await tx.rows('SELECT worker_token FROM sync_state WHERE id = ?', [id]);
       if (r[0]?.[0] !== token) throw new Fenced();
-      for (const language of fence) this.assertEpoch(cp, language); // generation fencing inside the write transaction
+      for (const language of fence) {
+        this.assertEpoch(cp, language); // generation fencing inside the write transaction
+        const captured = cp.catalogIdentities?.find((i) => i.language === language);
+        if (captured && captured.identity !== (await this.identityOf(tx, language))) throw staleCatalog(); // N02: persisted identity
+      }
       for (const batch of batches) {
         for (const p of batch.prices) {
           await tx.run(

@@ -54,7 +54,7 @@ export class WorkCoordinator {
     let released = false;
     const lease: WorkLease = {
       kind, token: options.token, languages,
-      withBarrier: (langs, fn) => this.sets.withBarrier(langs, fn),
+      withBarrier: (langs, fn) => this.sets.withBarrier(langs, fn, { announce: true }),
       release: async () => {
         if (released) return;
         released = true;

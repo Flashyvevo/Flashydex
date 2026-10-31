@@ -45,7 +45,7 @@ export function useSet(key: Input<typeof SetKey> | undefined) {
   });
 }
 
-/** Infinite card list of one set. `ownership: 'all'|'owned'|'missing'`, `duplicates: true` for the duplicates tab. */
+/** Infinite list of one set's cards. `ownership: 'all'|'owned'|'missing'`, `duplicates: true` for the duplicates tab. */
 export function useSetCards(query: Omit<Input<typeof SetCardsQuery>, 'offset'> | undefined) {
   const services = useServicesIfReady();
   return useInfiniteQuery<Page<CardSummary>, DomainError, InfiniteData<Page<CardSummary>>, ReturnType<typeof keys.setCards>, number>({

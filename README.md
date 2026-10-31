@@ -50,9 +50,11 @@ Details: `docs/CATALOG-PACKS.md`, `docs/COMPRESSION-STORAGE.md`.
 npm run typecheck
 npm run lint
 npm test            # core + mobile vitest, recognition pytest
-npm run e2e         # Playwright against the dev server on :3200 (390x844 and 1280x800)
+npm run e2e         # Playwright (390x844 and 1280x800) against its OWN plain-http Vite on 127.0.0.1:3201
 npm run build
 ```
+
+`npm run e2e` never touches the dev server on :3200 (which may be the HTTPS one). Playwright starts its own `vite --host 127.0.0.1 --port 3201 --strictPort` without `FLASHYDEX_DEV_HTTPS` and never reuses an existing server; 127.0.0.1 is a secure context, so Web Locks work over plain http. To run against a server you already have, set `FLASHYDEX_E2E_BASE_URL=https://127.0.0.1:3200` (no server is started; certificate errors are ignored).
 
 ## Native
 

@@ -10,6 +10,7 @@ import { RefreshSetRow } from './refresh-set';
 import { Banner, Button, EmptyState, ErrorState, LinkButton, OfflineChip, SegmentedControl, Skeleton, cx } from './ui';
 import { useCatalogCard, useOwnedCopy, useRemoveCopy, useLocations, useSettings, useUpdateCopy, type OwnedDto, type PriceDto, type Currency } from '../data';
 import { errorCode } from '../lib/errors';
+import { hasCurrencyPrice, priceGap } from '../lib/price-gap';
 import { CONDITION_LABEL, VARIANT_LABEL, collectorNumber, formatDate, formatInt, formatMoney, hasJapanese, plural, variantLabel, type Variant } from '../lib/format';
 import { useDelayedFlag } from '../lib/hooks';
 import { haptic, useNetwork } from '../lib/native';
@@ -22,7 +23,7 @@ function CopyRow({ copy, onOpen, selecting, selected, onToggle, currency }: { co
   const paid = copy.purchasePrice ? formatMoney(copy.purchasePrice.cents, copy.purchasePrice.currency as Currency) : null;
   const manual = copy.manualPrice ? formatMoney(copy.manualPrice.cents, copy.manualPrice.currency as Currency) : null;
   const value = copy.valuations.find((v) => v.currency === currency);
-  const line1 = [variantLabel(copy.variant as Variant, copy.variantDetail), copy.grade ? null : copy.condition ?? 'Condition not recorded', copy.storageLocationName].filter(Boolean).join(' · ');
+  const line1 = [variantLabel(copy.variant as Variant, copy.variantDetail), copy.grade ? null : copy.condition ?? 'Condition not set', copy.storageLocationName].filter(Boolean).join(' · ');
   const line2 = [paid ? `Paid ${paid}` : 'Paid —', formatDate(copy.acquisition?.purchasedOn), copy.acquisition?.source, manual ? `Your price ${manual}` : value ? `Worth ${formatMoney(value.cents, currency)}` : null].filter(Boolean).join(' · ');
   return (
     <button
@@ -53,7 +54,18 @@ function PricesTable({ prices, currencyTab }: { prices: PriceDto[]; currencyTab:
   const label: Record<string, string> = { marketCents: 'Market', lowCents: 'Low', midCents: currencyTab === 'EUR' ? 'Avg' : 'Mid', highCents: 'High', trendCents: 'Trend' };
   const usable = cols.filter((c) => rows.some((r) => r[c] !== null));
   const shown = rows.filter((r) => usable.some((c) => r[c] !== null));
-  if (shown.length === 0) return <p className="text-small text-fg-subtle">No price data</p>;
+  if (shown.length === 0) {
+    const gap = priceGap(prices, currencyTab);
+    if (!gap) return <p className="text-small text-fg-subtle">No price data</p>;
+    return (
+      <div className="flex flex-col gap-1" data-testid="price-gap">
+        <p className="text-small text-fg-muted">No {gap.missing} price</p>
+        <p className="text-small tabular-nums">
+          {formatMoney(gap.cents, gap.other)} <span className="text-fg-subtle">· {gap.source}{gap.asOf ? ` · as of ${formatDate(gap.asOf)}` : ''}</span>
+        </p>
+      </div>
+    );
+  }
   return (
     <table className="w-full text-small tabular-nums">
       <caption className="sr-only">{currencyTab} prices by variant</caption>
@@ -352,10 +364,12 @@ export function CatalogCardView({
             {hasPrices ? (
               <>
                 <PricesTable prices={c.latestPrices as PriceDto[]} currencyTab={tab} />
-                <p className="flex flex-wrap items-center gap-2 text-caption text-fg-subtle">
-                  {tab === 'USD' ? 'TCGplayer' : 'Cardmarket'}{newest ? ` · as of ${formatDate(newest)}` : ''}
-                  {pricesStale && !net.online && <OfflineChip />}
-                </p>
+                {hasCurrencyPrice(c.latestPrices as PriceDto[], tab) && (
+                  <p className="flex flex-wrap items-center gap-2 text-caption text-fg-subtle">
+                    {tab === 'USD' ? 'TCGplayer' : 'Cardmarket'}{newest ? ` · as of ${formatDate(newest)}` : ''}
+                    {pricesStale && !net.online && <OfflineChip />}
+                  </p>
+                )}
               </>
             ) : (
               <p className="text-small text-fg-subtle">No price data from TCGdex for this card.</p>

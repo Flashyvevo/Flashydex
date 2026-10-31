@@ -8,9 +8,9 @@ export const Route = createFileRoute('/_modal/welcome/')({ component: Welcome })
 function Welcome() {
   const navigate = useNavigate();
   const rows = [
-    { icon: Layers, text: 'Search every English and Japanese card' },
+    { icon: Layers, text: 'Search English and Japanese cards once they’re downloaded' },
     { icon: DatabaseZap, text: 'Track copies, condition, grades and what you paid' },
-    { icon: HardDrive, text: 'Everything stays on this device — no account, works offline' }
+    { icon: HardDrive, text: 'Your collection stays on this device. No account. Search works offline after the download.' }
   ];
   return (
     <OnboardingShell

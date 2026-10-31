@@ -20,9 +20,17 @@ import { NATIVE_CATALOG_WRITES } from './pack-install/native-store';
 export async function createUserDriver(): Promise<SqlDriver> {
   const connection = await openLogicalConnection(USER_DB_NAME);
   const web = Capacitor.getPlatform() === 'web';
+  const proxy = createProxyCallback(connection);
   return {
     label: USER_DB_NAME,
-    proxy: createProxyCallback(connection),
+    // DEV-ONLY e2e seam (`window.__flashydexTest.sqlDelayMs`): makes a restore long enough to observe. Compiled out of production builds.
+    proxy: import.meta.env.DEV
+      ? async (sql, params, method) => {
+          const delay = (window as unknown as { __flashydexTest?: { sqlDelayMs?: number } }).__flashydexTest?.sqlDelayMs;
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          return proxy(sql, params, method);
+        }
+      : proxy,
     afterCommit: web ? () => flushWebStore(USER_DB_NAME) : undefined,
     close: () => closeLogicalConnection(USER_DB_NAME)
   };

@@ -29,7 +29,7 @@ export async function onboardAndInstall(page: Page): Promise<void> {
 /** Search the catalog on /add and open the confirm sheet for the first result whose name matches. */
 export async function openConfirmFor(page: Page, query: string, name: string): Promise<void> {
   await page.goto('/add');
-  await page.getByRole('searchbox').or(page.getByPlaceholder('Search name, number or id')).first().fill(query);
+  await page.getByRole('searchbox').or(page.getByPlaceholder('Search name or number')).first().fill(query);
   const row = page.getByTestId('result-row').filter({ hasText: name }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();

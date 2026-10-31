@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useGroups, useLocations, useSets, useSettings, useUpdateSettings } from '../data';
-import { CONDITION_ORDER, VARIANT_LABEL, type Variant } from '../lib/format';
+import { CONDITION_ORDER, LANGUAGE_BADGE, VARIANT_LABEL, type Variant } from '../lib/format';
 import { FILTER_KEYS, type Filters } from '../lib/collection-query';
 import { ChipGroup, NativeSelect, Switch, TextInput, Field } from './ui';
 
@@ -17,7 +17,7 @@ export function FilterControls({ value, onChange, rarities }: { value: Filters; 
 
   const setOptions = useMemo(() => {
     const rows = sets.data?.data ?? [];
-    const opts = [{ value: ANY, label: 'Any set' }, ...rows.map((s) => ({ value: s.id, label: `${s.name} (${s.language.toUpperCase()})` }))];
+    const opts = [{ value: ANY, label: 'Any set' }, ...rows.map((s) => ({ value: s.id, label: `${s.name} (${LANGUAGE_BADGE[s.language]})` }))];
     if (value.set && !opts.some((o) => o.value === value.set)) opts.push({ value: value.set, label: value.set });
     return opts;
   }, [sets.data, value.set]);
@@ -29,7 +29,7 @@ export function FilterControls({ value, onChange, rarities }: { value: Filters; 
         value={value.lang ?? ANY}
         onChange={(v) => set('lang', v)}
         testIdPrefix="filter-lang"
-        options={[{ value: ANY, label: 'All' }, { value: 'en', label: 'EN' }, { value: 'ja', label: 'JA' }]}
+        options={[{ value: ANY, label: 'All' }, { value: 'en', label: 'EN' }, { value: 'ja', label: 'JP' }]}
       />
       <NativeSelect label="Set" value={value.set ?? ANY} onChange={(v) => set('set', v)} options={setOptions} testId="filter-set" />
       {rarities.length > 0 ? (
@@ -50,7 +50,7 @@ export function FilterControls({ value, onChange, rarities }: { value: Filters; 
         value={value.cond ?? ANY}
         onChange={(v) => set('cond', v === 'unknown' ? 'unknown' : v)}
         testIdPrefix="filter-cond"
-        options={[{ value: ANY, label: 'Any' }, ...CONDITION_ORDER.map((c) => ({ value: c, label: c })), { value: 'unknown', label: 'Not recorded', aria: 'Condition not recorded' }]}
+        options={[{ value: ANY, label: 'Any' }, ...CONDITION_ORDER.map((c) => ({ value: c, label: c })), { value: 'unknown', label: 'Not set', aria: 'Condition not set' }]}
       />
       <NativeSelect
         label="Variant"
@@ -82,7 +82,7 @@ export function FilterControls({ value, onChange, rarities }: { value: Filters; 
         checked={settings.data?.hideTcgPocket ?? true}
         disabled={!settings.isSuccess || updateSettings.isPending}
         onChange={(v) => updateSettings.mutate({ hideTcgPocket: v })}
-        label="Hide TCG Pocket"
+        label="Hide TCG Pocket (digital) cards"
         description="Digital-only cards. Applies everywhere, like the setting."
         testId="filter-hide-pocket"
       />

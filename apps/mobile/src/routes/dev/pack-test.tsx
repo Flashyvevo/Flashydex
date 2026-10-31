@@ -6,6 +6,7 @@ import {
 } from '../../platform/pack-install';
 import { catalogConfig } from '../../platform/catalog-config';
 import { createProxyCallback } from '../../platform/sqlite-proxy';
+import { LANGUAGE_BADGE } from '../../lib/format';
 
 type CatalogPackEntry = PackEntryInput;
 type InstallResult = StageResult & { previousRef: string | null };
@@ -110,14 +111,14 @@ function PackTestPage() {
         {entries.map((entry) => (
           <button key={entry.language} type="button" data-testid={`install-${entry.language}`} disabled={busy}
             className="rounded bg-zinc-800 px-3 py-2 disabled:opacity-40" onClick={() => void install(entry)}>
-            Install {entry.language.toUpperCase()} {entry.targetVersion}
+            Install {LANGUAGE_BADGE[entry.language]} {entry.targetVersion}
           </button>
         ))}
         <button type="button" data-testid="cancel" disabled={!busy} className="rounded bg-zinc-800 px-3 py-2 disabled:opacity-40" onClick={() => abortRef.current?.abort()}>Cancel</button>
         {language && (
           <button type="button" data-testid="remove" disabled={busy} className="rounded bg-zinc-800 px-3 py-2 disabled:opacity-40"
             onClick={() => void closeCatalogDb(language).then(() => removeCatalog(language)).then(() => { setCounts(null); setResult(null); setStatus('ready'); })}>
-            Remove {language.toUpperCase()}
+            Remove {LANGUAGE_BADGE[language]}
           </button>
         )}
       </div>

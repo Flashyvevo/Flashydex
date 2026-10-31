@@ -11,7 +11,7 @@ import { SetLogo } from '../../../../components/set-logo';
 import { Banner, Button, EmptyState, ErrorState, SegmentedControl, Skeleton } from '../../../../components/ui';
 import { useSet, useSetCards, useSettings, useUpdateSettings } from '../../../../data';
 import { describeError } from '../../../../lib/errors';
-import { collectorNumber, formatPercent, formatDate, formatInt, plural, LANGUAGE_NAMES, type Language } from '../../../../lib/format';
+import { collectorNumber, formatPercent, formatDate, formatInt, plural, LANGUAGE_BADGE, type Language } from '../../../../lib/format';
 import { useDelayedFlag, useSentinel } from '../../../../lib/hooks';
 import { useSetSearch, useSheetParam } from '../../../../lib/sheets';
 
@@ -94,7 +94,7 @@ function SetDetail() {
     { value: 'all', label: `All ${formatInt(s.catalogCount)}`, aria: `All ${s.catalogCount} cards` },
     { value: 'owned', label: `Owned ${formatInt(s.ownedUnique)}`, aria: `Owned ${s.ownedUnique}` },
     { value: 'missing', label: `Missing ${formatInt(s.missingCount)}`, aria: `Missing ${s.missingCount}` },
-    { value: 'dupes', label: 'Dupes', aria: 'Duplicates' }
+    { value: 'dupes', label: 'Duplicates', aria: 'Duplicates' }
   ] as const;
 
   const addTarget = search.add ? { kind: 'catalog' as const, language, cardId: search.add } : null;
@@ -116,7 +116,7 @@ function SetDetail() {
         <div className="flex justify-center lg:justify-start"><SetLogo set={s} large /></div>
         <div className="min-w-0 flex-1">
           <h2 className="break-words text-h1 font-bold">{s.name}</h2>
-          <p className="text-body text-fg-muted">{[s.series, formatDate(s.releaseDate), LANGUAGE_NAMES[language].slice(0, 2).toUpperCase()].filter(Boolean).join(' · ')}</p>
+          <p className="text-body text-fg-muted">{[s.series, formatDate(s.releaseDate), LANGUAGE_BADGE[language]].filter(Boolean).join(' · ')}</p>
           <div className="mt-3 flex items-center gap-3">
             <Ring percent={s.completionPercent} />
             <div className="text-small text-fg-muted" data-testid="set-counts">
@@ -132,7 +132,7 @@ function SetDetail() {
       {s.completionPercent === null && (
         <div className="mb-3">
           <Banner tone="warning">
-            This set isn’t fully downloaded ({formatInt(s.catalogCount)}{s.totalCount ? ` of ${formatInt(s.totalCount)}` : ''} cards). Completion will show once it is. Downloading a single set isn’t available yet.
+            This set isn’t fully downloaded ({formatInt(s.catalogCount)}{s.totalCount ? ` of ${formatInt(s.totalCount)}` : ''} cards). Completion will show once it is. You can’t download just this set yet.
           </Banner>
         </div>
       )}
@@ -144,8 +144,8 @@ function SetDetail() {
       {cards.isSuccess && rows.length === 0 && (
         <EmptyState
           icon={CheckCircle2}
-          title={tab === 'missing' ? 'Set complete' : tab === 'owned' ? 'Nothing owned yet' : tab === 'dupes' ? 'No duplicates' : 'No cards'}
-          body={tab === 'missing' ? `You own every card in ${s.name}.` : tab === 'owned' ? 'Add cards from this set to see them here.' : undefined}
+          title={tab === 'missing' ? 'Set complete' : tab === 'owned' ? 'Nothing owned yet' : tab === 'dupes' ? 'No duplicates' : 'No cards in this download'}
+          body={tab === 'missing' ? (s.completionPercent === null ? 'Nothing missing in the cards downloaded for this set.' : `Nothing missing from ${s.name}.`) : tab === 'owned' ? 'Add cards from this set to see them here.' : undefined}
         />
       )}
       {rows.length > 0 && (

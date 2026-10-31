@@ -8,7 +8,7 @@ import { Page } from '../../../components/page';
 import { Banner, Button, EmptyState, ErrorState, LinkButton, SearchField, SegmentedControl, Skeleton, cx } from '../../../components/ui';
 import { useCatalogStatus, useCollection, useDashboard, useSettings } from '../../../data';
 import { collectionSearch, countFilters, pickFilters, SORT_LABEL, SORTS, toQuery, type Filters, type SortKey } from '../../../lib/collection-query';
-import { formatInt, plural } from '../../../lib/format';
+import { LANGUAGE_BADGE, formatInt, plural } from '../../../lib/format';
 import { useDebounced, useDelayedFlag, useIsWide, useSentinel } from '../../../lib/hooks';
 import { prefs, useCollectionViewPref } from '../../../lib/prefs';
 import { useSetSearch, useSheetParam } from '../../../lib/sheets';
@@ -113,13 +113,13 @@ function CollectionPage() {
               ? filtered
                 ? `${formatInt(total)} matching ${total === 1 ? 'card' : 'cards'}`
                 : dash.data
-                  ? `${plural(dash.data.totalCards, 'card')} · ${formatInt(dash.data.uniqueCards)} unique`
+                  ? `${plural(dash.data.totalCards, 'copy', 'copies')} · ${formatInt(dash.data.uniqueCards)} unique`
                   : plural(total, 'card')
               : ' '}
           </p>
 
           {result.isError && (
-            <ErrorState error={result.error} onRetry={() => void result.refetch()} />
+            <ErrorState error={result.error} title="Couldn’t load your collection" body="Your data hasn’t changed." onRetry={() => void result.refetch()} />
           )}
 
           {result.isPending && showSkeleton && (
@@ -161,7 +161,7 @@ function CollectionPage() {
             <EmptyState
               icon={SearchX}
               title="No cards match"
-              body={`Nothing in your collection matches${hasQuery ? ` “${search.q}”` : ''}${filterCount ? ` with ${plural(filterCount, 'filter')}` : ''}.`}
+              body={`Nothing in your collection matches${hasQuery ? ` “${search.q}”` : ''}${filterCount ? ` with ${plural(filterCount, 'filter')}` : ''}.${hasQuery ? ' Search the catalog for it.' : ''}`}
               action={
                 <Button variant="primary" full onClick={clearAll}>
                   Clear filters
@@ -223,8 +223,8 @@ function activeChips(f: Filters, clear: (k: string) => void) {
   const add = (key: string, label: string | undefined) => label && out.push({ key, label, clear: () => clear(key) });
   add('set', f.set ? `Set ${f.set}` : undefined);
   add('rarity', f.rarity);
-  add('lang', f.lang?.toUpperCase());
-  add('cond', f.cond ? (f.cond === 'unknown' || f.cond === '?' ? 'Condition not recorded' : f.cond) : undefined);
+  add('lang', f.lang ? LANGUAGE_BADGE[f.lang] : undefined);
+  add('cond', f.cond ? (f.cond === 'unknown' || f.cond === '?' ? 'Condition not set' : f.cond) : undefined);
   add('graded', f.graded === 'graded' ? 'Graded' : f.graded === 'raw' ? 'Raw' : undefined);
   add('dupes', f.dupes ? 'Duplicates' : undefined);
   add('loc', f.loc ? (f.loc === 'none' ? 'No location' : 'Location') : undefined);

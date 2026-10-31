@@ -70,7 +70,7 @@ Contents
    - Error: what failed + Try again.
    - No results.
    - Offline-aware: works from local data; only network-bound parts degrade (§16).
-7. **Language is visible** on catalog rows and tiles when the collection contains both languages: an `EN`/`JA` micro badge (surface-3 fill, fg-muted text). If the user owns only one language, hide the badge in the collection but keep it in search results.
+7. **Language is visible** on catalog rows and tiles when the collection contains both languages: an `EN`/`JP` micro badge (surface-3 fill, fg-muted text). If the user owns only one language, hide the badge in the collection but keep it in search results.
 8. **Numbers.**
    - Use `tabular-nums` and `Intl.NumberFormat` (device locale).
    - Collector numbers render as `136/189` when the set's official count is > 0, else `#136`. JA `001` stays `001`.
@@ -184,13 +184,13 @@ Rules:
 │ ⚙ Settings    │                                                      │
 │ ───────────── │                                                      │
 │ EN catalog ✓  │                                                      │
-│ JA · 42 %     │                                                      │
+│ JP · 42 %     │                                                      │
 └───────────────┴──────────────────────────────────────────────────────┘
 ```
 
 - Sidebar is `--ps-sidebar-w` 240, surface background, sticky at full height, with `padding-left: --ps-safe-left`.
 - It starts with an "Add card" primary button. Nav rows are 44 tall with radius md; the active row has `accent-soft` background and `accent-fg` text. Scan is disabled the same way as on mobile.
-- Footer: catalog status per language ("EN catalog ✓ v2026.10.30", "JA · 42 %") linking to `/settings/catalog`. While catalog work runs the sync pill moves here.
+- Footer: catalog status per language ("EN catalog ✓ v2026.10.30", "JP · 42 %") linking to `/settings/catalog`. While catalog work runs the sync pill moves here.
 - Dialogs replace bottom sheets (centred, max-width 560, radius xl). The add-confirm and copy editor become a right-side panel (480 px) over a scrim.
 - iPad portrait (768–1023) uses the mobile shell.
 
@@ -378,7 +378,7 @@ Behaviour:
 - **Offline:** the spinner springs back immediately and a toast says "You're offline. Prices update when you're connected." No haptic.
 - If a long job starts (e.g. a price update for many cards), the pull ends at once and the job continues in the sync pill.
 - Reduced motion: no stretch, just the spinner.
-- **Accessibility:** every pull action has a visible button equivalent (the "Update prices" link on the Dashboard, "Refresh card" in Card Details `⋯`, "Check for updates" in Settings → Catalog).
+- **Accessibility:** every pull action has a visible button equivalent (the "Update prices" link on the Dashboard, "Refresh card" in Card Details `⋯`, "Check for a newer catalog" in Settings → Catalog).
 
 ## 3. Dashboard (`/`)
 
@@ -405,7 +405,7 @@ Catalog/download state comes from the catalog pack service (§10.2) and `SyncSer
 │ TCGplayer prices as of 30 Oct · Update│ caption subtle; "Update" = text button (pull equivalent)
 ├──────────────────────────────────────┤
 │ ┌───────────────┐ ┌───────────────┐  │  2×2 StatTile grid, gap 8 (1 col at ax)
-│ │ Total cards   │ │ Unique cards  │  │
+│ │ Total copies  │ │ Unique cards  │  │
 │ │ 412           │ │ 301           │  │
 │ └───────────────┘ └───────────────┘  │
 │ ┌───────────────┐ ┌───────────────┐  │
@@ -445,7 +445,7 @@ The value panel spans 6/12 columns and the stat tiles 2×2 in the other 6. Recen
   - Stats render real zeros; Recently added shows its empty state.
 - **No catalog, nothing running** (onboarding skipped, offline, or the catalog was removed): `EmptyState`.
   - Icon `DatabaseZap`. Title "Download the card catalog".
-  - Body: "FlashyDex needs the card list before you can search. It downloads once (about 14 MB for English) and then works offline."
+  - Body: "FlashyDex needs the catalog before you can search. It downloads once, then search works offline."
   - Button "Choose languages" → `/settings/catalog`. Text button "Import a collection" → `/settings/data`.
   - When offline, the body adds: "Connect to the internet to download it."
 - **Catalog ready, no cards:**
@@ -458,7 +458,7 @@ The value panel spans 6/12 columns and the stat tiles 2×2 in the other 6. Recen
 - The H1 "Dashboard" is the large title.
 - Gain/loss text includes the words "gain"/"loss" for screen readers ("Gain of $210.40 on 128 cards with a known cost").
 - The scroller is a `<ul aria-label="Recently added">`; each tile is a link.
-- The "Update" text button is labelled "Update prices".
+- The text button next to the price caption is labelled "Update prices" (money); "Refresh this set" is the one-set action.
 
 ## 4. Collection (`/collection`)
 
@@ -489,9 +489,9 @@ Infinite scroll:
 │ Collection                           │  large title
 │ [⌕ Search by name or number     ×]   │  SearchField, sticky under the top bar (top: --ps-topbar-total)
 │ [Filters •3] [Sort: Recent ▾] [▦|☰]  │  44 px row; fits at 390
-│ ( Darkness Ablaze ×)( NM ×)( Dupes ×)│  active-filter chips, horizontal scroller
+│ ( Darkness Ablaze ×)( NM ×)(Duplicates ×)│  active-filter chips, horizontal scroller
 ├──────────────────────────────────────┤
-│ 412 cards · 301 unique               │  caption muted, aria-live polite
+│ 412 copies · 301 unique               │  caption muted, aria-live polite
 │ ┌────┐ ┌────┐ ┌────┐                 │
 │ │    │ │    │ │    │                 │  3-col grid of CardTile (2 at ax)
 │ └────┘ └────┘ └────┘                 │
@@ -532,7 +532,7 @@ Infinite scroll:
 │               ▬▬▬                    │
 │ Cancel        Filters          Reset │
 ├──────────────────────────────────────┤
-│ Language     (All)(EN)(JA)           │  single-select chips
+│ Language     (All)(EN)(JP)           │  single-select chips
 │ Set          [Any set            ›]  │  pushes a searchable set list (sets you own first)
 │ Rarity       [Any rarity         ›]  │  rarity strings present in the collection
 │ Condition    (Any)(NM)(LP)(MP)(HP)(DMG)(?)   single-select; ? = unknown
@@ -552,7 +552,7 @@ Infinite scroll:
 - **Filter button:** shows a count dot ("Filters, 3 active").
 - **Duplicates semantics:** precise duplicates are computed across the whole collection first (API.md).
 - **"No price" semantics:** a copy with only an EUR price counts as "No price" when the display currency is USD. A caption under the chips says so: "Prices in USD (TCGplayer). Change in Settings."
-- **TCG Pocket:** not a filter here. It follows Settings → "Show TCG Pocket cards"; owned Pocket copies are hidden when the setting is off. When anything is hidden this way, a caption under the count line reads "2 TCG Pocket cards hidden · Show".
+- **TCG Pocket:** not a filter here. It follows Settings → "Include TCG Pocket (digital) cards"; owned Pocket copies are hidden when the setting is off. When anything is hidden this way, a caption under the count line reads "2 TCG Pocket cards hidden · Show".
 
 ### 4.5 Interactions
 - No pull-to-refresh (§2.4).
@@ -643,7 +643,7 @@ Two columns:
 - **Opens** from a copy row, `?copy=<id>` or `/collection/$ownedId`.
 - **Fields** are the same as Add confirm (§7.3) minus identity, which is fixed (changing identity = delete + re-add):
   - Variant (chips; may change — it is not identity).
-  - Condition, including "Not recorded".
+  - Condition, including "Not set".
   - Raw/Graded, plus company, grade and cert.
   - Paid (amount + currency).
   - Purchase: date and source, with the shared-acquisition note "This purchase is shared by 3 copies. Changing the date or source changes it for all of them."
@@ -676,7 +676,7 @@ Data: `CatalogRepo.listSets({language, owned, hideTcgPocket, sort, q})`.
 ┌──────────────────────────────────────┐
 │                                 [⌕]  │
 │ Sets                                 │  large title
-│ (EN)(JA)        [Collecting | All]   │  language chips (default = installed languages you own)
+│ (EN)(JP)        [Collecting | All]   │  language chips (default = installed languages you own)
 │ Sort: Newest ▾                       │  Newest · Name · Most complete
 ├──────────────────────────────────────┤
 │ ┌──────────────────────────────────┐ │
@@ -696,7 +696,7 @@ Data: `CatalogRepo.listSets({language, owned, hideTcgPocket, sort, q})`.
 - **Count format:** `ownedUnique / catalogCount · completionPercent%`. When `completionPercent` is null (catalog incomplete), show `45 / 201 loaded · Catalog incomplete` in `warning`, with no percent.
 - **Logos:** TCGdex has logos for 157/220 EN sets and **0/184 JA sets**. Without a logo, render a 56×32 `surface-3` chip with the set id in micro mono (`SV1a`, `PMCG1`). Never a stretched image. Logo URL = `logoUrl` + `.webp`.
 - **Extras:** duplicate extras per set appear as the caption "8 extra" when > 0.
-- **TCG Pocket:** sets in series `tcgp` (15 EN sets, ~2.5k digital-only cards) are hidden while Settings → "Show TCG Pocket cards" is off (the default). A footer row reads "TCG Pocket sets hidden · Show" and links to that setting.
+- **TCG Pocket:** sets in series `tcgp` (15 EN sets, ~2.5k digital-only cards) are hidden while Settings → "Include TCG Pocket (digital) cards" is off (the default). A footer row reads "TCG Pocket sets hidden · Show" and links to that setting.
 - **Unpublished shells** (`status:'unpublished'`) never appear in Phase 1.
 - **Pull-to-refresh** checks for new sets (catalog pack update or incremental check, §10.2) when online.
 - **Not installed:** a language without an installed catalog shows a row "Japanese catalog not downloaded · Download" instead of sets.
@@ -717,7 +717,7 @@ Data: `CatalogRepo.getSet` + `listSetCards({ownership, duplicates})`.
 │ │ 22%  │  156 missing · 8 duplicates │
 │ └──────┘  Official set: 189 + 12 secret
 ├──────────────────────────────────────┤
-│ [All 201|Owned 45|Missing 156|Dupes] │  segmented tabs (counts inside), sticky
+│ [All 201|Owned 45|Missing 156|Duplicates] │  segmented tabs (counts inside), sticky
 ├──────────────────────────────────────┤
 │ ┌────┐ ┌────┐ ┌────┐                 │  grid by localIdSort
 │ │ 1  │ │ 2  │ │ 3  │                 │  owned: normal tile (+qty)
@@ -758,7 +758,7 @@ Goal: go from anywhere to a saved card in **3 taps + typing**: [+] → type "fur
 ```
 ┌──────────────────────────────────────┐
 │ ✕  [⌕ furret 136                 ×]  │  SearchField autofocused, keyboard opens on enter
-│ (All)(EN)(JA)          in: Any set ▾ │  language chips (remembered), set scope NativeSelect
+│ (All)(EN)(JP)          Set: Any set ▾ │  language chips (remembered), set scope NativeSelect
 ├──────────────────────────────────────┤
 │ ┌──┐ Furret                     EN   │  CardRow (catalog): thumb, name, set · number,
 │ │  │ Darkness Ablaze · 136/189 · 2020│  release year, rarity dot
@@ -778,7 +778,7 @@ Goal: go from anywhere to a saved card in **3 taps + typing**: [+] → type "fur
 - **Typing:** results update as you type (debounce 150 ms; stale results are discarded). On wide screens, Enter opens the first result.
 - **Keyboard:** results scroll under it. The footer and the last row stay reachable (`padding-bottom: max(--ps-keyboard-inset, --ps-safe-bottom)`). Scrolling the results list dismisses the keyboard, as in iOS search.
 - **No results:** "No cards found for “furet”" / "Check the spelling, try the collector number (like 136/189), or switch language." / buttons "Search all languages" (if filtered) and "Create a custom card".
-  - If the catalog is incomplete or older than the newest sets, add: "Newer sets may not be in your catalog yet. Check for updates" → `/settings/catalog`.
+  - If the catalog is incomplete or older than the newest sets, add: "Newer sets may not be in your catalog yet. Check for a newer catalog" → `/settings/catalog`.
 - **Catalog not installed:** EmptyState "The card catalog isn't downloaded yet" / "Download it once to search every card. You can still create a custom card." → "Choose languages" + "Create a custom card".
 - **Catalog downloading:** an inline info banner at the top: "Downloading the English catalog (42 %). Search works when it's done." For the API-fallback path, the banner reads "Search works for sets downloaded so far (34 of 220)".
 
@@ -804,7 +804,7 @@ Two panes: results (left, 420) and the confirm panel (right). Clicking a result 
 │ Graded                         [  ○] │  Switch, off = raw
 ├──────────────────────────────────────┤
 │ More details                      ▾  │  disclosure, collapsed by default
-│   Paid per card   [ 0.00 ] [USD ▾]   │  empty = unknown (NOT 0); inputmode=decimal
+│   Paid per copy   [ 0.00 ] [USD ▾]   │  empty = unknown (NOT 0); inputmode=decimal
 │   Purchase date   [ —        ][Today]│  DateField
 │   Bought from     [ e.g. Local game store ]
 │   Location        [ None          ▾ ]│  NativeSelect
@@ -857,7 +857,7 @@ Commit: `CollectionRepo.bulkAdd({quantity, copy})` (max 100, one transaction).
 - **Error.** `haptic('error')`. An inline banner appears above the button with the fields intact, using the §12 copy (e.g. STORAGE_FULL).
   - `ValidationError` issues attach to their fields (`aria-describedby`).
   - **Never auto-retry a bulk add** (API.md). On `PersistenceError`, refetch the card first, then let the user decide.
-- **Dismiss without adding:** if any field differs from its default → "Discard this card?" [Keep editing] [Discard]. Otherwise it closes silently. Nothing is ever auto-saved.
+- **Dismiss without adding:** if any field differs from its default → "Discard this copy?" [Keep editing] [Discard]. Otherwise it closes silently. Nothing is ever auto-saved.
 
 ### 7.4 Accessibility
 - Search results are a plain list of buttons; no `listbox`.
@@ -901,7 +901,7 @@ Shown from:
 │ For cards missing from the catalog — │  body muted
 │ misprints, new releases, oddities.   │
 │ Name *        [ Furret            ]  │
-│ Language      (EN)(JA)               │
+│ Language      (EN)(JP)               │
 │ Set name      [ Darkness Ablaze    ] │  free text + suggestions from installed sets
 │ Number        [ 136               ]  │
 │ Rarity        [ Uncommon         ▾]  │  known strings + free text
@@ -926,7 +926,7 @@ Shown from:
 │ Settings                             │  large title
 ├──────────────────────────────────────┤
 │ CARD CATALOG                         │  section caption (micro, muted, uppercase)
-│ Catalog & prices               ›     │  → /settings/catalog ; trailing "EN ✓ · JA —"
+│ Catalog & prices               ›     │  → /settings/catalog ; trailing "EN ✓ · JP —"
 │                                      │     or "Downloading 42 %"
 ├──────────────────────────────────────┤
 │ YOUR DATA                            │
@@ -937,8 +937,8 @@ Shown from:
 │ PREFERENCES                          │
 │ Appearance     (Dark)(Light)(System) │  default Dark
 │ Currency       (USD · TCGplayer)(EUR · Cardmarket)   defaultCurrency: display + paid default
-│ Search language        (All)(EN)(JA) │
-│ Show TCG Pocket cards          [  ○] │  hideTcgPocket=true by default (off = hidden)
+│ Search language        (All)(EN)(JP) │
+│ Include TCG Pocket (digital) cards [ ○] │  hideTcgPocket=true by default (off = hidden)
 │ Haptics                        [●  ] │  native only (hidden on web)
 ├──────────────────────────────────────┤
 │ ABOUT                                │
@@ -989,14 +989,14 @@ The catalog is per language. The primary path is a **catalog pack**: a versioned
 │ PRICES                               │
 │ TCGplayer prices as of 30 Oct 2026   │  newest sourceUpdatedAt among owned cards
 │ [ Update prices ]  For: (My cards)(Sets I collect)(Everything)
-│ My cards: 412 cards · about 20 s     │  estimate = cards ÷ 25 per s (direct TCGdex)
+│ Prices for the cards you own.        │  no time estimate (the app doesn't measure one)
 ├──────────────────────────────────────┤
 │ SETS I COLLECT                       │
 │ All sets                       ›     │  or "12 sets" → sheet (§15.5 picker)
 │ Used for the Sets tab and for price  │
 │ updates. Doesn't change the download.│
 ├──────────────────────────────────────┤
-│ Check for updates              ›     │  manifest + new-set check; also pull-to-refresh
+│ Check for a newer catalog      ›     │  manifest + new-set check; also pull-to-refresh
 │ Last checked today, 14:05            │
 └──────────────────────────────────────┘
 ```
@@ -1136,7 +1136,7 @@ The catalog is per language. The primary path is a **catalog pack**: a versioned
 │ Cardmarket (EUR), via TCGdex         │  isn't affiliated with TCGplayer or Cardmarket.
 │                                      │  Prices may be out of date."
 │ Catalog versions: EN 2026.10.30 ·    │
-│ JA not downloaded                    │
+│ JP not downloaded                    │
 ├──────────────────────────────────────┤
 │ Privacy policy                 ›     │
 │ Licenses                       ›     │
@@ -1251,7 +1251,7 @@ Errors map a `DomainError.code` (API.md) to friendly text. Fallback: "Something 
 | Code / condition | Title | Body (actions) |
 |---|---|---|
 | network unreachable (offline, `HTTP_FAILED`) | You're offline | "Your collection works offline. Downloads and price updates continue when you're connected." (Try again) |
-| TCGdex 5xx / timeout | TCGdex isn't responding | "The card database is having trouble. Your collection is fine — try again later." (Try again) |
+| TCGdex 5xx / timeout | TCGdex isn't responding | "TCGdex isn't responding. The catalog source is having trouble. Your collection is fine — try again later." (Try again). Codes `SERVER_ERROR`; `RATE_LIMITED` → "TCGdex asked us to slow down. Try again in a few minutes. Your collection is fine."; `BAD_PAYLOAD` → "TCGdex sent something FlashyDex couldn't read. Your collection is fine. Try again later." `HTTP_FAILED` stays "You're offline". |
 | catalog server (pack host) unreachable | Can't reach the catalog download | "Try again later, or download directly from TCGdex (slower)." (Try again · Download from TCGdex) |
 | `DB_BUSY` | Busy for a moment | "FlashyDex is saving something else. Try again." (Try again) — no auto-retry for adds |
 | `STORAGE_FULL` | Your device is full | "Nothing was saved. Free up space in Settings → General → iPhone Storage (Android: Settings → Storage), then try again." |
@@ -1265,7 +1265,7 @@ Errors map a `DomainError.code` (API.md) to friendly text. Fallback: "Something 
 | `CONFLICT` (name) | (inline) | "You already have one called “…”." |
 | `STALE_PREVIEW` | Your collection changed | "Preview again to see the latest." (Preview again) |
 | `PREVIEW_EXPIRED` | Preview expired | "Import previews last 30 minutes, restore previews 10. Choose the file again." |
-| `IMPORT_INVALID` / `INVALID_JSON` / `INVALID_CSV` | This file can't be imported | "It isn't a FlashyDex export or a CSV with the expected columns. See the format guide." |
+| `IMPORT_INVALID` / `INVALID_JSON` / `INVALID_CSV` | This file can't be imported | "It isn't a FlashyDex JSON export or a CSV with the expected columns." |
 | `BACKUP_INVALID` | This backup can't be used | "It isn't a FlashyDex backup, or it's damaged." |
 | `PAYLOAD_TOO_LARGE` | File too large | "The limit is 25 MB for imports and 512 MB for backups." |
 | `FILE_IO` / `SHARE_FAILED` | Couldn't share the file | "Try again. If it keeps failing, restart FlashyDex." |
@@ -1275,7 +1275,7 @@ Errors map a `DomainError.code` (API.md) to friendly text. Fallback: "Something 
 | pack needs newer app | Update FlashyDex | "This catalog needs a newer version of the app." |
 | web: second tab (instance lock) | FlashyDex is open in another tab | "Close the other tab to use FlashyDex here." (web only) |
 
-**Button vocabulary** (consistent verbs): Add to collection · Add N copies · Add another · Save · Delete copy · Create location · Create and add to collection · Download · Update · Update prices · Pause · Resume · Retry · Cancel · Choose file · Import N cards · Share JSON · Share CSV · Back up now · Restore backup · Remove · Erase everything · Clear filters · Show N cards · Try again.
+**Button vocabulary** (consistent verbs): Add to collection · Add N copies · Add another · Save · Delete copy · Create location · Create and add to collection · Download · Update · Update prices · Pause · Resume · Retry · Cancel · Choose file · Import N copies · Share JSON · Share CSV · Back up now · Restore backup · Remove · Erase everything · Clear filters · Show N cards · Try again.
 Never use "Submit", "OK" for destructive actions, or "Oops".
 
 **Skeleton rule:** skeletons mirror the final geometry exactly and crossfade to content in 320 ms. Show them only after 150 ms; local reads are usually faster.
@@ -1323,7 +1323,7 @@ Key flows:
 2. **Null price:** a card with no price snapshot renders no `price` element in its tile and no "$0.00" anywhere on the page.
 3. **No horizontal overflow** on every route in §1.1, including at `--ps-text-scale: 2` (`data-text-size="ax"`).
 4. **Scan slot:** `tab-scan` has `aria-disabled="true"`; activating it shows "Camera scanning is coming"; `navigator.mediaDevices.getUserMedia` is never called (spy).
-5. **Discard:** open confirm, change condition to LP, press Cancel → "Discard this card?"; Discard → no copy created. Repeat with the browser back button (stands in for the edge swipe / Android back): the same dialog appears.
+5. **Discard:** open confirm, change condition to LP, press Cancel → "Discard this copy?"; Discard → no copy created. Repeat with the browser back button (stands in for the edge swipe / Android back): the same dialog appears.
 6. **Theme:** default `data-theme="dark"`; switching to Light persists across reload.
 7. **First run:**
    - A fresh DB opens `/welcome`.
@@ -1351,7 +1351,7 @@ Key flows:
 ### 15.2 Shared layout of every step (modal, no tab bar)
 ```
 ┌──────────────────────────────────────┐
-│ ‹                      ● ● ○ ○   Skip│  back (not on step 1), 4-dot progress, Skip (text button)
+│ ‹                      ● ● ○ ○   Skip│  back + Skip (not on step 1), 4-dot progress
 │                                      │
 │ [illustration/mark area, ≤ 30% h]    │  only on step 1; other steps start with the H1
 │ Title (H1)                           │
@@ -1364,7 +1364,7 @@ Key flows:
 ```
 - **Progress dots:** `aria-label="Step 2 of 4"`.
 - **Back:** the edge swipe goes to the previous step, because each step is a pushed route.
-- **Skip,** on any step, sets `onboardingCompleted:true` (and `disclaimerAcknowledged:true`, because the notice is always shown before Skip is available on step 2+; on step 1, Skip jumps to the notice first). It then `replace`s to `/`. The app is fully usable for custom cards and import, and the Dashboard shows the download card. **The disclaimer is shown at least once before entering the app; acknowledgement never blocks local use.**
+- **Skip,** on any step, sets `onboardingCompleted:true` (and `disclaimerAcknowledged:true`, because the notice is always shown before Skip is available: step 1 has no Skip control). It then `replace`s to `/`. The app is fully usable for custom cards and import, and the Dashboard shows the download card. **The disclaimer is shown at least once before entering the app; acknowledgement never blocks local use.**
 - **Large text:** the content scrolls and the footer stays pinned.
 - **Reduced motion:** steps crossfade.
 
@@ -1372,12 +1372,13 @@ Key flows:
 ```
 │            [FlashyDex mark]          │  96 px mark on --ps-bg (same as splash → seamless)
 │ Your card collection, in your pocket │  H1
-│ • Search every English and Japanese  │  three rows, 24 px muted icons
-│   card                               │
+│ • Search English and Japanese cards  │  three rows, 24 px muted icons
+│   once they are downloaded           │
 │ • Track copies, condition, grades    │
 │   and what you paid                  │
-│ • Everything stays on this device —  │
-│   no account, works offline          │
+│ • Your collection stays on this      │
+│   device. No account. Search works   │
+│   offline after the download.        │
 │ [            Get started          ]  │  → /welcome/notice
 │        Restore from a backup         │  text button → restore flow (§10.3), then step 3
 ```
@@ -1412,7 +1413,7 @@ Key flows:
 │ │     184 sets · about 12,800 cards│ │
 │ │     9 MB download · 31 MB on device│
 │ │     Many older Japanese cards    │ │  caption, warning-free muted
-│ │     have no pictures yet.        │ │
+│ │     have no pictures in the catalog yet.│
 │ └──────────────────────────────────┘ │
 │ Include TCG Pocket (digital) cards [○]│  Switch → hideTcgPocket (default off = hidden)
 │ Total: 14 MB · about 1 min on Wi-Fi  │  live total; time = bytes ÷ 1–5 MB/s, rounded range
@@ -1433,7 +1434,7 @@ Key flows:
 │ (● All sets)  ( Only sets I pick )   │  segmented; default All
 │ ─ when "Only sets I pick" ─          │
 │ [⌕ Search sets                    ×] │  SearchField (local list)
-│ (EN)(JA)                             │  language chips (selected languages only)
+│ (EN)(JP)                             │  language chips (selected languages only)
 │ ┌──────────────────────────────────┐ │
 │ │ [✓] [logo] Darkness Ablaze 2020  │ │  checkbox rows ≥ 56 px, newest first,
 │ │ [ ] [logo] Rebel Clash     2020  │ │  grouped by series headers (sticky)

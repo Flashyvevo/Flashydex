@@ -41,7 +41,7 @@ function AboutPage() {
           <p>Prices: TCGplayer (USD) and Cardmarket (EUR), via TCGdex</p>
           <p className="mt-1 text-caption text-fg-muted">Provided through TCGdex. FlashyDex isn’t affiliated with TCGplayer or Cardmarket. Prices may be out of date.</p>
         </div>
-        <div className="px-4 py-3 text-small text-fg-muted">Catalog versions: EN {v(en)} · JA {v(ja)}</div>
+        <div className="px-4 py-3 text-small text-fg-muted">Catalog versions: EN {v(en)} · JP {v(ja)}</div>
       </Group>
       <div className="mt-5">
         <Group>

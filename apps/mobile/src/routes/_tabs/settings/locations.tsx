@@ -85,7 +85,7 @@ function LocationsPage() {
       <ConfirmDialog
         open={!!confirm}
         title={`Delete “${confirm?.name ?? ''}”?`}
-        body={`${confirm && confirm.copyCount > 0 ? `${plural(confirm.copyCount, 'card')} will have no location. ` : ''}The cards themselves are not deleted.`}
+        body={`${confirm && confirm.copyCount > 0 ? `${plural(confirm.copyCount, 'copy', 'copies')} will have no location. ` : ''}The cards themselves are not deleted.`}
         confirmLabel="Delete location"
         destructive
         busy={remove.isPending}

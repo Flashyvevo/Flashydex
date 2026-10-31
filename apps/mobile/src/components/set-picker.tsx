@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSetIndex } from '../data';
-import { assetWebp, plural, releaseYear, type Language } from '../lib/format';
+import { assetWebp, LANGUAGE_BADGE, plural, releaseYear, type Language } from '../lib/format';
 import { ChipGroup, SearchField, Skeleton, cx } from './ui';
 
 export type SetKey = { language: Language; setId: string };
@@ -56,7 +56,7 @@ export function SetPicker({
     <div className="flex flex-col gap-3" data-testid="set-picker">
       <SearchField value={q} onChange={setQ} label="Search sets" placeholder="Search sets" testId="set-search" />
       {languages.length > 1 && (
-        <ChipGroup label="Language" hideLabel value={active} onChange={setLang} options={languages.map((l) => ({ value: l, label: l.toUpperCase() }))} />
+        <ChipGroup label="Language" hideLabel value={active} onChange={setLang} options={languages.map((l) => ({ value: l, label: LANGUAGE_BADGE[l] }))} />
       )}
       {index.isPending ? (
         <div className="flex flex-col gap-2">

@@ -71,7 +71,7 @@ function NewCustom() {
         <Field label="Name *" htmlFor="cu-name" error={issue('name')}>
           <TextInput id="cu-name" value={name} enterKeyHint="next" onChange={(e) => setCardName(e.target.value)} autoFocus />
         </Field>
-        <ChipGroup label="Language" value={lang} onChange={setLang} options={[{ value: 'en', label: 'EN' }, { value: 'ja', label: 'JA' }]} />
+        <ChipGroup label="Language" value={lang} onChange={setLang} options={[{ value: 'en', label: 'EN' }, { value: 'ja', label: 'JP' }]} />
         <Field label="Set name" htmlFor="cu-set">
           <TextInput id="cu-set" list="cu-sets" value={setName} enterKeyHint="next" onChange={(e) => setSetName(e.target.value)} />
           <datalist id="cu-sets">{(suggestions.data?.data ?? []).map((s) => <option key={s.id} value={s.name} />)}</datalist>

@@ -177,8 +177,8 @@ function EditorInner({ copy, onClose, defaultCurrency, onDeleted }: { copy: Owne
           options={(Object.keys(VARIANT_LABEL) as Variant[]).map((v) => ({ value: v, label: VARIANT_LABEL[v] }))}
         />
         {d.variant === 'other' && (
-          <Field label="Variant detail (required)" htmlFor="ce-vd" error={fieldIssue('variantDetail')}>
-            <TextInput id="ce-vd" value={d.variantDetail} onChange={(e) => set('variantDetail', e.target.value)} />
+          <Field label="What print is this? (required)" htmlFor="ce-vd" error={fieldIssue('variantDetail')}>
+            <TextInput id="ce-vd" placeholder="Stamp, cosmos holo, misprint" value={d.variantDetail} onChange={(e) => set('variantDetail', e.target.value)} />
           </Field>
         )}
         {!d.graded && (
@@ -187,7 +187,7 @@ function EditorInner({ copy, onClose, defaultCurrency, onDeleted }: { copy: Owne
             value={d.condition ?? 'unset'}
             onChange={(v) => set('condition', v === 'unset' ? null : (v as Condition))}
             testIdPrefix="copy-cond"
-            options={[{ value: 'unset', label: 'Not recorded', aria: 'Condition not recorded' }, ...CONDITION_ORDER.map((c) => ({ value: c, label: c }))]}
+            options={[{ value: 'unset', label: 'Not set', aria: 'Condition not set' }, ...CONDITION_ORDER.map((c) => ({ value: c, label: c }))]}
           />
         )}
         <div className="rounded-lg bg-surface px-4">

@@ -32,6 +32,12 @@ function baseCopy(error: unknown): Omit<ErrorCopy, "detail"> {
     case 'HTTP_FAILED':
     case 'PLATFORM_UNAVAILABLE':
       return { code, title: "You're offline", body: 'Your collection works offline. Downloads and price updates continue when you’re connected.' };
+    case 'SERVER_ERROR':
+      return { code, title: 'TCGdex isn’t responding', body: 'The catalog source is having trouble. Your collection is fine — try again later.' };
+    case 'RATE_LIMITED':
+      return { code, title: 'TCGdex asked us to slow down', body: 'Try again in a few minutes. Your collection is fine.' };
+    case 'BAD_PAYLOAD':
+      return { code, title: 'Couldn’t read the download', body: 'TCGdex sent something FlashyDex couldn’t read. Your collection is fine. Try again later.' };
     case 'DB_BUSY':
       return { code, title: 'Busy for a moment', body: 'FlashyDex is saving something else. Try again.' };
     case 'STORAGE_FULL':
@@ -43,9 +49,11 @@ function baseCopy(error: unknown): Omit<ErrorCopy, "detail"> {
       return { code, title: 'FlashyDex couldn’t open your data', body: 'Your collection hasn’t been deleted. Close and reopen the app. If this keeps happening, update FlashyDex from the App Store.' };
     case 'MAINTENANCE':
       return { code, title: 'FlashyDex is busy', body: 'A restore or catalog change is in progress. Keep FlashyDex open and try again in a moment.' };
+    case 'STALE_READ':
+      return { code, title: 'The catalog just changed', body: 'It was updating while this loaded. Try again.' };
     case 'ACTIVE_SYNC':
     case 'ACTIVE_WORK':
-      return { code, title: 'A download is already running', body: 'Starts when the current download finishes.' };
+      return { code, title: 'A download is already running', body: 'A download is already running. This starts when that one finishes.' };
     case 'NOT_FOUND':
       return { code, title: 'Not found', body: 'This item doesn’t exist anymore. It may have been deleted.' };
     case 'IN_USE':
@@ -59,7 +67,7 @@ function baseCopy(error: unknown): Omit<ErrorCopy, "detail"> {
     case 'IMPORT_INVALID':
     case 'INVALID_JSON':
     case 'INVALID_CSV':
-      return { code, title: 'This file can’t be imported', body: 'It isn’t a FlashyDex export or a CSV with the expected columns. See the format guide.' };
+      return { code, title: 'This file can’t be imported', body: 'It isn’t a FlashyDex JSON export or a CSV with the expected columns.' };
     case 'BACKUP_INVALID':
       return { code, title: 'This backup can’t be used', body: 'It isn’t a FlashyDex backup, or it’s damaged. Your data is unchanged.' };
     case 'BACKUP_VERSION_UNSUPPORTED':
@@ -81,9 +89,9 @@ function baseCopy(error: unknown): Omit<ErrorCopy, "detail"> {
     case 'APP_UPDATE_REQUIRED':
       return { code, title: 'Update FlashyDex', body: 'This catalog needs a newer version of the app.' };
     case 'INSTANCE_LOCK':
-      return { code, title: 'Editing is off in this tab', body: 'Only one FlashyDex tab can edit at a time. Close the other tab and reload, or open FlashyDex over https or on localhost.' };
+      return { code, title: 'Editing is off in this tab', body: 'Close the other tab, then reload this one.' };
     case 'VALIDATION_ERROR':
-      return { code, title: 'Check the highlighted fields', body: 'Something in the form isn’t valid.' };
+      return { code, title: 'Check the highlighted fields', body: 'Fix the fields marked above.' };
     default:
       return { code, title: 'Something went wrong', body: 'Try again.' };
   }
@@ -96,6 +104,7 @@ export function describeError(error: unknown): ErrorCopy {
   const base = baseCopy(error);
   const code = base.code;
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-  const detail = code ? `${code}${message ? `: ${message}` : ''}` : message ? `${error instanceof Error ? error.name : 'Error'}: ${message}` : null;
+  // Only typed errors expose their message under "Details"; an untyped error is a raw driver/runtime string and is never rendered.
+  const detail = code ? `${code}${message ? `: ${message}` : ''}` : null;
   return { ...base, detail: detail ? detail.slice(0, 300) : null };
 }

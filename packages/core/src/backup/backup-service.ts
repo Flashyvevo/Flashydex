@@ -3,7 +3,7 @@ import {
   type Empty, type FdxCounts, type FileRef, type Input, type RestoreResult
 } from '@flashydex/schemas';
 import { nameSearch } from '../catalog/tcgdex';
-import { chunk, placeholders, type Exec } from '../db/sql';
+import { chunk, placeholders, type Exec, type MaintenanceGate } from '../db/sql';
 import { BackupError, CancelledError, NotFoundError, PersistenceError, PreviewExpiredError, StalePreviewError, UnsupportedCapabilityError } from '../errors';
 import type { Platform } from '../platform/platform';
 import { bumpRevision, nameKeyOf, parse, type ServiceContext } from '../services/context';
@@ -19,7 +19,7 @@ const PREVIEW_MS = 10 * 60 * 1000;
 const RECEIPT_MS = 24 * 60 * 60 * 1000;
 const WARNING = 'Replaces all personal data' as const;
 
-export type RestoreStage = 'afterDelete' | 'afterInsert';
+export type RestoreStage = 'afterGate' | 'duringSafety' | 'afterSafety' | 'afterDelete' | 'afterInsert';
 export type BackupServiceOptions = {
   /** Lowered caps for tests; production passes nothing (docs/IMPORT-EXPORT.md hard limits). */
   limits?: Partial<FdxLimits>;
@@ -91,10 +91,11 @@ export class BackupService {
   }
 
   /** Snapshot -> archive -> write -> VERIFY (re-read, re-hash, parse through the restore parser, entities equal). */
-  private async produce(onProgress?: BackupProgressCallback, signal?: AbortSignal): Promise<{ file: FileRef; sha256: string; counts: FdxCounts; bytes: number }> {
+  private async produce(onProgress?: BackupProgressCallback, signal?: AbortSignal, afterSnapshot?: () => void | Promise<void>): Promise<{ file: FileRef; sha256: string; counts: FdxCounts; bytes: number }> {
     this.emit(onProgress, { phase: 'snapshot', bytesDone: 0, bytesTotal: null, cancellable: true });
     const now = this.ctx.env.clock.now();
     const snap = await this.ctx.databases.user.read((q) => readFullSnapshot(q));
+    await afterSnapshot?.();
     BackupService.cancelCheck(signal);
     if (snap.entities.ownedCards.length > this.limits.ownedRows || totalRows(snap.entities) > this.limits.totalRows) throw new BackupError('SIZE_LIMIT', 'The collection is too large to back up');
 
@@ -196,23 +197,29 @@ export class BackupService {
 
     const lease = await this.ctx.databases.coordinator.admit('restore', { token: this.ctx.env.ids.uuid(), now: this.ctx.env.clock.now() });
     let safety: FileRef | null = null;
+    let gate: MaintenanceGate | null = null;
     try {
-      const current = await user.read((q) => this.stateToken(q));
+      // E1 / N03: close the personal-write gate BEFORE the safety snapshot and hold it until the restore is over. Ordinary writes (also ones
+      // already queued) reject MAINTENANCE; only this restore's own privileged transaction passes.
+      gate = await user.enterRestoreGate();
+      await this.options.hooks?.duringRestore?.('afterGate');
+      const current = await user.read((q) => this.stateToken(q)); // re-checked UNDER the gate: nothing can move it any more
       if (userStateToken !== staged.userStateToken || current.token !== staged.userStateToken || current.revision !== staged.collectionRevision) {
         throw new StalePreviewError(staged.collectionRevision, current.revision);
       }
       BackupService.cancelCheck(signal);
 
-      const made = await this.produce(onProgress, signal); // safety backup of the CURRENT state, verified before anything is touched
+      const made = await this.produce(onProgress, signal, () => this.options.hooks?.duringRestore?.('duringSafety')); // safety backup of the CURRENT state, verified before anything is touched
       safety = made.file;
       BackupService.cancelCheck(signal);
+      await this.options.hooks?.duringRestore?.('afterSafety');
 
       this.emit(onProgress, { phase: 'activating', bytesDone: 0, bytesTotal: null, cancellable: false });
       const now = this.ctx.env.clock.now();
       const e = staged.parsed.entities;
       let result: RestoreResult;
       try {
-        result = await user.transaction(async (tx) => {
+        result = await gate.transaction(async (tx) => {
           const inside = await this.stateToken(tx);
           if (inside.token !== staged.userStateToken || inside.revision !== staged.collectionRevision) throw new StalePreviewError(staged.collectionRevision, inside.revision);
           await this.wipePersonal(tx);
@@ -238,6 +245,7 @@ export class BackupService {
       if (safety) await this.platform.filesystem.remove({ file: safety }).catch(() => undefined);
       throw error;
     } finally {
+      if (gate) await gate.exit().catch(() => undefined); // drains queued work while still closed, then reopens
       await lease.release();
     }
   }

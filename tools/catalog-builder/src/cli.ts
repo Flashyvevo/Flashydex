@@ -12,7 +12,7 @@ import { Fetcher } from './http';
 import { mergeManifest, readExistingManifest, validateManifest, type CatalogManifest, type ManifestEntry } from './manifest';
 import { loadCatalogMigrations, schemaFingerprint } from './migrations';
 import { TCGDEX_API } from './crawl';
-import { assertResumeCompatible, cacheConfigHash, commitImmutableArtifact, hashSetIds, type RunBinding } from './run-guard';
+import { assertResumeCompatible, cacheConfigHash, commitImmutableArtifact, gitContentIdentity, hashSetIds, type RunBinding } from './run-guard';
 import { MAX_WINDOW_BYTES, ZSTD_LEVEL, compressFile, decompressFile, fileSize, sha256File } from './zstd';
 
 const BUILDER_NAME = 'flashydex-catalog-builder';
@@ -81,8 +81,12 @@ function parseArgs(argv: string[]): Options {
   };
 }
 
-function gitSha(): string {
-  try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return 'nogit'; }
+function gitContentId(): string {
+  const run = (args: string[], cwd?: string) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024, ...(cwd ? { cwd } : {}) });
+  try {
+    const root = run(['rev-parse', '--show-toplevel']).trim();
+    return gitContentIdentity((args) => run(args, root));
+  } catch { return 'nogit'; }
 }
 
 function startRssSampler(): () => number {
@@ -115,12 +119,14 @@ async function main(): Promise<void> {
   const runPath = join(options.cacheDir, language, 'run.json');
   const migrations = loadCatalogMigrations();
   const fingerprint = schemaFingerprint(migrations);
+  const builderGit = gitContentId();
   const binding: RunBinding = {
     setSelectionHash: hashSetIds(options.sets),
     schemaVersion: CATALOG_SCHEMA_VERSION,
     schemaFingerprint: fingerprint,
     nodeVersion: process.version,
     builderPackageVersion: BUILDER_PACKAGE_VERSION,
+    builderGit,
     zstdLibrary: ZSTD_LIBRARY_ID,
     apiBase: TCGDEX_API
   };
@@ -134,7 +140,7 @@ async function main(): Promise<void> {
   }
   run ??= { runId: randomUUID(), builtAt: new Date().toISOString(), version, language, binding };
   await writeJson(runPath, run);
-  const builderVersion = `${BUILDER_NAME}@${BUILDER_PACKAGE_VERSION}+${gitSha()}`;
+  const builderVersion = `${BUILDER_NAME}@${BUILDER_PACKAGE_VERSION}+${builderGit.slice(0, 7)}${builderGit.includes('+dirty') ? '-dirty' : ''}`;
   log(`run ${run.runId} ${language} ${version} cutoff ${run.builtAt}${options.resume ? ' (resume)' : ''}`);
 
   // 2-3. Crawl (cached on disk, resumable).
@@ -142,6 +148,7 @@ async function main(): Promise<void> {
     concurrency: options.concurrency,
     maxCacheAgeMs: options.resume ? Number.POSITIVE_INFINITY : options.maxCacheAgeHours * 3600 * 1000,
     cacheConfig: cacheConfigHash(language, TCGDEX_API),
+    runId: run.runId, // R11: cache entries are reused only by the run that wrote them (a resume), never across runs
     onLog: log
   });
   const crawlStarted = performance.now();

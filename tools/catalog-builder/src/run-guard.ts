@@ -9,8 +9,31 @@ export interface RunBinding {
   schemaFingerprint: string;
   nodeVersion: string;
   builderPackageVersion: string;
+  /** Git content identity of the builder (HEAD + dirty marker, see `gitContentIdentity`), not a hand-edited version string. */
+  builderGit: string;
   zstdLibrary: string;
   apiBase: string;
+}
+
+/** Paths whose content defines what the builder produces (relative to the repo root): the builder itself and the code its output depends on. */
+export const BUILDER_PATHS = ['tools/catalog-builder', 'packages/core/src/catalog', 'packages/core/src/db', 'packages/schemas/src'] as const;
+
+/**
+ * R11: identity of the code that produced a run. `HEAD` alone when the builder-relevant tree is clean; `HEAD+dirty-<hash of the diff>` when it
+ * is not, so two runs from different uncommitted edits never share an identity. `git` is injected (and runs at the repo root) for tests; any
+ * git failure yields `nogit`.
+ */
+export function gitContentIdentity(git: (args: string[]) => string): string {
+  try {
+    const head = git(['rev-parse', 'HEAD']).trim();
+    const dirty = git(['status', '--porcelain', '--', ...BUILDER_PATHS]).trim();
+    if (!head) return 'nogit';
+    if (!dirty) return head;
+    const diff = git(['diff', 'HEAD', '--', ...BUILDER_PATHS]);
+    return `${head}+dirty-${createHash('sha256').update(diff, 'utf8').update('\n').update(dirty, 'utf8').digest('hex').slice(0, 12)}`;
+  } catch {
+    return 'nogit';
+  }
 }
 
 export function hashSetIds(ids: readonly string[] | undefined): string {

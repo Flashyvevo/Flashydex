@@ -3,7 +3,7 @@ import { CheckCircle2, CloudOff, AlertCircle, Pause } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useActiveSync, useCatalogInstall, useCatalogStatus, useSettings, useResumeSync } from '../data';
 import { describeProgress, failureCopy, failureReason, stageOf, STAGE_LABEL } from '../lib/catalog';
-import { LANGUAGE_NAMES, formatInt, type Language } from '../lib/format';
+import { LANGUAGE_BADGE, LANGUAGE_NAMES, formatInt, type Language } from '../lib/format';
 import { useNetwork } from '../lib/native';
 import { Button, ProgressBar, cx } from './ui';
 
@@ -53,7 +53,7 @@ type PillState =
   | { kind: 'waiting'; label: string; sr: string }
   | { kind: 'paused'; label: string; sr: string; resume: () => void }
   | { kind: 'done'; label: string; sr: string }
-  | { kind: 'failed'; label: string; sr: string };
+  | { kind: 'failed'; label: string; sr: string; resume?: () => void };
 
 export function useSyncPillState(): PillState | null {
   const install = useCatalogInstall();
@@ -123,7 +123,8 @@ export function useSyncPillState(): PillState | null {
   if (progress && (progress.phase === 'failed' || progress.phase === 'interrupted') && stageOf(progress.phase) === 'failed') {
     return { kind: 'failed', label: 'Download failed · Details', sr: 'Download failed. Opens catalog settings.' };
   }
-  if (run && run.status === 'failed') return { kind: 'failed', label: 'Download failed · Details', sr: 'Download failed. Opens catalog settings.' };
+  // E4: a run that ended with a failed set is resumable (never shown as done): failed + Resume.
+  if (run && run.status === 'failed') return { kind: 'failed', label: 'Download failed · Resume', sr: 'Download failed. Resume.', resume: () => resume.mutate({ id: run.id }) };
   return null;
 }
 
@@ -173,7 +174,7 @@ export function SyncPill({ inline }: { inline?: boolean }) {
     </>
   );
   const pill =
-    state.kind === 'paused' ? (
+    state.kind === 'paused' || (state.kind === 'failed' && state.resume) ? (
       <button type="button" data-testid="sync-pill" aria-label={state.sr} onClick={state.resume} className={cls}>
         {body}
       </button>
@@ -234,7 +235,7 @@ function LangStatus({ language }: { language: Language }) {
   const settings = useSettings();
   const install = useCatalogInstall();
   const wanted = settings.data?.languages.includes(language) ?? true;
-  const code = language.toUpperCase();
+  const code = LANGUAGE_BADGE[language];
   const installed = status.data?.installed;
   if (install.active && install.progress?.language === language) {
     const d = describeProgress(language, install.progress);

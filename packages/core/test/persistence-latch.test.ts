@@ -88,11 +88,14 @@ describe('R02 persistence latch', () => {
     const report = await transfer.dryRun({ format: 'json', conflictPolicy: 'skip', file: ref });
     t.control.failNext = true;
     await expect(transfer.commit({ id: report.id, planHash: report.planHash, confirm: true })).rejects.toMatchObject({ code: 'PERSISTENCE_FAILED' });
-    // latched: the receipt written by the first commit is found FIRST (receipt-first), so this is a replay of the result, never a second application
+    // N05: while persistence is uncertain, replay is REFUSED (never a success built from a receipt that may not be durable) ...
+    await expect(transfer.commit({ id: report.id, planHash: report.planHash, confirm: true })).rejects.toMatchObject({ code: 'PERSISTENCE_FAILED' });
+    expect(t.storage.status()).toMatchObject({ writable: false, reason: 'persistence_failed' });
+    await t.storage.recover(); // reopen returns the POST-commit state (receipt included)
+    // ... and after recovery the receipt is found FIRST and returned, never applied a second time
     const replay = await transfer.commit({ id: report.id, planHash: report.planHash, confirm: true });
     expect(replay).toMatchObject({ createdCopies: 2 });
     expect(await ownedCount(t.h)).toBe(2);
-    await t.storage.recover(); // reopen returns the POST-commit state
     const again = await transfer.commit({ id: report.id, planHash: report.planHash, confirm: true });
     expect(again).toMatchObject({ createdCopies: 2 });
     expect(await ownedCount(t.h)).toBe(2); // exactly one application
@@ -113,6 +116,8 @@ describe('R02 persistence latch', () => {
     const report = await transfer.dryRun({ format: 'json', conflictPolicy: 'skip', file: ref });
     t.snapshot();
     t.control.failNext = true;
+    await expect(transfer.commit({ id: report.id, planHash: report.planHash, confirm: true })).rejects.toMatchObject({ code: 'PERSISTENCE_FAILED' });
+    // N05 (Sol's PRE-persisted probe): the in-memory receipt exists but was never durable -> refused before recovery, not "createdCopies: 2"
     await expect(transfer.commit({ id: report.id, planHash: report.planHash, confirm: true })).rejects.toMatchObject({ code: 'PERSISTENCE_FAILED' });
     await t.storage.recover(); // PRE-commit: nothing persisted, no receipt either
     expect(await ownedCount(t.h)).toBe(0);

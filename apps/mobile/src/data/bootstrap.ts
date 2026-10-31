@@ -40,8 +40,8 @@ export function openAppServices(): Promise<Services> {
     const lock = await acquireInstanceLock();
     if (lock === 'denied') throw new InstanceLockedError();
     const userDriver = await timed('fdx:db-open', () => createUserDriver());
-    return timed('fdx:services', () =>
-      createServices({
+    return timed('fdx:services', async () => {
+      const services = await createServices({
         userDriver,
         catalogSource,
         env: appEnvironment,
@@ -50,8 +50,14 @@ export function openAppServices(): Promise<Services> {
         appVersion: '0.1.0',
         catalog: catalogConfig(),
         userWriteBlock: lock === 'unsupported' ? { reason: 'instance_lock', message: WRITES_BLOCKED_MESSAGE } : undefined
-      })
-    );
+      });
+      // DEV-ONLY e2e hook (stripped from production builds): lets a spec drive a second code path against the live services.
+      if (import.meta.env.DEV) {
+        const w = window as unknown as { __flashydexTest?: Record<string, unknown> };
+        w.__flashydexTest = { ...(w.__flashydexTest ?? {}), services };
+      }
+      return services;
+    });
   }).finally(logStartupTimings);
   opening.catch((error: unknown) => { if (!(error instanceof InstanceLockedError)) opening = null; });
   return opening;
