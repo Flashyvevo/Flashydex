@@ -71,6 +71,8 @@ test('.fdx backup → fresh browser context (reinstall) → install dev pack →
     await page2.goto('/collection');
     await expect(page2.getByTestId('card-tile')).toHaveCount(0);
 
+    const workerUrls: string[] = [];
+    page2.on('worker', (w) => workerUrls.push(w.url()));
     await page2.goto('/settings/data');
     await page2.getByTestId('restore-file').click();
     await expect(page2.getByTestId('restore-sheet')).toBeVisible();
@@ -79,6 +81,7 @@ test('.fdx backup → fresh browser context (reinstall) → install dev pack →
     (await chooser).setFiles({ name: backup.suggestedFilename(), mimeType: 'application/vnd.flashydex.backup+zip', buffer: fdx });
 
     await expect(page2.getByTestId('restore-dialog')).toBeVisible({ timeout: 60_000 });
+    expect(workerUrls.some((u) => /archive.worker/.test(u))).toBe(true); // N04: ZIP/JSON parse ran in a Web Worker
     await expect(page2.getByTestId('restore-warning')).toHaveText('Replaces all personal data');
     await expect(page2.getByTestId('restore-counts')).toContainText('2 owned copies');
     await expect(page2.getByTestId('restore-catalog')).toContainText('match your installed catalog');

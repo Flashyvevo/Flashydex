@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AcquisitionRow, BackupCounts, CatalogRefRow, CustomCardRow, GradeRow, GroupMemberRow, OwnedCardRow, PriceSnapshotRow, ScanSessionRow, StorageLocationRow, CollectionGroupRow } from './transfer';
-import { Currency, Hash, Id, Instant, Language, Notes, ProviderId, SafeInt, SetKey } from './primitives';
+import { ArtUrl, Currency, Hash, Id, Instant, Language, Name, Notes, ProviderId, SafeInt, SetKey } from './primitives';
 import { FileRefSchema } from './api';
 
 /** .fdx backup v1 (docs/IMPORT-EXPORT.md). FdxManifestV1 / BackupEntry / BackupCounts live in transfer.ts and are re-exported by the index. */
@@ -19,8 +19,15 @@ export const FDX_LIMITS = {
 } as const;
 
 export const CatalogIdentityRow = z.object({ language: Language, id: ProviderId, createdAt: Instant }).strict();
+/** E02: strict overlay shape (docs/DATA-MODEL.md): optional name/setName/localId/rarity/imageUrl, snapshot constraints, nothing else. */
+export const DisplayOverrides = z
+  .object({
+    name: Name.optional(), setName: Name.nullable().optional(), localId: z.string().min(1).max(80).nullable().optional(),
+    rarity: z.string().max(100).nullable().optional(), imageUrl: ArtUrl.nullable().optional()
+  })
+  .strict();
 export const CatalogAnnotationRow = z
-  .object({ language: Language, catalogCardId: ProviderId, displayOverrides: z.record(z.string(), z.unknown()), notes: Notes.nullable(), createdAt: Instant, updatedAt: Instant })
+  .object({ language: Language, catalogCardId: ProviderId, displayOverrides: DisplayOverrides, notes: Notes.nullable(), createdAt: Instant, updatedAt: Instant })
   .strict();
 export const UserImageRow = z
   .object({

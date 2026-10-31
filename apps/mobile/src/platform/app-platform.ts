@@ -6,6 +6,7 @@ import { PlatformError, SizeLimitError, type FileRef, type Platform } from '@fla
 import { sha256 } from 'hash-wasm';
 import localforage from 'localforage';
 import { uuidV4 } from '../lib/uuid';
+import { createArchiveParser } from './archive-parser';
 import { capacitorHttp, nativeHttpGet } from './native-http';
 
 /**
@@ -66,6 +67,7 @@ export const platform: Platform = {
   clock: { now: () => new Date().toISOString() },
   ids: { uuid: () => uuidV4() },
   hash: { sha256: (bytes) => sha256(bytes) },
+  archiveParser: createArchiveParser(), // N04: .fdx ZIP/JSON parse runs in a Web Worker (in-thread fallback)
 
   filesystem: {
     async pick({ kind, maxBytes }) {

@@ -14,8 +14,9 @@ export class PortfolioService {
 
   async dashboard(input: Input<typeof DashboardInput> = {}): Promise<DashboardDto> {
     parse(DashboardInput, input);
-    // E2 / N07: valuation reads the catalog quotes; a handle retired mid-read is retried once, then a typed STALE_READ.
-    return this.ctx.databases.protectedRead(['en', 'ja'], () => this.dashboardOnce(input));
+    // E2 / N07 + E04: one consistent read. The personal revision AND catalog generations are captured before and after; if either moved
+    // (aggregates read, then a write, then recent-row hydration) the whole dashboard is recomputed once, then STALE_READ.
+    return this.ctx.databases.consistentRead(['en', 'ja'], () => this.dashboardOnce(input));
   }
 
   private async dashboardOnce(input: Input<typeof DashboardInput> = {}): Promise<DashboardDto> {

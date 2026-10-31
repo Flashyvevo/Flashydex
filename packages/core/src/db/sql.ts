@@ -198,6 +198,22 @@ export class Db {
     return this.persistenceFailed ? new PersistenceError('The last change may not have been saved. Recover storage before continuing.') : null;
   }
 
+  /**
+   * E01: a read whose result may be reported as "already committed" (receipt replay). The persistence latch is checked after queue
+   * admission (so a flush that failed while this call waited is seen) and again after the read, inside the same serialized hold;
+   * a latched Db throws PERSISTENCE_FAILED instead of returning a possibly-undurable row.
+   */
+  durableRead<T>(fn: (q: Exec) => Promise<T>): Promise<T> {
+    return this.lock(async () => {
+      const before = this.persistenceBlock();
+      if (before) throw before;
+      const out = await fn(this.direct);
+      const after = this.persistenceBlock();
+      if (after) throw after;
+      return out;
+    });
+  }
+
   /** The error every write gets while the Db is blocked, or null. */
   writeBlockError(privilege?: symbol): DomainError | null {
     if (this.instanceLock) return new StorageError('INSTANCE_LOCK', this.instanceLock.message);

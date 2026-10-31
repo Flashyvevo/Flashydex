@@ -66,7 +66,8 @@ export async function buildArchive(input: {
 }
 
 /* ------------------------------------------------------------------------------------------------ read */
-type CentralEntry = { name: string; method: number; flags: number; crc: number; compressedSize: number; localOffset: number };
+type CentralEntry = { name: string; method: number; flags: number; crc: number; compressedSize: number; uncompressedSize: number; localOffset: number };
+const ENCRYPTION_FLAGS = 0x1 | 0x40 | 0x2000;
 
 /** Standard CRC-32 (IEEE 802.3, the ZIP checksum). Exported for tests. */
 const CRC_TABLE = (() => {
@@ -111,11 +112,11 @@ function readCentralDirectory(data: Uint8Array, limits: FdxLimits): CentralEntry
     const external = view.getUint32(offset + 38, true);
     if (offset + 46 + nameLen > data.byteLength) throw new BackupError('BACKUP_INVALID', 'The archive directory is damaged');
     const name = decoder.decode(data.subarray(offset + 46, offset + 46 + nameLen));
-    if ((flags & 1) !== 0 || (flags & 0x40) !== 0) throw new BackupError('BACKUP_INVALID', 'Encrypted backups are not supported');
+    if ((flags & ENCRYPTION_FLAGS) !== 0) throw new BackupError('BACKUP_INVALID', 'Encrypted backups are not supported');
     if (method !== 0 && method !== 8) throw new BackupError('BACKUP_INVALID', 'Unsupported compression method');
     if ((madeBy >> 8) === 3 && ((external >>> 16) & 0xf000) === 0xa000) throw new BackupError('BACKUP_UNSAFE_ENTRY', 'Symbolic links are not allowed in a backup');
     out.push({
-      name, method, flags, crc: view.getUint32(offset + 16, true), compressedSize: view.getUint32(offset + 20, true), localOffset: view.getUint32(offset + 42, true)
+      name, method, flags, crc: view.getUint32(offset + 16, true), compressedSize: view.getUint32(offset + 20, true), uncompressedSize: view.getUint32(offset + 24, true), localOffset: view.getUint32(offset + 42, true)
     });
     offset += 46 + nameLen + extraLen + commentLen;
   }
@@ -151,9 +152,12 @@ function verifyLocalHeaders(data: Uint8Array, central: CentralEntry[]): void {
     const localMethod = view.getUint16(at + 8, true);
     const nameLen = view.getUint16(at + 26, true);
     if (at + 30 + nameLen > data.byteLength || decoder.decode(data.subarray(at + 30, at + 30 + nameLen)) !== entry.name) throw damaged();
+    // E03: encryption (traditional 0x1, strong 0x40, masked headers 0x2000) is unsupported in EITHER header, and the flag words must agree exactly.
+    if (((localFlags | entry.flags) & ENCRYPTION_FLAGS) !== 0) throw new BackupError('BACKUP_INVALID', 'Encrypted backups are not supported');
+    if (localFlags !== entry.flags) throw damaged();
     if (localMethod !== entry.method) throw damaged();
     if ((localFlags & 8) === 0) { // no data descriptor: the local header carries the real values
-      if (view.getUint32(at + 14, true) !== entry.crc || view.getUint32(at + 18, true) !== entry.compressedSize) throw damaged();
+      if (view.getUint32(at + 14, true) !== entry.crc || view.getUint32(at + 18, true) !== entry.compressedSize || view.getUint32(at + 22, true) !== entry.uncompressedSize) throw damaged();
     }
   }
 }
@@ -394,6 +398,20 @@ export function validateReferences(e: Entities, settings: Settings): void {
   for (const u of e.userImages) {
     if (u.ownerType === 'custom' ? !customs.has(u.ownerId) : !owned.has(u.ownerId)) bad('An image references an unknown owner');
   }
+  // E02: cross-row language / audit-time / settings semantics (the service-level rules SQL FKs cannot express).
+  const customLanguage = new Map(e.customCards.map((r) => [r.id, r.language]));
+  for (const c of e.ownedCards) {
+    if (c.customCardId !== null && customLanguage.get(c.customCardId) !== c.language) bad('An owned card language differs from its custom card language');
+  }
+  const ordered = (label: string, rows: ReadonlyArray<{ createdAt: string; updatedAt: string }>) => {
+    for (const r of rows) if (r.updatedAt < r.createdAt) bad(`A ${label} was updated before it was created`);
+  };
+  ordered('owned card', e.ownedCards); ordered('custom card', e.customCards); ordered('acquisition', e.acquisitions); ordered('storage location', e.storageLocations);
+  ordered('group', e.collectionGroups); ordered('grade', e.grades); ordered('annotation', e.catalogAnnotations);
+  for (const s of e.scanSessions) if (s.endedAt !== null && s.endedAt < s.startedAt) bad('A scan session ended before it started');
+  if (settings.disclaimerAcknowledgedAt !== null && settings.disclaimerAcknowledgedAt > settings.updatedAt) bad('Settings disclaimer time is after the last update');
+  unique('followed set', settings.setsFollowed, (r) => `${r.language}\0${r.setId}`);
+  for (const k of settings.setsFollowed) if (!settings.languages.includes(k.language)) bad('A followed set is in a language that is not selected');
   if (settings.disclaimerAcknowledged !== (settings.disclaimerAcknowledgedAt !== null)) bad('Settings disclaimer fields are inconsistent');
   if (new Set(settings.languages).size !== settings.languages.length) bad('Settings languages must be unique');
 }

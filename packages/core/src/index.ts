@@ -16,6 +16,7 @@ export { validateManifestSemantics, parseManifestText, isCalendarVersion, compar
 export { validateCatalogCandidate, validateActiveCatalog, CATALOG_SCHEMA_FINGERPRINT } from './services/candidate-validation';
 export { WorkCoordinator, type WorkKind, type WorkLease } from './db/coordinator';
 export { hydrateOwned } from './services/owned-read';
+export { parseArchive, DEFAULT_LIMITS as FDX_DEFAULT_LIMITS, type FdxLimits, type ParsedBackup } from './backup/archive';
 export * from '@flashydex/schemas';
 export { TransferService, MAX_IMPORT_BYTES } from './transfer/service';
 export { CSV_COLUMNS, escapeFormula, unescapeFormula, parseCsv, serializeCsv } from './transfer/csv';

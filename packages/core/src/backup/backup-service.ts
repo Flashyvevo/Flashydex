@@ -67,6 +67,12 @@ export class BackupService {
     if (signal?.aborted) throw new CancelledError();
   }
 
+  /** N04: parse off the calling thread when the platform provides a worker-backed parser; the in-thread `parseArchive` is the fallback. */
+  private parseBytes(bytes: Uint8Array, signal?: AbortSignal): Promise<ParsedBackup> {
+    if (this.platform.archiveParser) return this.platform.archiveParser({ bytes, limits: this.limits, signal });
+    return parseArchive(bytes, (b) => this.platform.hash.sha256(b), this.limits);
+  }
+
   /* ------------------------------------------------------------------------------------------ create */
   async create(input: Input<typeof BackupCreate>, onProgress?: BackupProgressCallback, signal?: AbortSignal): Promise<BackupResult> {
     const { includeUserImages, includeCatalogs } = parse(BackupCreate, input);
@@ -113,7 +119,7 @@ export class BackupService {
     try {
       const back = await this.platform.filesystem.read({ file, maxBytes: this.limits.archiveBytes });
       if ((await this.platform.hash.sha256(back)) !== sha256) throw new BackupError('BACKUP_HASH_MISMATCH', 'The written backup does not match what was created');
-      const parsed = await parseArchive(back, (b) => this.platform.hash.sha256(b), this.limits);
+      const parsed = await this.parseBytes(back); // verification is not cancellable (phase "verifying")
       if (!entitiesEqual(parsed.entities, snap.entities) || canonicalJson(parsed.settings) !== canonicalJson(snap.settings)) throw new BackupError('BACKUP_INVALID', 'The written backup does not match the collection');
     } catch (error) {
       await this.platform.filesystem.remove({ file }).catch(() => undefined);
@@ -138,9 +144,10 @@ export class BackupService {
     if (bytes.byteLength > this.limits.archiveBytes) throw new BackupError('SIZE_LIMIT', 'The backup file is too large');
     BackupService.cancelCheck(signal);
     const backupHash = await this.platform.hash.sha256(bytes);
-    const parsed = await parseArchive(bytes, (b) => this.platform.hash.sha256(b), this.limits);
+    const size = bytes.byteLength; // the parser may take ownership of the buffer (N04 worker transfer)
+    const parsed = await this.parseBytes(bytes, signal);
     BackupService.cancelCheck(signal);
-    this.emit(onProgress, { phase: 'verifying', bytesDone: bytes.byteLength, bytesTotal: bytes.byteLength, cancellable: true });
+    this.emit(onProgress, { phase: 'verifying', bytesDone: size, bytesTotal: size, cancellable: true });
 
     const { revision, token } = await this.ctx.databases.user.read((q) => this.stateToken(q));
     const { matched, missing } = await this.resolveIdentities(parsed.entities);
@@ -157,7 +164,7 @@ export class BackupService {
     if (images.some((u) => !u.included)) warnings.push(`${images.filter((u) => !u.included).length} user image(s) were not included in this backup; they will show as missing.`);
     if (images.some((u) => u.included)) warnings.push('User image files in this backup are not restored by this build.');
     if (missing > 0) warnings.push(`${missing} card(s) are not in the installed catalog; their saved name, set and image are kept as they are.`);
-    this.emit(onProgress, { phase: 'complete', bytesDone: bytes.byteLength, bytesTotal: bytes.byteLength, cancellable: false });
+    this.emit(onProgress, { phase: 'complete', bytesDone: size, bytesTotal: size, cancellable: false });
     return {
       id, backupHash, expiresAt, backupVersion: 1, counts: countsOf(parsed.entities), totalCards: parsed.entities.ownedCards.length, customCards: parsed.entities.customCards.length,
       collectionRevision: revision, userStateToken: token, matchedCatalogIdentities: matched, missingCatalogIdentities: missing, warnings, warning: WARNING

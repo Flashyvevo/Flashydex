@@ -1,4 +1,5 @@
 import type { FileRef } from '@flashydex/schemas';
+import type { FdxLimits, ParsedBackup } from '../backup/archive';
 
 /** docs/API.md "Platform adapter". Core never imports Capacitor/DOM/Node APIs; apps and tests inject an implementation. */
 export interface Platform {
@@ -17,6 +18,12 @@ export interface Platform {
   clock: { now(): string };
   ids: { uuid(): string };
   hash: { sha256(bytes: Uint8Array): Promise<string> };
+  /**
+   * N04: optional off-main-thread `.fdx` ZIP/JSON parser (the same `parseArchive` run in a Worker). The implementation takes ownership of
+   * `bytes` (it may transfer the buffer, leaving the caller's view empty), must honour `signal` (reject `CancelledError`) and must throw
+   * the same `BackupError`s as `parseArchive`. When absent core parses on the calling thread.
+   */
+  archiveParser?(input: { bytes: Uint8Array; limits: FdxLimits; signal?: AbortSignal }): Promise<ParsedBackup>;
   /** Phase-1 image-cache seam (interface only; R13). Optional: platforms without a cache omit it. */
   imageCache?: {
     get(key: string): Promise<Blob | null>;

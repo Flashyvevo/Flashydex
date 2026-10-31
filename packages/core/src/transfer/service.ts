@@ -266,7 +266,8 @@ export class TransferService {
     if (latched) throw latched;
 
     // 1. receipt FIRST: an exact replay returns the original result even after expiry or a changed revision.
-    const receipt = (await user.rows('SELECT plan_hash, result_json, expires_at FROM data_operation_receipts WHERE id = ?', [id]))[0];
+    // E01: lookup + latch check run under one serialized hold, so a flush that fails while we wait in the queue is seen.
+    const receipt = (await user.durableRead((q) => q.rows('SELECT plan_hash, result_json, expires_at FROM data_operation_receipts WHERE id = ?', [id])))[0];
     if (receipt && String(receipt[2]) > now) {
       if (String(receipt[0]) !== planHash) throw new ConflictError('This import id was already committed with a different plan');
       return ImportCommitResult.parse(JSON.parse(String(receipt[1])));
@@ -276,6 +277,8 @@ export class TransferService {
     if (!preview) throw new NotFoundError('Import', id);
     if (preview.report.status === 'committed' && preview.report.result) {
       if (preview.report.planHash !== planHash) throw new ConflictError('This import id was already committed with a different plan');
+      const stillBlocked = user.persistenceBlock(); // in-memory result: only valid while storage is not latched
+      if (stillBlocked) throw stillBlocked;
       return preview.report.result;
     }
     if (preview.report.expiresAt < now) throw new PreviewExpiredError();
