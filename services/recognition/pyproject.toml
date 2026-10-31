@@ -8,16 +8,23 @@ packages = ["app"]
 [project]
 name = "flashydex-recognition"
 version = "0.0.0"
-description = "Phase 2 recognition service skeleton for flashydex"
+description = "FlashyDex card recognition service (FastAPI, CPU ONNX)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi==0.128.8",
   "uvicorn[standard]==0.40.0",
+  "pydantic==2.14.2",
+  "python-multipart==0.0.33",
+  "httpx==0.28.1",
+  "numpy==2.2.6",
+  "onnxruntime==1.26.0",
+  "opencv-python==4.12.0.88",
+  "pillow==13.0.0",
+  "rapidocr-onnxruntime==1.4.4",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "httpx==0.28.1",
   "pytest==9.0.2",
   "ruff==0.14.14",
 ]
@@ -25,7 +32,11 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 110
+
+[tool.ruff.lint.per-file-ignores]
+"app/cli.py" = ["T201"]

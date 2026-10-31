@@ -1,8 +1,4 @@
-from fastapi import FastAPI
+"""ASGI entrypoint: uvicorn app.main:app (prefer scripts/recognition/serve.sh)."""
+from app.api.app import create_app
 
-app = FastAPI(title="FlashyDex recognition", version="0.0.0")
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+app = create_app()
