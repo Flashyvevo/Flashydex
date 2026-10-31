@@ -1,4 +1,4 @@
-Project root: C:/Projects/pokescan (cd there first). Read `BRIEF.md` fully, then `SPEC.md`. Follow BRIEF's Agent rules exactly.
+Project root: C:/Projects/flashydex (cd there first). Read `BRIEF.md` fully, then `SPEC.md`. Follow BRIEF's Agent rules exactly.
 
 ## Your role: Claude Opus — UX/design lead + recognition architect (Stage A). Two deliverables: the Phase 1 UI/UX spec that a Sonnet implementer will build pixel-faithfully, and the Phase 2 recognition design (document only, no code).
 

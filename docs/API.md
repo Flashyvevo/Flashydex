@@ -282,11 +282,11 @@ export const RestoreResult = z.object({restored:z.literal(true),totalCards:SafeI
 
 | Method/path | Query/body | Success |
 |---|---|---|
-| GET /export | ExportQuery | 200 attachment, application/json or text/csv; filename pokescan-<UTC compact>.json/.csv; contract in IMPORT-EXPORT |
+| GET /export | ExportQuery | 200 attachment, application/json or text/csv; filename flashydex-<UTC compact>.json/.csv; contract in IMPORT-EXPORT |
 | POST /imports/dry-run | multipart `file`, `format`, `conflictPolicy` (ImportOptions) | 201 Result(ImportReport); Location /api/imports/:id; preview even when valid=false |
 | GET /imports/:id | no query | 200 Result(ImportReport); 404 unknown; 410 expired |
 | POST /imports/:id/commit | ImportCommit | 200 Result(ImportCommitResult); repeat exact completed token returns same result, never adds copies twice |
-| GET /backup | no query/body | 200 application/vnd.sqlite3 attachment pokescan-<UTC compact>.sqlite; completed online snapshot only |
+| GET /backup | no query/body | 200 application/vnd.sqlite3 attachment flashydex-<UTC compact>.sqlite; completed online snapshot only |
 | POST /restore/dry-run | multipart `file` only | 201 Result(BackupPreview); preview current and replacement counts in UI before confirm |
 | POST /restore/commit | RestoreCommit | 200 Result(RestoreResult); or maintenance/active/stale/invalid failure |
 

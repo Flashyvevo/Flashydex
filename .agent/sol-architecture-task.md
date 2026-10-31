@@ -1,4 +1,4 @@
-Project root: C:/Projects/pokescan (cd there first). Read `BRIEF.md` fully, then `SPEC.md`. Follow BRIEF's Agent rules exactly.
+Project root: C:/Projects/flashydex (cd there first). Read `BRIEF.md` fully, then `SPEC.md`. Follow BRIEF's Agent rules exactly.
 
 ## Your role: GPT Sol — architect (Stage A). You define architecture, data model, API contracts, import/export schemas and acceptance criteria for Phase 1. Implementation agents (Claude Sonnet) will build exactly what you specify, in parallel, so be precise: names, types, routes, status codes, error shapes.
 

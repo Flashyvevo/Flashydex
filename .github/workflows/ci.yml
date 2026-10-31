@@ -25,7 +25,7 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: Vitest
-        run: npm run test --workspace=@pokescan/web
+        run: npm run test --workspace=@flashydex/web
       - name: Pytest
         run: python -m pytest services/recognition/tests
       - name: Next build

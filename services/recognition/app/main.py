@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="pokescan recognition", version="0.0.0")
+app = FastAPI(title="flashydex recognition", version="0.0.0")
 
 
 @app.get("/health")

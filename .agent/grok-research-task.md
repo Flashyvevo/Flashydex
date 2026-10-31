@@ -1,4 +1,4 @@
-Project root: C:/Projects/pokescan (cd there first). Read `BRIEF.md` fully, then `SPEC.md`. Follow BRIEF's Agent rules exactly.
+Project root: C:/Projects/flashydex (cd there first). Read `BRIEF.md` fully, then `SPEC.md`. Follow BRIEF's Agent rules exactly.
 
 ## Your role: Grok — research & documentation (Stage A). Read-only on code; you write only the files below.
 

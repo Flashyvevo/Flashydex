@@ -1,6 +1,6 @@
 GPT Sol — Stage A architecture report
 
-Project root: C:/Projects/pokescan
+Project root: C:/Projects/flashydex
 
 Files produced:
   docs/ARCHITECTURE.md

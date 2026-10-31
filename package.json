@@ -1,5 +1,5 @@
 {
-  "name": "pokescan",
+  "name": "flashydex",
   "private": true,
   "version": "0.0.0",
   "packageManager": "npm@10.9.2",
@@ -12,14 +12,14 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=@pokescan/web",
-    "build": "npm run build --workspace=@pokescan/web",
-    "test": "npm run test --workspace=@pokescan/web && bash scripts/test-recognition.sh",
-    "e2e": "npm run e2e --workspace=@pokescan/web",
-    "typecheck": "npm run typecheck --workspace=@pokescan/web && npm run typecheck --workspace=@pokescan/schemas",
-    "lint": "npm run lint --workspace=@pokescan/web",
-    "db:generate": "npm run db:generate --workspace=@pokescan/web",
-    "db:migrate": "npm run db:migrate --workspace=@pokescan/web",
+    "dev": "npm run dev --workspace=@flashydex/web",
+    "build": "npm run build --workspace=@flashydex/web",
+    "test": "npm run test --workspace=@flashydex/web && bash scripts/test-recognition.sh",
+    "e2e": "npm run e2e --workspace=@flashydex/web",
+    "typecheck": "npm run typecheck --workspace=@flashydex/web && npm run typecheck --workspace=@flashydex/schemas",
+    "lint": "npm run lint --workspace=@flashydex/web",
+    "db:generate": "npm run db:generate --workspace=@flashydex/web",
+    "db:migrate": "npm run db:migrate --workspace=@flashydex/web",
     "sync": "bash scripts/sync-placeholder.sh"
   }
 }

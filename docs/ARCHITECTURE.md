@@ -13,7 +13,7 @@ Next.js 15 App Router, TypeScript strict, Tailwind v4, @serwist/next; Drizzle OR
 These are implementation target paths, not claims that files already exist. Feature modules own their services and tests. Barrel exports must not import server modules into the browser.
 
 ```text
-pokescan/
+flashydex/
   package.json                         # npm workspaces: apps/*, packages/*
   package-lock.json
   .env.example
@@ -21,7 +21,7 @@ pokescan/
   docs/                                # architecture, contracts, UX, operator docs
   .agent/reports/
   data/                                # ignored; default root, resolved from repo root
-    pokescan.sqlite
+    flashydex.sqlite
     backups/
     imports/                           # UUID directories, private uploaded bytes + plans
     runtime/                           # maintenance coordination; not source control
@@ -112,7 +112,7 @@ pokescan/
         api.test.ts
     e2e/{shell,collection,sets,data}.spec.ts
   packages/schemas/
-    package.json                       # workspace name @pokescan/schemas
+    package.json                       # workspace name @flashydex/schemas
     tsconfig.json
     src/
       primitives.ts
@@ -193,7 +193,7 @@ Input caps: JSON body 1 MiB ordinary routes, data uploads 25 MiB, backup/restore
 |---|---|
 | NODE_ENV | normal Next semantics |
 | APP_ORIGIN | required absolute origin for deployed LAN host; dev http://localhost:3200 |
-| DATABASE_PATH | data/pokescan.sqlite, resolved from repository root, not process cwd |
+| DATABASE_PATH | data/flashydex.sqlite, resolved from repository root, not process cwd |
 | DATA_DIR | data, resolved from repository root; imports/runtime under it |
 | BACKUP_DIR | data/backups; same local filesystem for restore staging |
 | TCGDEX_BASE_URL | https://api.tcgdex.net/v2; validated HTTPS origin/path, test injection permitted |
@@ -202,7 +202,7 @@ Input caps: JSON body 1 MiB ordinary routes, data uploads 25 MiB, backup/restore
 | SYNC_FRESH_HOURS | 24, positive integer |
 | RECOGNITION_BASE_URL | http://127.0.0.1:8100; unused in Phase 1 except operator config validation |
 | ADMIN_API_TOKEN | optional strong secret; never NEXT_PUBLIC_* |
-| NEXT_PUBLIC_APP_NAME | pokescan; cosmetic only |
+| NEXT_PUBLIC_APP_NAME | flashydex; cosmetic only |
 
 App version is read from workspace package.json, not a manually maintained export value. After Node22 `npm ci`, apply checked-in migrations with `npm run db:migrate` before starting app/CLI; schema generation belongs to development, not startup. The initial migration seeds app_state with id='collection', collection_revision=0 and a canonical UTC updated_at. The application must not create an empty replacement or silently migrate an uploaded restore. Upload/lease/time limits above are constants shared by API/tests; do not add conflicting magic defaults. Log job IDs and error codes, not imported notes/certificates or secret headers.
 

@@ -1,4 +1,4 @@
-# pokescan
+# flashydex
 
 Self-hosted Pokémon TCG collection manager. This repository is a Phase 1 scaffold.
 
@@ -40,4 +40,4 @@ npm run db:migrate
 npm run sync -- --lang en,ja  # intentionally not implemented yet
 ```
 
-`POKESCAN_DB_PATH` optionally overrides the SQLite path. It defaults to `./data/pokescan.db` relative to `apps/web` when running the web app.
+`FLASHYDEX_DB_PATH` optionally overrides the SQLite path. It defaults to `./data/flashydex.db` relative to `apps/web` when running the web app.

@@ -32,3 +32,4 @@ Thumbs.db
 .agent/reference/
 *.log
 .agent/*-run.log
+.agent/previous/

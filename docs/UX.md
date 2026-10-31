@@ -1,4 +1,4 @@
-# pokescan — Phase 1 UX specification
+# flashydex — Phase 1 UX specification
 
 Owner: Opus (UX lead). Implementer: Sonnet — build this pixel-faithfully. Tokens: `docs/DESIGN-TOKENS.md` + `apps/web/src/styles/tokens.css`.
 Contract alignment: routes, field names and enums follow `docs/ARCHITECTURE.md` and `docs/DATA-MODEL.md` (both present when this was written). Endpoint names refer to `docs/API.md`; where API.md was not yet written, the needed data is described by DATA-MODEL field names (camelCase) — if API.md names differ, API.md wins for the wire, this doc wins for what the screen shows.
@@ -74,7 +74,7 @@ Large-title behavior: on Dashboard/Collection/Sets the page H1 sits in the conte
 ```
 ≥1024 px
 ┌───────────────┬──────────────────────────────────────────────────────┐
-│ pokescan      │  Collection                     [search……]  [+ Add]  │
+│ flashydex      │  Collection                     [search……]  [+ Add]  │
 │               ├──────────────────────────────────────────────────────┤
 │ [+ Add card]  │                                                      │
 │               │                                                      │
@@ -160,7 +160,7 @@ Data: dashboard endpoint (DATA-MODEL "Definitions": totalCards, uniqueCards, dup
 
 ```
 ┌──────────────────────────────────────┐
-│ pokescan                        [+]  │
+│ flashydex                        [+]  │
 ├──────────────────────────────────────┤
 │ Estimated value                      │  caption muted
 │ $1,234.56                            │  display 32/700 tabular   (USD bucket)
@@ -212,9 +212,9 @@ Value panel spans 6/12 columns, stat tiles 2×2 in the other 6.
 
 ### 3.3 States
 - Loading: skeleton for value (180×38 block + two 240×16 lines), 4 stat tiles with 60×28 value blocks, 4 tile skeletons in the scroller.
-- **Empty, no catalog** (no completed sync for any language): hero replaced by EmptyState — icon `DatabaseZap`; title "Download the card catalog"; body "pokescan needs the TCGdex card list (English and Japanese) before you can search and add cards. It runs on your PC and you can leave this page while it works."; button "Go to Data & sync" → `/settings/data`.
+- **Empty, no catalog** (no completed sync for any language): hero replaced by EmptyState — icon `DatabaseZap`; title "Download the card catalog"; body "flashydex needs the TCGdex card list (English and Japanese) before you can search and add cards. It runs on your PC and you can leave this page while it works."; button "Go to Data & sync" → `/settings/data`.
 - **Empty, catalog ready, no cards**: stats render real zeros (Total 0, Unique 0, Duplicates 0); value line reads "No cards yet" (not $0.00); Recently added → EmptyState: "Your collection is empty" / "Search the catalog to add your first card." / button "Add a card" → `/add`.
-- Error: ErrorState in place of the whole page body: "Couldn't load your dashboard" / "The server on your PC didn't answer. Check that pokescan is still running." / Retry.
+- Error: ErrorState in place of the whole page body: "Couldn't load your dashboard" / "The server on your PC didn't answer. Check that flashydex is still running." / Retry.
 - Offline: banner + last server-rendered HTML if the SW cached it; otherwise ErrorState with "You're offline".
 
 ### 3.4 Accessibility
@@ -588,7 +588,7 @@ When to show: from Add search ("Can't find it? Create a custom card", prefilled 
 │ Default currency for what I paid  (USD)(EUR)
 ├──────────────────────────────────────┤
 │ ABOUT                                │
-│ pokescan 0.1.0                       │
+│ flashydex 0.1.0                       │
 │ Card data and images: TCGdex         │  link https://tcgdex.dev
 │ Not affiliated with Nintendo, The Pokémon Company or Creatures. │
 └──────────────────────────────────────┘
@@ -626,7 +626,7 @@ End states:
 ### 10.3 Import (dry-run first)
 ```
 │ IMPORT                               │
-│ Bring in cards from a pokescan JSON export or a CSV file.  [Format guide]→ docs link
+│ Bring in cards from a flashydex JSON export or a CSV file.  [Format guide]→ docs link
 │ [ Choose file ]                      │  accept=".json,.csv,application/json,text/csv"
 ```
 After choosing → upload to dry-run → **preview** (full-height sheet / dialog):
@@ -644,7 +644,7 @@ After choosing → upload to dry-run → **preview** (full-height sheet / dialog
 ```
 - Nothing is written before "Import N cards". Commit uses the preview id; if the collection changed since the preview (409 stale revision) → "Your collection changed since this preview. [Preview again]".
 - Result: "Imported 398 cards. 3 rows skipped." [Download skipped rows] (if API provides) [View collection].
-- Errors: unsupported file → "This file isn't a pokescan export or a CSV with the expected columns. See the format guide." Too large (413) → "That file is too large (max 25 MB)."
+- Errors: unsupported file → "This file isn't a flashydex export or a CSV with the expected columns. See the format guide." Too large (413) → "That file is too large (max 25 MB)."
 
 ### 10.4 Export
 ```
@@ -652,7 +652,7 @@ After choosing → upload to dry-run → **preview** (full-height sheet / dialog
 │ [ Download JSON ]  Complete — use this for backups and moving to another PC.
 │ [ Download CSV ]   One row per card, for spreadsheets. Some details aren't included.
 ```
-Filenames come from the server (`pokescan-<UTC compact>.json` / `.csv`, API.md). Button shows spinner while the blob downloads; error toast on failure.
+Filenames come from the server (`flashydex-<UTC compact>.json` / `.csv`, API.md). Button shows spinner while the blob downloads; error toast on failure.
 
 ### 10.5 Backup and restore
 ```
@@ -665,7 +665,7 @@ Restore flow: choose `.sqlite` → upload to restore dry-run → dialog:
 │ Restore this backup?                 │
 │ Backup:  412 cards · made 28 Oct 2026│  from dry-run metadata
 │ Current: 431 cards                   │
-│ Restoring replaces everything in pokescan with the backup.
+│ Restoring replaces everything in flashydex with the backup.
 │ A copy of your current data is saved first.
 │ Type RESTORE to confirm  [         ] │
 │ [ Cancel ]   [ Restore backup ]      │  danger-solid, enabled only after typing
@@ -737,8 +737,8 @@ Error messages map API `error.code` → friendly text (fallback to "Something we
 
 | Code / condition | Title | Body |
 |---|---|---|
-| network failure / fetch rejected | Can't reach pokescan | Your phone couldn't connect to the PC. Check you're on the same Wi-Fi and pokescan is running. |
-| `DB_BUSY` (503) | Busy for a moment | pokescan is saving something else. Trying again… (auto-retry once after `Retry-After`) |
+| network failure / fetch rejected | Can't reach flashydex | Your phone couldn't connect to the PC. Check you're on the same Wi-Fi and flashydex is running. |
+| `DB_BUSY` (503) | Busy for a moment | flashydex is saving something else. Trying again… (auto-retry once after `Retry-After`) |
 | `MAINTENANCE` (503) | Restoring a backup | The app will be back in a moment. |
 | `WORKER_UNAVAILABLE` (503) | Couldn't start the sync | The background worker didn't start on your PC. Try again; if it keeps failing, run `npm run sync` on the PC. |
 | `NOT_FOUND` (404) | Not found | This item doesn't exist anymore. It may have been deleted. |
@@ -749,7 +749,7 @@ Error messages map API `error.code` → friendly text (fallback to "Something we
 | `PREVIEW_EXPIRED` (410) | Preview expired | Previews last 10 minutes. Choose the file again. |
 | `ACTIVE_SYNC` (409) | A sync is already running | (show the running sync card) |
 | `PAYLOAD_TOO_LARGE` (413) | File too large | The limit is 25 MB for imports, 512 MB for backups. |
-| `IMPORT_INVALID` / `BACKUP_INVALID` (422) | This file can't be used | It isn't a valid pokescan export/backup. See the format guide. |
+| `IMPORT_INVALID` / `BACKUP_INVALID` (422) | This file can't be used | It isn't a valid flashydex export/backup. See the format guide. |
 
 Button vocabulary (consistent verbs): Add to collection · Add N copies · Add another · Save · Delete copy · Create location · Create and add to collection · Sync catalog · Resume · Cancel sync · Choose file · Import N cards · Download JSON · Download CSV · Download backup · Restore backup · Clear filters · Show N cards · Try again.
 Never: "Submit", "OK" for destructive actions, "Oops".

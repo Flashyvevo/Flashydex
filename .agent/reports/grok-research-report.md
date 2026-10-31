@@ -9,7 +9,7 @@ Role: research and documentation. No code outside these files was edited. No com
 - `.agent/research/variants-and-pricing.md`
 - `.agent/reports/grok-research-report.md` (this file)
 
-Raw responses are in the Hermes scratch dir `C:/Users/AshtonSeabolt/AppData/Local/hermes/cache/scratch/pokescan-research/` (set lists, 404 set details, 44 card details, image probes). Those are scratch, not repo files.
+Raw responses are in the Hermes scratch dir `C:/Users/AshtonSeabolt/AppData/Local/hermes/cache/scratch/flashydex-research/` (set lists, 404 set details, 44 card details, image probes). Those are scratch, not repo files.
 
 ## Verified
 
