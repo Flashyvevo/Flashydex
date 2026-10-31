@@ -4,18 +4,27 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./catalog/tcgdex": "./src/catalog/tcgdex/index.ts",
+    "./catalog-schema": "./src/db/catalog-schema.ts",
+    "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "db:generate": "drizzle-kit generate --config drizzle.config.ts"
+    "db:embed": "node scripts/embed-migrations.mjs",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts && node scripts/embed-migrations.mjs",
+    "db:generate:catalog": "drizzle-kit generate --config drizzle.catalog.config.ts && node scripts/embed-migrations.mjs"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.4"
+    "@flashydex/schemas": "*",
+    "drizzle-orm": "0.45.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "better-sqlite3": "13.0.3",
     "drizzle-kit": "0.31.11",
     "typescript": "5.9.3",

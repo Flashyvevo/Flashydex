@@ -4,12 +4,14 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vite';
+import { excludeDevPacks } from './scripts/exclude-dev-packs';
 
 export default defineConfig({
   plugins: [
     TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
     react(),
     tailwindcss(),
+    excludeDevPacks(),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
@@ -24,9 +26,13 @@ export default defineConfig({
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }
         ]
       },
-      workbox: { navigateFallbackDenylist: [/^\/api\//] }
+      workbox: { navigateFallbackDenylist: [/^\/api\//], globIgnores: ['**/dev-packs/**'] }
     })
   ],
+  envPrefix: ['VITE_', 'FLASHYDEX_'],
+  // jeep-sqlite is a lazy-loading Stencil bundle; pre-bundling breaks its chunk resolution.
+  optimizeDeps: { exclude: ['jeep-sqlite'] },
+  worker: { format: 'es' },
   resolve: {
     alias: { '@': resolve(__dirname, './src') }
   },

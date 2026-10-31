@@ -1,0 +1,47 @@
+[
+  {
+    "id": "base1",
+    "name": "Base Set",
+    "logo": "https://assets.tcgdex.net/en/base/base1/logo",
+    "cardCount": {
+      "total": 102,
+      "official": 102
+    }
+  },
+  {
+    "id": "jumbo",
+    "name": "Jumbo cards",
+    "cardCount": {
+      "total": 160,
+      "official": 160
+    }
+  },
+  {
+    "id": "neo1",
+    "name": "Neo Genesis",
+    "logo": "https://assets.tcgdex.net/en/neo/neo1/logo",
+    "symbol": "https://assets.tcgdex.net/univ/neo/neo1/symbol",
+    "cardCount": {
+      "total": 111,
+      "official": 111
+    }
+  },
+  {
+    "id": "swsh3",
+    "name": "Darkness Ablaze",
+    "logo": "https://assets.tcgdex.net/en/swsh/swsh3/logo",
+    "symbol": "https://assets.tcgdex.net/univ/swsh/swsh3/symbol",
+    "cardCount": {
+      "total": 201,
+      "official": 189
+    }
+  },
+  {
+    "id": "mep",
+    "name": "MEP Black Star Promos",
+    "cardCount": {
+      "total": 89,
+      "official": 0
+    }
+  }
+]

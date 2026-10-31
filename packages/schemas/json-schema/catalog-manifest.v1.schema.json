@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "manifestVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "currentVersion": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "targetVersion": {
+      "type": "string",
+      "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+    },
+    "builtAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "languages": {
+      "type": "object",
+      "properties": {
+        "en": {
+          "type": "object",
+          "properties": {
+            "currentVersion": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "targetVersion": {
+              "type": "string",
+              "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+            },
+            "fullPackUrl": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "setIndexUrl": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "compressedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "uncompressedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "compressedSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "schemaVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "builtAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "counts": {
+              "type": "object",
+              "properties": {
+                "sets": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cards": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "variants": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "prices": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "unpublishedSets": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "sets",
+                "cards",
+                "variants",
+                "prices",
+                "unpublishedSets"
+              ],
+              "additionalProperties": false
+            },
+            "delta": {
+              "type": "object",
+              "properties": {
+                "currentVersion": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+                },
+                "targetVersion": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+                },
+                "url": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "algorithm": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "compressedBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "uncompressedBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "baseSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "currentVersion",
+                "targetVersion",
+                "url",
+                "algorithm",
+                "compressedBytes",
+                "uncompressedBytes",
+                "sha256",
+                "baseSha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "currentVersion",
+            "targetVersion",
+            "fullPackUrl",
+            "compressedBytes",
+            "uncompressedBytes",
+            "sha256",
+            "schemaVersion",
+            "builtAt",
+            "counts"
+          ],
+          "additionalProperties": false
+        },
+        "ja": {
+          "type": "object",
+          "properties": {
+            "currentVersion": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "targetVersion": {
+              "type": "string",
+              "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+            },
+            "fullPackUrl": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "setIndexUrl": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "compressedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "uncompressedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "compressedSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "schemaVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "builtAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "counts": {
+              "type": "object",
+              "properties": {
+                "sets": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cards": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "variants": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "prices": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "unpublishedSets": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "sets",
+                "cards",
+                "variants",
+                "prices",
+                "unpublishedSets"
+              ],
+              "additionalProperties": false
+            },
+            "delta": {
+              "type": "object",
+              "properties": {
+                "currentVersion": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+                },
+                "targetVersion": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{3}$"
+                },
+                "url": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "algorithm": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "compressedBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "uncompressedBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "baseSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "currentVersion",
+                "targetVersion",
+                "url",
+                "algorithm",
+                "compressedBytes",
+                "uncompressedBytes",
+                "sha256",
+                "baseSha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "currentVersion",
+            "targetVersion",
+            "fullPackUrl",
+            "compressedBytes",
+            "uncompressedBytes",
+            "sha256",
+            "schemaVersion",
+            "builtAt",
+            "counts"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      },
+      "required": [
+        "algorithm",
+        "keyId",
+        "value"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "manifestVersion",
+    "currentVersion",
+    "targetVersion",
+    "builtAt",
+    "languages"
+  ],
+  "additionalProperties": false,
+  "$id": "https://flashydex.local/schemas/catalog-manifest.v1.schema.json",
+  "title": "FlashyDex catalog manifest v1",
+  "description": "Catalog pack manifest (docs/CATALOG-PACKS.md)."
+}

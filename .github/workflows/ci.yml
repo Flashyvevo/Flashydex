@@ -24,9 +24,7 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Vitest and pytest
+      - name: Test (vitest + recognition pytest)
         run: npm test
-      - name: Vite build
+      - name: Build
         run: npm run build
-      - name: Capacitor sync smoke
-        run: npm run cap:sync

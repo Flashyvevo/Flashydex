@@ -1,0 +1,896 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "bae3306c-dba6-468d-8072-e9274f6fac10",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "catalog_cards": {
+      "name": "catalog_cards",
+      "columns": {
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "set_id": {
+          "name": "set_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_id": {
+          "name": "local_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_id_sort": {
+          "name": "local_id_sort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_search": {
+          "name": "name_search",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rarity": {
+          "name": "rarity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "illustrator": {
+          "name": "illustrator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "has_normal": {
+          "name": "has_normal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "has_holo": {
+          "name": "has_holo",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "has_reverse": {
+          "name": "has_reverse",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "has_first_edition": {
+          "name": "has_first_edition",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "w_promo": {
+          "name": "w_promo",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "available_variants_json": {
+          "name": "available_variants_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "raw_json": {
+          "name": "raw_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detail_synced_at": {
+          "name": "detail_synced_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cc_set_local": {
+          "name": "cc_set_local",
+          "columns": [
+            "language",
+            "set_id",
+            "local_id"
+          ],
+          "isUnique": true
+        },
+        "cc_name": {
+          "name": "cc_name",
+          "columns": [
+            "name_search",
+            "language",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "cc_language_name": {
+          "name": "cc_language_name",
+          "columns": [
+            "language",
+            "name_search",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "cc_set_sort": {
+          "name": "cc_set_sort",
+          "columns": [
+            "language",
+            "set_id",
+            "local_id_sort",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "cc_rarity": {
+          "name": "cc_rarity",
+          "columns": [
+            "language",
+            "rarity"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_cards_language_set_id_catalog_sets_language_id_fk": {
+          "name": "catalog_cards_language_set_id_catalog_sets_language_id_fk",
+          "tableFrom": "catalog_cards",
+          "tableTo": "catalog_sets",
+          "columnsFrom": [
+            "language",
+            "set_id"
+          ],
+          "columnsTo": [
+            "language",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "catalog_cards_language_id_pk": {
+          "columns": [
+            "language",
+            "id"
+          ],
+          "name": "catalog_cards_language_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cc_language": {
+          "name": "cc_language",
+          "value": "\"catalog_cards\".\"language\" IN ('en','ja')"
+        },
+        "cc_flags": {
+          "name": "cc_flags",
+          "value": "\"catalog_cards\".\"has_normal\" IN (0,1) AND \"catalog_cards\".\"has_holo\" IN (0,1)\n    AND \"catalog_cards\".\"has_reverse\" IN (0,1) AND \"catalog_cards\".\"has_first_edition\" IN (0,1) AND \"catalog_cards\".\"w_promo\" IN (0,1)"
+        }
+      }
+    },
+    "catalog_latest_prices": {
+      "name": "catalog_latest_prices",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "catalog_card_id": {
+          "name": "catalog_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variant": {
+          "name": "variant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variant_detail": {
+          "name": "variant_detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "provider_variant_key": {
+          "name": "provider_variant_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "low_cents": {
+          "name": "low_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mid_cents": {
+          "name": "mid_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "high_cents": {
+          "name": "high_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "market_cents": {
+          "name": "market_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "trend_cents": {
+          "name": "trend_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_updated_at": {
+          "name": "source_updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observation_key": {
+          "name": "observation_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "clp_observation": {
+          "name": "clp_observation",
+          "columns": [
+            "observation_key"
+          ],
+          "isUnique": true
+        },
+        "clp_tuple": {
+          "name": "clp_tuple",
+          "columns": [
+            "language",
+            "catalog_card_id",
+            "source",
+            "variant",
+            "variant_detail",
+            "provider_variant_key",
+            "currency"
+          ],
+          "isUnique": true
+        },
+        "clp_latest": {
+          "name": "clp_latest",
+          "columns": [
+            "language",
+            "catalog_card_id",
+            "source",
+            "variant",
+            "variant_detail",
+            "provider_variant_key",
+            "currency",
+            "source_updated_at",
+            "captured_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_latest_prices_language_catalog_card_id_catalog_cards_language_id_fk": {
+          "name": "catalog_latest_prices_language_catalog_card_id_catalog_cards_language_id_fk",
+          "tableFrom": "catalog_latest_prices",
+          "tableTo": "catalog_cards",
+          "columnsFrom": [
+            "language",
+            "catalog_card_id"
+          ],
+          "columnsTo": [
+            "language",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "clp_language": {
+          "name": "clp_language",
+          "value": "\"catalog_latest_prices\".\"language\" IN ('en','ja')"
+        },
+        "clp_source_currency": {
+          "name": "clp_source_currency",
+          "value": "(\"catalog_latest_prices\".\"source\" = 'tcgplayer' AND \"catalog_latest_prices\".\"currency\" = 'USD')\n    OR (\"catalog_latest_prices\".\"source\" = 'cardmarket' AND \"catalog_latest_prices\".\"currency\" = 'EUR')"
+        },
+        "clp_variant": {
+          "name": "clp_variant",
+          "value": "\"catalog_latest_prices\".\"variant\" IN ('normal','holo','reverse_holo','first_edition','promo_stamped','shadowless','other')"
+        },
+        "clp_low": {
+          "name": "clp_low",
+          "value": "\"catalog_latest_prices\".\"low_cents\" IS NULL OR \"catalog_latest_prices\".\"low_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "clp_mid": {
+          "name": "clp_mid",
+          "value": "\"catalog_latest_prices\".\"mid_cents\" IS NULL OR \"catalog_latest_prices\".\"mid_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "clp_high": {
+          "name": "clp_high",
+          "value": "\"catalog_latest_prices\".\"high_cents\" IS NULL OR \"catalog_latest_prices\".\"high_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "clp_market": {
+          "name": "clp_market",
+          "value": "\"catalog_latest_prices\".\"market_cents\" IS NULL OR \"catalog_latest_prices\".\"market_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "clp_trend": {
+          "name": "clp_trend",
+          "value": "\"catalog_latest_prices\".\"trend_cents\" IS NULL OR \"catalog_latest_prices\".\"trend_cents\" BETWEEN 0 AND 2147483647"
+        }
+      }
+    },
+    "catalog_meta": {
+      "name": "catalog_meta",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "built_at": {
+          "name": "built_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "builder_version": {
+          "name": "builder_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_cutoff_at": {
+          "name": "source_cutoff_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_set_count": {
+          "name": "source_set_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_card_count": {
+          "name": "source_card_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_variant_count": {
+          "name": "source_variant_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_price_count": {
+          "name": "source_price_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unpublished_set_count": {
+          "name": "unpublished_set_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "schema_fingerprint": {
+          "name": "schema_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "catalog_singleton": {
+          "name": "catalog_singleton",
+          "value": "\"catalog_meta\".\"id\" = 'catalog'"
+        },
+        "meta_language": {
+          "name": "meta_language",
+          "value": "\"catalog_meta\".\"language\" IN ('en','ja')"
+        },
+        "meta_schema_version": {
+          "name": "meta_schema_version",
+          "value": "\"catalog_meta\".\"schema_version\" >= 1"
+        },
+        "meta_counts": {
+          "name": "meta_counts",
+          "value": "\"catalog_meta\".\"source_set_count\" >= 0 AND \"catalog_meta\".\"source_card_count\" >= 0 AND \"catalog_meta\".\"source_variant_count\" >= 0\n    AND \"catalog_meta\".\"source_price_count\" >= 0 AND \"catalog_meta\".\"unpublished_set_count\" >= 0"
+        }
+      }
+    },
+    "catalog_sets": {
+      "name": "catalog_sets",
+      "columns": {
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_search": {
+          "name": "name_search",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "series": {
+          "name": "series",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unpublished'"
+        },
+        "release_date": {
+          "name": "release_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "official_count": {
+          "name": "official_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "total_count": {
+          "name": "total_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "logo_url": {
+          "name": "logo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "symbol_url": {
+          "name": "symbol_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "raw_json": {
+          "name": "raw_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cs_language_name": {
+          "name": "cs_language_name",
+          "columns": [
+            "language",
+            "name_search",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "cs_visibility": {
+          "name": "cs_visibility",
+          "columns": [
+            "status",
+            "series",
+            "language",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "catalog_sets_language_id_pk": {
+          "columns": [
+            "language",
+            "id"
+          ],
+          "name": "catalog_sets_language_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cs_status": {
+          "name": "cs_status",
+          "value": "\"catalog_sets\".\"status\" IN ('published','unpublished')"
+        },
+        "cs_language": {
+          "name": "cs_language",
+          "value": "\"catalog_sets\".\"language\" IN ('en','ja')"
+        },
+        "cs_counts": {
+          "name": "cs_counts",
+          "value": "(\"catalog_sets\".\"official_count\" IS NULL OR \"catalog_sets\".\"official_count\" >= 0)\n    AND (\"catalog_sets\".\"total_count\" IS NULL OR \"catalog_sets\".\"total_count\" >= 0)"
+        }
+      }
+    },
+    "catalog_variants": {
+      "name": "catalog_variants",
+      "columns": {
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "card_id": {
+          "name": "card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variant_key": {
+          "name": "variant_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variant": {
+          "name": "variant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variant_detail": {
+          "name": "variant_detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "provider_variant_id": {
+          "name": "provider_variant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subtype": {
+          "name": "subtype",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "foil": {
+          "name": "foil",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "size": {
+          "name": "size",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stamps_json": {
+          "name": "stamps_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attributes_json": {
+          "name": "attributes_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cv_lookup": {
+          "name": "cv_lookup",
+          "columns": [
+            "language",
+            "card_id",
+            "variant",
+            "variant_detail"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_variants_language_card_id_catalog_cards_language_id_fk": {
+          "name": "catalog_variants_language_card_id_catalog_cards_language_id_fk",
+          "tableFrom": "catalog_variants",
+          "tableTo": "catalog_cards",
+          "columnsFrom": [
+            "language",
+            "card_id"
+          ],
+          "columnsTo": [
+            "language",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "catalog_variants_language_card_id_variant_key_pk": {
+          "columns": [
+            "language",
+            "card_id",
+            "variant_key"
+          ],
+          "name": "catalog_variants_language_card_id_variant_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cv_language": {
+          "name": "cv_language",
+          "value": "\"catalog_variants\".\"language\" IN ('en','ja')"
+        },
+        "cv_variant": {
+          "name": "cv_variant",
+          "value": "\"catalog_variants\".\"variant\" IN ('normal','holo','reverse_holo','first_edition','promo_stamped','shadowless','other')"
+        }
+      }
+    },
+    "schema_migrations": {
+      "name": "schema_migrations",
+      "columns": {
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "checksum": {
+          "name": "checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

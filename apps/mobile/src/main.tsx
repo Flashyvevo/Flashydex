@@ -8,8 +8,10 @@ import './styles/globals.css';
 
 applyPlatformClass();
 
-const router = createRouter({ routeTree });
-const queryClient = new QueryClient();
+const router = createRouter({ routeTree, defaultPreload: 'intent', scrollRestoration: true });
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 0 } }
+});
 
 declare module '@tanstack/react-router' {
   interface Register {

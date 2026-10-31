@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FlashyDex</string>
+    <string name="title_activity_main">FlashyDex</string>
+    <string name="package_name">com.flashydex.app</string>
+    <string name="custom_url_scheme">com.flashydex.app</string>
+</resources>

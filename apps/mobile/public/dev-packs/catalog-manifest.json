@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 1,
+  "currentVersion": null,
+  "targetVersion": "2026.10.31.001",
+  "builtAt": "2026-10-31T01:32:43.275Z",
+  "languages": {
+    "en": {
+      "currentVersion": null,
+      "targetVersion": "2026.10.31.001",
+      "fullPackUrl": "/dev-packs/catalog-en-2026.10.31.001.db.zst",
+      "setIndexUrl": "/dev-packs/set-index-en.json",
+      "compressedBytes": 130901,
+      "uncompressedBytes": 1835008,
+      "sha256": "4a9578c3df7299fa0c4d70f17fcf34c70d5cd6d61cf986aa7243b2142c9c8be2",
+      "compressedSha256": "aa936bf66ffda3034b249a3ac279f0ac3b88dc33f1e812e94a1fef8b9131ab2d",
+      "schemaVersion": 1,
+      "builtAt": "2026-10-31T01:32:36.919Z",
+      "counts": {
+        "sets": 1,
+        "cards": 201,
+        "variants": 364,
+        "prices": 694,
+        "unpublishedSets": 0
+      }
+    },
+    "ja": {
+      "currentVersion": null,
+      "targetVersion": "2026.10.31.001",
+      "fullPackUrl": "/dev-packs/catalog-ja-2026.10.31.001.db.zst",
+      "setIndexUrl": "/dev-packs/set-index-ja.json",
+      "compressedBytes": 120318,
+      "uncompressedBytes": 1658880,
+      "sha256": "3fa9fc09a7bce618e94620e927f80f8caebfea7c03cdd779cabe0da9cbbd7339",
+      "compressedSha256": "7757a29bc6f3e29fc0aa0fe3fc1d8ffc03fe50ed25014271a6b96233e55abaf8",
+      "schemaVersion": 1,
+      "builtAt": "2026-10-31T01:32:43.275Z",
+      "counts": {
+        "sets": 1,
+        "cards": 210,
+        "variants": 516,
+        "prices": 516,
+        "unpublishedSets": 0
+      }
+    }
+  }
+}

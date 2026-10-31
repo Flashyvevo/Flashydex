@@ -1,3 +1,2 @@
-// Domain schema is intentionally empty in Stage A2.
-// The architecture agent owns the real Drizzle schema.
-export {};
+// USER chain schema (drizzle-kit input for migrations/user). The CATALOG chain is declared in ./catalog-schema.
+export * from './user-schema';

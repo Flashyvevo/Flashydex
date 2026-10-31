@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 6-11 (API 23-30) Auto Backup rules; see data_extraction_rules.xml for the rationale. -->
+<full-backup-content>
+    <exclude domain="file" path="flashydex/catalogs" />
+    <exclude domain="file" path="flashydex/packs" />
+</full-backup-content>

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "neo1",
+    "name": "金、銀、新世界へ...",
+    "symbol": "https://assets.tcgdex.net/univ/neo/neo1/symbol",
+    "cardCount": {
+      "total": 96,
+      "official": 96
+    }
+  },
+  {
+    "id": "ADV1",
+    "name": "拡張パック",
+    "cardCount": {
+      "total": 55,
+      "official": 55
+    }
+  },
+  {
+    "id": "SV-P",
+    "name": "スカーレット&バイオレット プロモカード",
+    "cardCount": {
+      "total": 288,
+      "official": 0
+    }
+  },
+  {
+    "id": "SV2a",
+    "name": "ポケモンカード151",
+    "cardCount": {
+      "total": 210,
+      "official": 165
+    }
+  }
+]

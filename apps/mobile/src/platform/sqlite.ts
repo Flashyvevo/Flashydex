@@ -1,55 +1,98 @@
 import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
-import { defineCustomElements } from 'jeep-sqlite/loader';
+import { createProxyCallback } from './sqlite-proxy';
 
-const databaseName = 'flashydex';
-let connectionPromise: Promise<SQLiteDBConnection> | undefined;
+/** Logical connection name of the user DB. The plugin turns it into `flashydex-userSQLite.db`. */
+export const USER_DB_NAME = 'flashydex-user';
 
-async function prepareWebComponent(): Promise<void> {
+let pluginPromise: Promise<SQLiteConnection> | undefined;
+const connections = new Map<string, Promise<SQLiteDBConnection>>();
+
+function isWeb(): boolean {
+  return Capacitor.getPlatform() === 'web';
+}
+
+/**
+ * Web only (capacitor-community/sqlite docs/Web-Usage.md): define the jeep-sqlite custom element,
+ * append it to the DOM, await its definition, then `initWebStore()` BEFORE any createConnection.
+ * The sql-wasm.wasm file must be served at /assets/sql-wasm.wasm and must match the sql.js
+ * generation bundled inside jeep-sqlite (see scripts/copy-sql-wasm.mjs).
+ */
+async function prepareWebStore(sqlite: SQLiteConnection): Promise<void> {
+  const { defineCustomElements } = await import('jeep-sqlite/loader');
   await defineCustomElements(window);
+  if (!document.querySelector('jeep-sqlite')) {
+    document.body.appendChild(document.createElement('jeep-sqlite'));
+  }
   await customElements.whenDefined('jeep-sqlite');
-  let element = document.querySelector('jeep-sqlite');
-  if (!element) {
-    element = document.createElement('jeep-sqlite');
-    document.body.append(element);
-  }
-  await (element as HTMLElement & { componentOnReady(): Promise<unknown> }).componentOnReady();
+  await sqlite.initWebStore();
 }
 
-async function openConnection(): Promise<SQLiteDBConnection> {
-  const sqlite = new SQLiteConnection(CapacitorSQLite);
-  if (Capacitor.getPlatform() === 'web') {
-    await prepareWebComponent();
-    await sqlite.initWebStore();
-  }
-
-  const connection = await sqlite.createConnection(databaseName, false, 'no-encryption', 1, false);
-  await connection.open();
-  return connection;
+/** Shared plugin wrapper; performs the web bootstrap exactly once. */
+export function getSqlitePlugin(): Promise<SQLiteConnection> {
+  pluginPromise ??= (async () => {
+    const sqlite = new SQLiteConnection(CapacitorSQLite);
+    if (isWeb()) await prepareWebStore(sqlite);
+    return sqlite;
+  })();
+  return pluginPromise;
 }
 
-export async function getSqliteConnection(): Promise<SQLiteDBConnection> {
-  connectionPromise ??= openConnection();
-  return connectionPromise;
+/**
+ * Opens (creating if needed) a conformed connection by logical name. The plugin appends `SQLite.db`.
+ * Connections are cached per name+mode so callers can share them.
+ */
+export function openLogicalConnection(name: string, readonly = false): Promise<SQLiteDBConnection> {
+  const key = `${name}:${readonly ? 'ro' : 'rw'}`;
+  let existing = connections.get(key);
+  if (!existing) {
+    existing = (async () => {
+      const sqlite = await getSqlitePlugin();
+      const known = (await sqlite.isConnection(name, readonly)).result;
+      const connection = known
+        ? await sqlite.retrieveConnection(name, readonly)
+        : await sqlite.createConnection(name, false, 'no-encryption', 1, readonly);
+      await connection.open();
+      return connection;
+    })();
+    existing.catch(() => connections.delete(key));
+    connections.set(key, existing);
+  }
+  return existing;
+}
+
+/** Close a cached logical connection (web: persists the in-memory DB to IndexedDB). */
+export async function closeLogicalConnection(name: string, readonly = false): Promise<void> {
+  const key = `${name}:${readonly ? 'ro' : 'rw'}`;
+  const cached = connections.get(key);
+  connections.delete(key);
+  if (!cached) return;
+  const sqlite = await getSqlitePlugin();
+  await (await cached).close().catch(() => undefined);
+  await sqlite.closeConnection(name, readonly).catch(() => undefined);
+}
+
+/** Web only: flush a database from sql.js memory into the IndexedDB store. */
+export async function flushWebStore(name: string): Promise<void> {
+  if (!isWeb()) return;
+  const sqlite = await getSqlitePlugin();
+  await sqlite.saveToStore(name);
+}
+
+export function getSqliteConnection(): Promise<SQLiteDBConnection> {
+  return openLogicalConnection(USER_DB_NAME);
 }
 
 export async function getDrizzleClient() {
   const connection = await getSqliteConnection();
-  return drizzle(async (statement, params, method) => {
-    if (method === 'run') {
-      await connection.run(statement, params);
-      return { rows: [] };
-    }
-    const result = await connection.query(statement, params);
-    return { rows: result.values ?? [] };
-  });
+  return drizzle(createProxyCallback(connection));
 }
 
 export async function readSqliteVersion(): Promise<string> {
   const connection = await getSqliteConnection();
   const result = await connection.query('select sqlite_version() as version');
-  const row = result.values?.[0] as { version?: unknown } | undefined;
+  const row = result.values?.find((value) => typeof (value as { version?: unknown }).version === 'string') as { version?: unknown } | undefined;
   if (typeof row?.version !== 'string') {
     throw new Error('SQLite did not return a version.');
   }

@@ -1,0 +1,1959 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "5d1a7f60-3b8e-4c43-9f0e-7a4d2c1b9e10",
+  "prevId": "c3b4f21e-fcef-4d2a-bc12-3f48e6ac5b52",
+  "tables": {
+    "acquisitions": {
+      "name": "acquisitions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "purchased_on": {
+          "name": "purchased_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "acq_date": {
+          "name": "acq_date",
+          "columns": [
+            "purchased_on",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "app_settings": {
+      "name": "app_settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "languages_json": {
+          "name": "languages_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[\"en\",\"ja\"]'"
+        },
+        "sets_followed_json": {
+          "name": "sets_followed_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "sync_all_sets": {
+          "name": "sync_all_sets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "hide_tcg_pocket": {
+          "name": "hide_tcg_pocket",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "default_currency": {
+          "name": "default_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'USD'"
+        },
+        "disclaimer_acknowledged": {
+          "name": "disclaimer_acknowledged",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "disclaimer_acknowledged_at": {
+          "name": "disclaimer_acknowledged_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "onboarding_completed_at": {
+          "name": "onboarding_completed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "settings_singleton": {
+          "name": "settings_singleton",
+          "value": "\"app_settings\".\"id\" = 'app'"
+        },
+        "settings_currency": {
+          "name": "settings_currency",
+          "value": "\"app_settings\".\"default_currency\" IN ('USD','EUR')"
+        },
+        "settings_booleans": {
+          "name": "settings_booleans",
+          "value": "\"app_settings\".\"sync_all_sets\" IN (0,1) AND \"app_settings\".\"hide_tcg_pocket\" IN (0,1)\n    AND \"app_settings\".\"disclaimer_acknowledged\" IN (0,1)"
+        },
+        "settings_disclaimer": {
+          "name": "settings_disclaimer",
+          "value": "(\"app_settings\".\"disclaimer_acknowledged\" = 0 AND \"app_settings\".\"disclaimer_acknowledged_at\" IS NULL)\n    OR (\"app_settings\".\"disclaimer_acknowledged\" = 1 AND \"app_settings\".\"disclaimer_acknowledged_at\" IS NOT NULL)"
+        }
+      }
+    },
+    "app_state": {
+      "name": "app_state",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "collection_revision": {
+          "name": "collection_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "app_singleton": {
+          "name": "app_singleton",
+          "value": "\"app_state\".\"id\" = 'collection'"
+        },
+        "app_revision": {
+          "name": "app_revision",
+          "value": "\"app_state\".\"collection_revision\" >= 0"
+        }
+      }
+    },
+    "catalog_annotations": {
+      "name": "catalog_annotations",
+      "columns": {
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "catalog_card_id": {
+          "name": "catalog_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_overrides_json": {
+          "name": "display_overrides_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "catalog_annotations_language_catalog_card_id_catalog_identities_language_id_fk": {
+          "name": "catalog_annotations_language_catalog_card_id_catalog_identities_language_id_fk",
+          "tableFrom": "catalog_annotations",
+          "tableTo": "catalog_identities",
+          "columnsFrom": [
+            "language",
+            "catalog_card_id"
+          ],
+          "columnsTo": [
+            "language",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "catalog_annotations_language_catalog_card_id_pk": {
+          "columns": [
+            "language",
+            "catalog_card_id"
+          ],
+          "name": "catalog_annotations_language_catalog_card_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ca_language": {
+          "name": "ca_language",
+          "value": "\"catalog_annotations\".\"language\" IN ('en','ja')"
+        }
+      }
+    },
+    "catalog_identities": {
+      "name": "catalog_identities",
+      "columns": {
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "catalog_identities_language_id_pk": {
+          "columns": [
+            "language",
+            "id"
+          ],
+          "name": "catalog_identities_language_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ci_language": {
+          "name": "ci_language",
+          "value": "\"catalog_identities\".\"language\" IN ('en','ja')"
+        }
+      }
+    },
+    "catalog_install_jobs": {
+      "name": "catalog_install_jobs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "lock_key": {
+          "name": "lock_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "manifest_entry_json": {
+          "name": "manifest_entry_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "compressed_bytes_done": {
+          "name": "compressed_bytes_done",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "decompressed_bytes_done": {
+          "name": "decompressed_bytes_done",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "etag": {
+          "name": "etag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "progress_json": {
+          "name": "progress_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "journal_json": {
+          "name": "journal_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_error_json": {
+          "name": "last_error_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_install_jobs_lock_key_unique": {
+          "name": "catalog_install_jobs_lock_key_unique",
+          "columns": [
+            "lock_key"
+          ],
+          "isUnique": true
+        },
+        "install_language_created": {
+          "name": "install_language_created",
+          "columns": [
+            "language",
+            "created_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cij_language": {
+          "name": "cij_language",
+          "value": "\"catalog_install_jobs\".\"language\" IN ('en','ja')"
+        },
+        "cij_state": {
+          "name": "cij_state",
+          "value": "\"catalog_install_jobs\".\"state\" IN ('checking','downloading','downloaded','size_checked','decompressing','verifying','validating','prepared','activating','validating_active','committed','installed','cancelled','failed','interrupted','rolling_back')"
+        },
+        "cij_lock": {
+          "name": "cij_lock",
+          "value": "\"catalog_install_jobs\".\"lock_key\" IS NULL OR \"catalog_install_jobs\".\"lock_key\" = 'catalog-install'"
+        },
+        "cij_bytes": {
+          "name": "cij_bytes",
+          "value": "\"catalog_install_jobs\".\"compressed_bytes_done\" >= 0 AND \"catalog_install_jobs\".\"decompressed_bytes_done\" >= 0"
+        }
+      }
+    },
+    "collection_group_members": {
+      "name": "collection_group_members",
+      "columns": {
+        "collection_group_id": {
+          "name": "collection_group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owned_card_id": {
+          "name": "owned_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "member_copy": {
+          "name": "member_copy",
+          "columns": [
+            "owned_card_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "collection_group_members_collection_group_id_collection_groups_id_fk": {
+          "name": "collection_group_members_collection_group_id_collection_groups_id_fk",
+          "tableFrom": "collection_group_members",
+          "tableTo": "collection_groups",
+          "columnsFrom": [
+            "collection_group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "restrict"
+        },
+        "collection_group_members_owned_card_id_owned_cards_id_fk": {
+          "name": "collection_group_members_owned_card_id_owned_cards_id_fk",
+          "tableFrom": "collection_group_members",
+          "tableTo": "owned_cards",
+          "columnsFrom": [
+            "owned_card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "collection_group_members_collection_group_id_owned_card_id_pk": {
+          "columns": [
+            "collection_group_id",
+            "owned_card_id"
+          ],
+          "name": "collection_group_members_collection_group_id_owned_card_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "collection_groups": {
+      "name": "collection_groups",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_key": {
+          "name": "name_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "group_name_key": {
+          "name": "group_name_key",
+          "columns": [
+            "name_key"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "custom_cards": {
+      "name": "custom_cards",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_search": {
+          "name": "name_search",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "set_id": {
+          "name": "set_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "set_name": {
+          "name": "set_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "local_id": {
+          "name": "local_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rarity": {
+          "name": "rarity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "custom_name": {
+          "name": "custom_name",
+          "columns": [
+            "name_search",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "custom_language": {
+          "name": "custom_language",
+          "value": "\"custom_cards\".\"language\" IN ('en','ja')"
+        }
+      }
+    },
+    "data_operation_receipts": {
+      "name": "data_operation_receipts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation": {
+          "name": "operation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plan_hash": {
+          "name": "plan_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "result_json": {
+          "name": "result_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "committed_at": {
+          "name": "committed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "receipt_expiry": {
+          "name": "receipt_expiry",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "receipt_operation": {
+          "name": "receipt_operation",
+          "value": "\"data_operation_receipts\".\"operation\" = 'import'"
+        }
+      }
+    },
+    "grades": {
+      "name": "grades",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owned_card_id": {
+          "name": "owned_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "company": {
+          "name": "company",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "company_label": {
+          "name": "company_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "grade": {
+          "name": "grade",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cert_number": {
+          "name": "cert_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "grade_copy": {
+          "name": "grade_copy",
+          "columns": [
+            "owned_card_id"
+          ],
+          "isUnique": true
+        },
+        "grade_company": {
+          "name": "grade_company",
+          "columns": [
+            "company"
+          ],
+          "isUnique": false
+        },
+        "grade_cert": {
+          "name": "grade_cert",
+          "columns": [
+            "company",
+            "cert_number"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "grades_owned_card_id_owned_cards_id_fk": {
+          "name": "grades_owned_card_id_owned_cards_id_fk",
+          "tableFrom": "grades",
+          "tableTo": "owned_cards",
+          "columnsFrom": [
+            "owned_card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "grade_company_valid": {
+          "name": "grade_company_valid",
+          "value": "\"grades\".\"company\" IN ('PSA','BGS','CGC','SGC','ACE','TAG','other')"
+        },
+        "grade_other_label": {
+          "name": "grade_other_label",
+          "value": "\"grades\".\"company\" <> 'other' OR (\"grades\".\"company_label\" IS NOT NULL AND length(trim(\"grades\".\"company_label\")) > 0)"
+        }
+      }
+    },
+    "installed_catalogs": {
+      "name": "installed_catalogs",
+      "columns": {
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "installed_at": {
+          "name": "installed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "active_ref": {
+          "name": "active_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ic_language": {
+          "name": "ic_language",
+          "value": "\"installed_catalogs\".\"language\" IN ('en','ja')"
+        },
+        "ic_generation": {
+          "name": "ic_generation",
+          "value": "\"installed_catalogs\".\"generation\" >= 0"
+        },
+        "ic_status_shape": {
+          "name": "ic_status_shape",
+          "value": "(\"installed_catalogs\".\"status\" = 'absent' AND \"installed_catalogs\".\"version\" IS NULL AND \"installed_catalogs\".\"sha256\" IS NULL AND \"installed_catalogs\".\"installed_at\" IS NULL AND \"installed_catalogs\".\"active_ref\" IS NULL AND \"installed_catalogs\".\"schema_version\" IS NULL)\n    OR (\"installed_catalogs\".\"status\" IN ('installed','failed') AND \"installed_catalogs\".\"version\" IS NOT NULL AND \"installed_catalogs\".\"sha256\" IS NOT NULL AND \"installed_catalogs\".\"installed_at\" IS NOT NULL AND \"installed_catalogs\".\"active_ref\" IS NOT NULL AND \"installed_catalogs\".\"schema_version\" >= 1)"
+        }
+      }
+    },
+    "owned_cards": {
+      "name": "owned_cards",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "catalog_card_id": {
+          "name": "catalog_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "custom_card_id": {
+          "name": "custom_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_search": {
+          "name": "name_search",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "set_id": {
+          "name": "set_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "set_name": {
+          "name": "set_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "local_id": {
+          "name": "local_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rarity": {
+          "name": "rarity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "variant": {
+          "name": "variant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'normal'"
+        },
+        "variant_detail": {
+          "name": "variant_detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "condition": {
+          "name": "condition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "acquisition_id": {
+          "name": "acquisition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "purchase_price_cents": {
+          "name": "purchase_price_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "purchase_currency": {
+          "name": "purchase_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "storage_location_id": {
+          "name": "storage_location_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scan_session_id": {
+          "name": "scan_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "manual_price_cents": {
+          "name": "manual_price_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "manual_price_currency": {
+          "name": "manual_price_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "owned_catalog_variant": {
+          "name": "owned_catalog_variant",
+          "columns": [
+            "language",
+            "catalog_card_id",
+            "variant",
+            "variant_detail"
+          ],
+          "isUnique": false
+        },
+        "owned_custom_variant": {
+          "name": "owned_custom_variant",
+          "columns": [
+            "custom_card_id",
+            "variant",
+            "variant_detail"
+          ],
+          "isUnique": false
+        },
+        "owned_name": {
+          "name": "owned_name",
+          "columns": [
+            "name_search",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "owned_set": {
+          "name": "owned_set",
+          "columns": [
+            "language",
+            "set_id",
+            "local_id"
+          ],
+          "isUnique": false
+        },
+        "owned_filters": {
+          "name": "owned_filters",
+          "columns": [
+            "language",
+            "condition",
+            "rarity"
+          ],
+          "isUnique": false
+        },
+        "owned_storage": {
+          "name": "owned_storage",
+          "columns": [
+            "storage_location_id"
+          ],
+          "isUnique": false
+        },
+        "owned_acquisition": {
+          "name": "owned_acquisition",
+          "columns": [
+            "acquisition_id"
+          ],
+          "isUnique": false
+        },
+        "owned_scan": {
+          "name": "owned_scan",
+          "columns": [
+            "scan_session_id"
+          ],
+          "isUnique": false
+        },
+        "owned_created": {
+          "name": "owned_created",
+          "columns": [
+            "created_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "owned_cards_custom_card_id_custom_cards_id_fk": {
+          "name": "owned_cards_custom_card_id_custom_cards_id_fk",
+          "tableFrom": "owned_cards",
+          "tableTo": "custom_cards",
+          "columnsFrom": [
+            "custom_card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "owned_cards_acquisition_id_acquisitions_id_fk": {
+          "name": "owned_cards_acquisition_id_acquisitions_id_fk",
+          "tableFrom": "owned_cards",
+          "tableTo": "acquisitions",
+          "columnsFrom": [
+            "acquisition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "owned_cards_storage_location_id_storage_locations_id_fk": {
+          "name": "owned_cards_storage_location_id_storage_locations_id_fk",
+          "tableFrom": "owned_cards",
+          "tableTo": "storage_locations",
+          "columnsFrom": [
+            "storage_location_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "restrict"
+        },
+        "owned_cards_scan_session_id_scan_sessions_id_fk": {
+          "name": "owned_cards_scan_session_id_scan_sessions_id_fk",
+          "tableFrom": "owned_cards",
+          "tableTo": "scan_sessions",
+          "columnsFrom": [
+            "scan_session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "restrict"
+        },
+        "owned_cards_language_catalog_card_id_catalog_identities_language_id_fk": {
+          "name": "owned_cards_language_catalog_card_id_catalog_identities_language_id_fk",
+          "tableFrom": "owned_cards",
+          "tableTo": "catalog_identities",
+          "columnsFrom": [
+            "language",
+            "catalog_card_id"
+          ],
+          "columnsTo": [
+            "language",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "owned_one_reference": {
+          "name": "owned_one_reference",
+          "value": "(\"owned_cards\".\"catalog_card_id\" IS NOT NULL AND \"owned_cards\".\"custom_card_id\" IS NULL)\n    OR (\"owned_cards\".\"catalog_card_id\" IS NULL AND \"owned_cards\".\"custom_card_id\" IS NOT NULL)"
+        },
+        "owned_language": {
+          "name": "owned_language",
+          "value": "\"owned_cards\".\"language\" IN ('en','ja')"
+        },
+        "owned_catalog_snapshot": {
+          "name": "owned_catalog_snapshot",
+          "value": "\"owned_cards\".\"catalog_card_id\" IS NULL OR (\"owned_cards\".\"set_id\" IS NOT NULL AND \"owned_cards\".\"local_id\" IS NOT NULL)"
+        },
+        "owned_variant": {
+          "name": "owned_variant",
+          "value": "\"owned_cards\".\"variant\" IN ('normal','holo','reverse_holo','first_edition','promo_stamped','shadowless','other')"
+        },
+        "owned_variant_detail": {
+          "name": "owned_variant_detail",
+          "value": "\"owned_cards\".\"variant\" <> 'other' OR length(trim(\"owned_cards\".\"variant_detail\")) > 0"
+        },
+        "owned_condition": {
+          "name": "owned_condition",
+          "value": "\"owned_cards\".\"condition\" IS NULL OR \"owned_cards\".\"condition\" IN ('NM','LP','MP','HP','DMG')"
+        },
+        "owned_purchase": {
+          "name": "owned_purchase",
+          "value": "(\"owned_cards\".\"purchase_price_cents\" IS NULL AND \"owned_cards\".\"purchase_currency\" IS NULL)\n    OR (\"owned_cards\".\"purchase_price_cents\" IS NOT NULL AND \"owned_cards\".\"purchase_currency\" IS NOT NULL\n      AND \"owned_cards\".\"purchase_price_cents\" BETWEEN 0 AND 2147483647 AND \"owned_cards\".\"purchase_currency\" IN ('USD','EUR'))"
+        },
+        "owned_manual": {
+          "name": "owned_manual",
+          "value": "(\"owned_cards\".\"manual_price_cents\" IS NULL AND \"owned_cards\".\"manual_price_currency\" IS NULL)\n    OR (\"owned_cards\".\"manual_price_cents\" IS NOT NULL AND \"owned_cards\".\"manual_price_currency\" IS NOT NULL\n      AND \"owned_cards\".\"manual_price_cents\" BETWEEN 0 AND 2147483647 AND \"owned_cards\".\"manual_price_currency\" IN ('USD','EUR'))"
+        }
+      }
+    },
+    "pack_metrics": {
+      "name": "pack_metrics",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "metrics_json": {
+          "name": "metrics_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "metrics_operation": {
+          "name": "metrics_operation",
+          "columns": [
+            "operation_id",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "pm_language": {
+          "name": "pm_language",
+          "value": "\"pack_metrics\".\"language\" IN ('en','ja')"
+        }
+      }
+    },
+    "price_snapshots": {
+      "name": "price_snapshots",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "catalog_card_id": {
+          "name": "catalog_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variant": {
+          "name": "variant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variant_detail": {
+          "name": "variant_detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "provider_variant_key": {
+          "name": "provider_variant_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "low_cents": {
+          "name": "low_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mid_cents": {
+          "name": "mid_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "high_cents": {
+          "name": "high_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "market_cents": {
+          "name": "market_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "trend_cents": {
+          "name": "trend_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_updated_at": {
+          "name": "source_updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observation_key": {
+          "name": "observation_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "price_observation": {
+          "name": "price_observation",
+          "columns": [
+            "observation_key"
+          ],
+          "isUnique": true
+        },
+        "price_latest": {
+          "name": "price_latest",
+          "columns": [
+            "language",
+            "catalog_card_id",
+            "variant",
+            "variant_detail",
+            "currency",
+            "source",
+            "captured_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "price_snapshots_language_catalog_card_id_catalog_identities_language_id_fk": {
+          "name": "price_snapshots_language_catalog_card_id_catalog_identities_language_id_fk",
+          "tableFrom": "price_snapshots",
+          "tableTo": "catalog_identities",
+          "columnsFrom": [
+            "language",
+            "catalog_card_id"
+          ],
+          "columnsTo": [
+            "language",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "price_language": {
+          "name": "price_language",
+          "value": "\"price_snapshots\".\"language\" IN ('en','ja')"
+        },
+        "price_source_currency": {
+          "name": "price_source_currency",
+          "value": "(\"price_snapshots\".\"source\" = 'tcgplayer' AND \"price_snapshots\".\"currency\" = 'USD')\n    OR (\"price_snapshots\".\"source\" = 'cardmarket' AND \"price_snapshots\".\"currency\" = 'EUR')"
+        },
+        "price_variant": {
+          "name": "price_variant",
+          "value": "\"price_snapshots\".\"variant\" IN ('normal','holo','reverse_holo','first_edition','promo_stamped','shadowless','other')"
+        },
+        "price_low": {
+          "name": "price_low",
+          "value": "\"price_snapshots\".\"low_cents\" IS NULL OR \"price_snapshots\".\"low_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "price_mid": {
+          "name": "price_mid",
+          "value": "\"price_snapshots\".\"mid_cents\" IS NULL OR \"price_snapshots\".\"mid_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "price_high": {
+          "name": "price_high",
+          "value": "\"price_snapshots\".\"high_cents\" IS NULL OR \"price_snapshots\".\"high_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "price_market": {
+          "name": "price_market",
+          "value": "\"price_snapshots\".\"market_cents\" IS NULL OR \"price_snapshots\".\"market_cents\" BETWEEN 0 AND 2147483647"
+        },
+        "price_trend": {
+          "name": "price_trend",
+          "value": "\"price_snapshots\".\"trend_cents\" IS NULL OR \"price_snapshots\".\"trend_cents\" BETWEEN 0 AND 2147483647"
+        }
+      }
+    },
+    "scan_sessions": {
+      "name": "scan_sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'open'"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "scan_started": {
+          "name": "scan_started",
+          "columns": [
+            "started_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "scan_status": {
+          "name": "scan_status",
+          "value": "\"scan_sessions\".\"status\" IN ('open','closed','abandoned')"
+        },
+        "scan_closed_at": {
+          "name": "scan_closed_at",
+          "value": "(\"scan_sessions\".\"status\" = 'open' AND \"scan_sessions\".\"ended_at\" IS NULL)\n    OR (\"scan_sessions\".\"status\" <> 'open' AND \"scan_sessions\".\"ended_at\" IS NOT NULL)"
+        }
+      }
+    },
+    "schema_migrations": {
+      "name": "schema_migrations",
+      "columns": {
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "checksum": {
+          "name": "checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "storage_locations": {
+      "name": "storage_locations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_key": {
+          "name": "name_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "storage_name_key": {
+          "name": "storage_name_key",
+          "columns": [
+            "name_key"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "sync_state": {
+      "name": "sync_state",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'queued'"
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'incremental'"
+        },
+        "languages_json": {
+          "name": "languages_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selection_json": {
+          "name": "selection_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "lock_key": {
+          "name": "lock_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "worker_token": {
+          "name": "worker_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "sets_total": {
+          "name": "sets_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sets_done": {
+          "name": "sets_done",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "cards_total": {
+          "name": "cards_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cards_done": {
+          "name": "cards_done",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "cards_failed": {
+          "name": "cards_failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "checkpoint_json": {
+          "name": "checkpoint_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "last_error_json": {
+          "name": "last_error_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sync_lock": {
+          "name": "sync_lock",
+          "columns": [
+            "lock_key"
+          ],
+          "isUnique": true
+        },
+        "sync_created": {
+          "name": "sync_created",
+          "columns": [
+            "created_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sync_status": {
+          "name": "sync_status",
+          "value": "\"sync_state\".\"status\" IN ('queued','running','cancel_requested','completed','failed','cancelled','interrupted')"
+        },
+        "sync_mode": {
+          "name": "sync_mode",
+          "value": "\"sync_state\".\"mode\" IN ('incremental','refresh','prices_only')"
+        },
+        "sync_lock_value": {
+          "name": "sync_lock_value",
+          "value": "\"sync_state\".\"lock_key\" IS NULL OR \"sync_state\".\"lock_key\" = 'catalog'"
+        },
+        "sync_counts": {
+          "name": "sync_counts",
+          "value": "\"sync_state\".\"attempt\" >= 1 AND \"sync_state\".\"sets_done\" >= 0 AND \"sync_state\".\"cards_done\" >= 0 AND \"sync_state\".\"cards_failed\" >= 0\n    AND (\"sync_state\".\"sets_total\" IS NULL OR \"sync_state\".\"sets_total\" >= \"sync_state\".\"sets_done\")\n    AND (\"sync_state\".\"cards_total\" IS NULL OR \"sync_state\".\"cards_total\" >= \"sync_state\".\"cards_done\" + \"sync_state\".\"cards_failed\")"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

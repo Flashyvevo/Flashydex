@@ -9,50 +9,522 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as ModalRouteImport } from './routes/_modal'
+import { Route as TabsRouteImport } from './routes/_tabs'
+import { Route as ModalAddRouteImport } from './routes/_modal/add'
+import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
+import { Route as DevPackTestRouteImport } from './routes/dev/pack-test'
+import { Route as ModalCustomCardsNewRouteImport } from './routes/_modal/custom-cards/new'
+import { Route as ModalWelcomeIndexRouteImport } from './routes/_modal/welcome/index'
+import { Route as ModalWelcomeLanguagesRouteImport } from './routes/_modal/welcome/languages'
+import { Route as ModalWelcomeNoticeRouteImport } from './routes/_modal/welcome/notice'
+import { Route as ModalWelcomeSetsRouteImport } from './routes/_modal/welcome/sets'
+import { Route as TabsCollectionIndexRouteImport } from './routes/_tabs/collection/index'
+import { Route as TabsCollectionOwnedIdRouteImport } from './routes/_tabs/collection/$ownedId'
+import { Route as TabsCustomCardsCustomIdRouteImport } from './routes/_tabs/custom-cards/$customId'
+import { Route as TabsSetsIndexRouteImport } from './routes/_tabs/sets/index'
+import { Route as TabsSettingsIndexRouteImport } from './routes/_tabs/settings/index'
+import { Route as TabsSettingsAboutRouteImport } from './routes/_tabs/settings/about'
+import { Route as TabsSettingsCatalogRouteImport } from './routes/_tabs/settings/catalog'
+import { Route as TabsSettingsDataRouteImport } from './routes/_tabs/settings/data'
+import { Route as TabsSettingsLicensesRouteImport } from './routes/_tabs/settings/licenses'
+import { Route as TabsSettingsLocationsRouteImport } from './routes/_tabs/settings/locations'
+import { Route as TabsSettingsPrivacyRouteImport } from './routes/_tabs/settings/privacy'
+import { Route as TabsCardsLanguageCardIdRouteImport } from './routes/_tabs/cards/$language/$cardId'
+import { Route as TabsSetsLanguageSetIdRouteImport } from './routes/_tabs/sets/$language/$setId'
 
-const IndexRoute = IndexRouteImport.update({
+const ModalRoute = ModalRouteImport.update({
+  id: '/_modal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TabsRoute = TabsRouteImport.update({
+  id: '/_tabs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModalAddRoute = ModalAddRouteImport.update({
+  id: '/add',
+  path: '/add',
+  getParentRoute: () => ModalRoute,
+} as any)
+const TabsIndexRoute = TabsIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => TabsRoute,
+} as any)
+const DevPackTestRoute = DevPackTestRouteImport.update({
+  id: '/dev/pack-test',
+  path: '/dev/pack-test',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ModalCustomCardsNewRoute = ModalCustomCardsNewRouteImport.update({
+  id: '/custom-cards/new',
+  path: '/custom-cards/new',
+  getParentRoute: () => ModalRoute,
+} as any)
+const ModalWelcomeIndexRoute = ModalWelcomeIndexRouteImport.update({
+  id: '/welcome/',
+  path: '/welcome/',
+  getParentRoute: () => ModalRoute,
+} as any)
+const ModalWelcomeLanguagesRoute = ModalWelcomeLanguagesRouteImport.update({
+  id: '/welcome/languages',
+  path: '/welcome/languages',
+  getParentRoute: () => ModalRoute,
+} as any)
+const ModalWelcomeNoticeRoute = ModalWelcomeNoticeRouteImport.update({
+  id: '/welcome/notice',
+  path: '/welcome/notice',
+  getParentRoute: () => ModalRoute,
+} as any)
+const ModalWelcomeSetsRoute = ModalWelcomeSetsRouteImport.update({
+  id: '/welcome/sets',
+  path: '/welcome/sets',
+  getParentRoute: () => ModalRoute,
+} as any)
+const TabsCollectionIndexRoute = TabsCollectionIndexRouteImport.update({
+  id: '/collection/',
+  path: '/collection/',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsCollectionOwnedIdRoute = TabsCollectionOwnedIdRouteImport.update({
+  id: '/collection/$ownedId',
+  path: '/collection/$ownedId',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsCustomCardsCustomIdRoute = TabsCustomCardsCustomIdRouteImport.update({
+  id: '/custom-cards/$customId',
+  path: '/custom-cards/$customId',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSetsIndexRoute = TabsSetsIndexRouteImport.update({
+  id: '/sets/',
+  path: '/sets/',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSettingsIndexRoute = TabsSettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSettingsAboutRoute = TabsSettingsAboutRouteImport.update({
+  id: '/settings/about',
+  path: '/settings/about',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSettingsCatalogRoute = TabsSettingsCatalogRouteImport.update({
+  id: '/settings/catalog',
+  path: '/settings/catalog',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSettingsDataRoute = TabsSettingsDataRouteImport.update({
+  id: '/settings/data',
+  path: '/settings/data',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSettingsLicensesRoute = TabsSettingsLicensesRouteImport.update({
+  id: '/settings/licenses',
+  path: '/settings/licenses',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSettingsLocationsRoute = TabsSettingsLocationsRouteImport.update({
+  id: '/settings/locations',
+  path: '/settings/locations',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSettingsPrivacyRoute = TabsSettingsPrivacyRouteImport.update({
+  id: '/settings/privacy',
+  path: '/settings/privacy',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsCardsLanguageCardIdRoute = TabsCardsLanguageCardIdRouteImport.update({
+  id: '/cards/$language/$cardId',
+  path: '/cards/$language/$cardId',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSetsLanguageSetIdRoute = TabsSetsLanguageSetIdRouteImport.update({
+  id: '/sets/$language/$setId',
+  path: '/sets/$language/$setId',
+  getParentRoute: () => TabsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof TabsIndexRoute
+  '/add': typeof ModalAddRoute
+  '/dev/pack-test': typeof DevPackTestRoute
+  '/custom-cards/new': typeof ModalCustomCardsNewRoute
+  '/welcome/languages': typeof ModalWelcomeLanguagesRoute
+  '/welcome/notice': typeof ModalWelcomeNoticeRoute
+  '/welcome/sets': typeof ModalWelcomeSetsRoute
+  '/collection/$ownedId': typeof TabsCollectionOwnedIdRoute
+  '/custom-cards/$customId': typeof TabsCustomCardsCustomIdRoute
+  '/settings/about': typeof TabsSettingsAboutRoute
+  '/settings/catalog': typeof TabsSettingsCatalogRoute
+  '/settings/data': typeof TabsSettingsDataRoute
+  '/settings/licenses': typeof TabsSettingsLicensesRoute
+  '/settings/locations': typeof TabsSettingsLocationsRoute
+  '/settings/privacy': typeof TabsSettingsPrivacyRoute
+  '/welcome/': typeof ModalWelcomeIndexRoute
+  '/collection/': typeof TabsCollectionIndexRoute
+  '/sets/': typeof TabsSetsIndexRoute
+  '/settings/': typeof TabsSettingsIndexRoute
+  '/cards/$language/$cardId': typeof TabsCardsLanguageCardIdRoute
+  '/sets/$language/$setId': typeof TabsSetsLanguageSetIdRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/': typeof TabsIndexRoute
+  '/add': typeof ModalAddRoute
+  '/dev/pack-test': typeof DevPackTestRoute
+  '/custom-cards/new': typeof ModalCustomCardsNewRoute
+  '/welcome/languages': typeof ModalWelcomeLanguagesRoute
+  '/welcome/notice': typeof ModalWelcomeNoticeRoute
+  '/welcome/sets': typeof ModalWelcomeSetsRoute
+  '/collection/$ownedId': typeof TabsCollectionOwnedIdRoute
+  '/custom-cards/$customId': typeof TabsCustomCardsCustomIdRoute
+  '/settings/about': typeof TabsSettingsAboutRoute
+  '/settings/catalog': typeof TabsSettingsCatalogRoute
+  '/settings/data': typeof TabsSettingsDataRoute
+  '/settings/licenses': typeof TabsSettingsLicensesRoute
+  '/settings/locations': typeof TabsSettingsLocationsRoute
+  '/settings/privacy': typeof TabsSettingsPrivacyRoute
+  '/welcome': typeof ModalWelcomeIndexRoute
+  '/collection': typeof TabsCollectionIndexRoute
+  '/sets': typeof TabsSetsIndexRoute
+  '/settings': typeof TabsSettingsIndexRoute
+  '/cards/$language/$cardId': typeof TabsCardsLanguageCardIdRoute
+  '/sets/$language/$setId': typeof TabsSetsLanguageSetIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_modal': typeof ModalRouteWithChildren
+  '/_tabs': typeof TabsRouteWithChildren
+  '/_modal/add': typeof ModalAddRoute
+  '/dev/pack-test': typeof DevPackTestRoute
+  '/_tabs/': typeof TabsIndexRoute
+  '/_modal/custom-cards/new': typeof ModalCustomCardsNewRoute
+  '/_modal/welcome/languages': typeof ModalWelcomeLanguagesRoute
+  '/_modal/welcome/notice': typeof ModalWelcomeNoticeRoute
+  '/_modal/welcome/sets': typeof ModalWelcomeSetsRoute
+  '/_tabs/collection/$ownedId': typeof TabsCollectionOwnedIdRoute
+  '/_tabs/custom-cards/$customId': typeof TabsCustomCardsCustomIdRoute
+  '/_tabs/settings/about': typeof TabsSettingsAboutRoute
+  '/_tabs/settings/catalog': typeof TabsSettingsCatalogRoute
+  '/_tabs/settings/data': typeof TabsSettingsDataRoute
+  '/_tabs/settings/licenses': typeof TabsSettingsLicensesRoute
+  '/_tabs/settings/locations': typeof TabsSettingsLocationsRoute
+  '/_tabs/settings/privacy': typeof TabsSettingsPrivacyRoute
+  '/_modal/welcome/': typeof ModalWelcomeIndexRoute
+  '/_tabs/collection/': typeof TabsCollectionIndexRoute
+  '/_tabs/sets/': typeof TabsSetsIndexRoute
+  '/_tabs/settings/': typeof TabsSettingsIndexRoute
+  '/_tabs/cards/$language/$cardId': typeof TabsCardsLanguageCardIdRoute
+  '/_tabs/sets/$language/$setId': typeof TabsSetsLanguageSetIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/add'
+    | '/dev/pack-test'
+    | '/custom-cards/new'
+    | '/welcome/languages'
+    | '/welcome/notice'
+    | '/welcome/sets'
+    | '/collection/$ownedId'
+    | '/custom-cards/$customId'
+    | '/settings/about'
+    | '/settings/catalog'
+    | '/settings/data'
+    | '/settings/licenses'
+    | '/settings/locations'
+    | '/settings/privacy'
+    | '/welcome/'
+    | '/collection/'
+    | '/sets/'
+    | '/settings/'
+    | '/cards/$language/$cardId'
+    | '/sets/$language/$setId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/add'
+    | '/dev/pack-test'
+    | '/custom-cards/new'
+    | '/welcome/languages'
+    | '/welcome/notice'
+    | '/welcome/sets'
+    | '/collection/$ownedId'
+    | '/custom-cards/$customId'
+    | '/settings/about'
+    | '/settings/catalog'
+    | '/settings/data'
+    | '/settings/licenses'
+    | '/settings/locations'
+    | '/settings/privacy'
+    | '/welcome'
+    | '/collection'
+    | '/sets'
+    | '/settings'
+    | '/cards/$language/$cardId'
+    | '/sets/$language/$setId'
+  id:
+    | '__root__'
+    | '/_modal'
+    | '/_tabs'
+    | '/_modal/add'
+    | '/dev/pack-test'
+    | '/_tabs/'
+    | '/_modal/custom-cards/new'
+    | '/_modal/welcome/languages'
+    | '/_modal/welcome/notice'
+    | '/_modal/welcome/sets'
+    | '/_tabs/collection/$ownedId'
+    | '/_tabs/custom-cards/$customId'
+    | '/_tabs/settings/about'
+    | '/_tabs/settings/catalog'
+    | '/_tabs/settings/data'
+    | '/_tabs/settings/licenses'
+    | '/_tabs/settings/locations'
+    | '/_tabs/settings/privacy'
+    | '/_modal/welcome/'
+    | '/_tabs/collection/'
+    | '/_tabs/sets/'
+    | '/_tabs/settings/'
+    | '/_tabs/cards/$language/$cardId'
+    | '/_tabs/sets/$language/$setId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  ModalRoute: typeof ModalRouteWithChildren
+  TabsRoute: typeof TabsRouteWithChildren
+  DevPackTestRoute: typeof DevPackTestRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_modal': {
+      id: '/_modal'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ModalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_tabs': {
+      id: '/_tabs'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof TabsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_modal/add': {
+      id: '/_modal/add'
+      path: '/add'
+      fullPath: '/add'
+      preLoaderRoute: typeof ModalAddRouteImport
+      parentRoute: typeof ModalRoute
+    }
+    '/_tabs/': {
+      id: '/_tabs/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof TabsIndexRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/dev/pack-test': {
+      id: '/dev/pack-test'
+      path: '/dev/pack-test'
+      fullPath: '/dev/pack-test'
+      preLoaderRoute: typeof DevPackTestRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_modal/custom-cards/new': {
+      id: '/_modal/custom-cards/new'
+      path: '/custom-cards/new'
+      fullPath: '/custom-cards/new'
+      preLoaderRoute: typeof ModalCustomCardsNewRouteImport
+      parentRoute: typeof ModalRoute
+    }
+    '/_modal/welcome/': {
+      id: '/_modal/welcome/'
+      path: '/welcome'
+      fullPath: '/welcome/'
+      preLoaderRoute: typeof ModalWelcomeIndexRouteImport
+      parentRoute: typeof ModalRoute
+    }
+    '/_modal/welcome/languages': {
+      id: '/_modal/welcome/languages'
+      path: '/welcome/languages'
+      fullPath: '/welcome/languages'
+      preLoaderRoute: typeof ModalWelcomeLanguagesRouteImport
+      parentRoute: typeof ModalRoute
+    }
+    '/_modal/welcome/notice': {
+      id: '/_modal/welcome/notice'
+      path: '/welcome/notice'
+      fullPath: '/welcome/notice'
+      preLoaderRoute: typeof ModalWelcomeNoticeRouteImport
+      parentRoute: typeof ModalRoute
+    }
+    '/_modal/welcome/sets': {
+      id: '/_modal/welcome/sets'
+      path: '/welcome/sets'
+      fullPath: '/welcome/sets'
+      preLoaderRoute: typeof ModalWelcomeSetsRouteImport
+      parentRoute: typeof ModalRoute
+    }
+    '/_tabs/collection/': {
+      id: '/_tabs/collection/'
+      path: '/collection'
+      fullPath: '/collection/'
+      preLoaderRoute: typeof TabsCollectionIndexRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/collection/$ownedId': {
+      id: '/_tabs/collection/$ownedId'
+      path: '/collection/$ownedId'
+      fullPath: '/collection/$ownedId'
+      preLoaderRoute: typeof TabsCollectionOwnedIdRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/custom-cards/$customId': {
+      id: '/_tabs/custom-cards/$customId'
+      path: '/custom-cards/$customId'
+      fullPath: '/custom-cards/$customId'
+      preLoaderRoute: typeof TabsCustomCardsCustomIdRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/sets/': {
+      id: '/_tabs/sets/'
+      path: '/sets'
+      fullPath: '/sets/'
+      preLoaderRoute: typeof TabsSetsIndexRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/settings/': {
+      id: '/_tabs/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof TabsSettingsIndexRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/settings/about': {
+      id: '/_tabs/settings/about'
+      path: '/settings/about'
+      fullPath: '/settings/about'
+      preLoaderRoute: typeof TabsSettingsAboutRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/settings/catalog': {
+      id: '/_tabs/settings/catalog'
+      path: '/settings/catalog'
+      fullPath: '/settings/catalog'
+      preLoaderRoute: typeof TabsSettingsCatalogRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/settings/data': {
+      id: '/_tabs/settings/data'
+      path: '/settings/data'
+      fullPath: '/settings/data'
+      preLoaderRoute: typeof TabsSettingsDataRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/settings/licenses': {
+      id: '/_tabs/settings/licenses'
+      path: '/settings/licenses'
+      fullPath: '/settings/licenses'
+      preLoaderRoute: typeof TabsSettingsLicensesRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/settings/locations': {
+      id: '/_tabs/settings/locations'
+      path: '/settings/locations'
+      fullPath: '/settings/locations'
+      preLoaderRoute: typeof TabsSettingsLocationsRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/settings/privacy': {
+      id: '/_tabs/settings/privacy'
+      path: '/settings/privacy'
+      fullPath: '/settings/privacy'
+      preLoaderRoute: typeof TabsSettingsPrivacyRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/cards/$language/$cardId': {
+      id: '/_tabs/cards/$language/$cardId'
+      path: '/cards/$language/$cardId'
+      fullPath: '/cards/$language/$cardId'
+      preLoaderRoute: typeof TabsCardsLanguageCardIdRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/sets/$language/$setId': {
+      id: '/_tabs/sets/$language/$setId'
+      path: '/sets/$language/$setId'
+      fullPath: '/sets/$language/$setId'
+      preLoaderRoute: typeof TabsSetsLanguageSetIdRouteImport
+      parentRoute: typeof TabsRoute
     }
   }
 }
 
+interface ModalRouteChildren {
+  ModalAddRoute: typeof ModalAddRoute
+  ModalCustomCardsNewRoute: typeof ModalCustomCardsNewRoute
+  ModalWelcomeLanguagesRoute: typeof ModalWelcomeLanguagesRoute
+  ModalWelcomeNoticeRoute: typeof ModalWelcomeNoticeRoute
+  ModalWelcomeSetsRoute: typeof ModalWelcomeSetsRoute
+  ModalWelcomeIndexRoute: typeof ModalWelcomeIndexRoute
+}
+
+const ModalRouteChildren: ModalRouteChildren = {
+  ModalAddRoute: ModalAddRoute,
+  ModalCustomCardsNewRoute: ModalCustomCardsNewRoute,
+  ModalWelcomeLanguagesRoute: ModalWelcomeLanguagesRoute,
+  ModalWelcomeNoticeRoute: ModalWelcomeNoticeRoute,
+  ModalWelcomeSetsRoute: ModalWelcomeSetsRoute,
+  ModalWelcomeIndexRoute: ModalWelcomeIndexRoute,
+}
+
+const ModalRouteWithChildren = ModalRoute._addFileChildren(ModalRouteChildren)
+
+interface TabsRouteChildren {
+  TabsIndexRoute: typeof TabsIndexRoute
+  TabsCollectionOwnedIdRoute: typeof TabsCollectionOwnedIdRoute
+  TabsCustomCardsCustomIdRoute: typeof TabsCustomCardsCustomIdRoute
+  TabsSettingsAboutRoute: typeof TabsSettingsAboutRoute
+  TabsSettingsCatalogRoute: typeof TabsSettingsCatalogRoute
+  TabsSettingsDataRoute: typeof TabsSettingsDataRoute
+  TabsSettingsLicensesRoute: typeof TabsSettingsLicensesRoute
+  TabsSettingsLocationsRoute: typeof TabsSettingsLocationsRoute
+  TabsSettingsPrivacyRoute: typeof TabsSettingsPrivacyRoute
+  TabsCollectionIndexRoute: typeof TabsCollectionIndexRoute
+  TabsSetsIndexRoute: typeof TabsSetsIndexRoute
+  TabsSettingsIndexRoute: typeof TabsSettingsIndexRoute
+  TabsCardsLanguageCardIdRoute: typeof TabsCardsLanguageCardIdRoute
+  TabsSetsLanguageSetIdRoute: typeof TabsSetsLanguageSetIdRoute
+}
+
+const TabsRouteChildren: TabsRouteChildren = {
+  TabsIndexRoute: TabsIndexRoute,
+  TabsCollectionOwnedIdRoute: TabsCollectionOwnedIdRoute,
+  TabsCustomCardsCustomIdRoute: TabsCustomCardsCustomIdRoute,
+  TabsSettingsAboutRoute: TabsSettingsAboutRoute,
+  TabsSettingsCatalogRoute: TabsSettingsCatalogRoute,
+  TabsSettingsDataRoute: TabsSettingsDataRoute,
+  TabsSettingsLicensesRoute: TabsSettingsLicensesRoute,
+  TabsSettingsLocationsRoute: TabsSettingsLocationsRoute,
+  TabsSettingsPrivacyRoute: TabsSettingsPrivacyRoute,
+  TabsCollectionIndexRoute: TabsCollectionIndexRoute,
+  TabsSetsIndexRoute: TabsSetsIndexRoute,
+  TabsSettingsIndexRoute: TabsSettingsIndexRoute,
+  TabsCardsLanguageCardIdRoute: TabsCardsLanguageCardIdRoute,
+  TabsSetsLanguageSetIdRoute: TabsSetsLanguageSetIdRoute,
+}
+
+const TabsRouteWithChildren = TabsRoute._addFileChildren(TabsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  ModalRoute: ModalRouteWithChildren,
+  TabsRoute: TabsRouteWithChildren,
+  DevPackTestRoute: DevPackTestRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

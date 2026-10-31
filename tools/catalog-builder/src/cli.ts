@@ -1,228 +1,253 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import Database from 'better-sqlite3';
-import { compress } from '@mongodb-js/zstd';
+import { CATALOG_SCHEMA_VERSION } from '@flashydex/core/catalog-schema';
+import { mapSetIndexEntry, symbolUrl, type CatalogLanguage, type CatalogSetIndexEntry } from '@flashydex/core/catalog/tcgdex';
+import { buildCatalogDb, verifyCatalogDb } from './build-db';
+import { checkAssetUrls, crawl } from './crawl';
+import { Fetcher } from './http';
+import { mergeManifest, readExistingManifest, validateManifest, type CatalogManifest, type ManifestEntry } from './manifest';
+import { loadCatalogMigrations, schemaFingerprint } from './migrations';
+import { MAX_WINDOW_BYTES, ZSTD_LEVEL, compressFile, decompressFile, fileSize, sha256File } from './zstd';
 
-const API = 'https://api.tcgdex.net/v2';
-const SCHEMA_VERSION = 1;
-const BUILDER_VERSION = '0.0.0';
+const BUILDER_NAME = 'flashydex-catalog-builder';
+const BUILDER_PACKAGE_VERSION = '0.1.0';
+const DEFAULT_REPO = 'https://github.com/Flashyvevo/Flashydex';
 
-type Language = 'en' | 'ja';
-type Json = Record<string, unknown>;
-type SetBrief = Json & { id: string; name: string; cardCount?: { official?: number; total?: number } };
-type CardBrief = Json & { id: string; localId: string; name: string; image?: string };
-type CardDetail = Json & { id: string; localId: string; name: string; set: { id: string }; variants?: Record<string, boolean>; variants_detailed?: Json[] };
+interface Options {
+  language: CatalogLanguage;
+  sets?: string[];
+  outDir: string;
+  version: string;
+  resume: boolean;
+  cacheDir: string;
+  baseUrl: string;
+  concurrency: number;
+  maxCacheAgeHours: number;
+  checkAssets: boolean;
+}
 
-type Options = { language: Language; sets?: string[]; outDir: string };
-
-type Counts = { sets: number; cards: number; variants: number; prices: number; unpublishedSets: number };
+const log = (message: string) => process.stderr.write(`[catalog-builder] ${message}\n`);
 
 function usage(): never {
-  throw new Error('Usage: npm run catalog:build -- --lang en [--sets swsh3,sv1] [--out dist/]');
+  process.stderr.write(`Usage: npm run catalog:build -- --lang en|ja [--sets swsh3,sv1] [--out dist/] [--version YYYY.MM.DD.NNN] [--resume]
+       [--cache-dir .cache] [--base-url <release download url>] [--concurrency 8] [--max-cache-age-hours 24] [--no-asset-check]
+`);
+  process.exit(2);
 }
 
 function parseArgs(argv: string[]): Options {
-  let language: Language | undefined;
-  let sets: string[] | undefined;
-  let outDir = 'dist';
-  for (let index = 0; index < argv.length; index += 1) {
-    const value = argv[index];
-    if (value === '--lang') {
-      const candidate = argv[++index];
-      if (candidate !== 'en' && candidate !== 'ja') usage();
-      language = candidate;
-    } else if (value === '--sets') {
-      sets = argv[++index]?.split(',').map((entry) => entry.trim()).filter(Boolean);
-      if (!sets?.length) usage();
-    } else if (value === '--out') {
-      outDir = argv[++index] ?? usage();
-    } else usage();
-  }
-  if (!language) usage();
-  return { language, sets, outDir: resolve(outDir) };
-}
-
-function normalize(value: string): string { return value.normalize('NFKC').toLowerCase(); }
-function localIdSort(value: string): string { return value.replace(/\d+/g, (digits) => digits.padStart(12, '0')); }
-function now(): string { return new Date().toISOString(); }
-function sha256(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex'); }
-function rss(): number { return process.memoryUsage().rss; }
-function urlFor(language: Language, path: string): string { return `${API}/${language}/${path.split('/').map(encodeURIComponent).join('/')}`; }
-
-async function fetchJson<T>(url: string, cachePath?: string): Promise<T> {
-  if (cachePath) {
-    try { return JSON.parse(await readFile(cachePath, 'utf8')) as T; } catch { /* fetch below */ }
-  }
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    try {
-      const response = await fetch(url, { headers: { 'User-Agent': 'FlashyDex catalog builder/0.0.0' } });
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText} for ${url}`);
-      const data = await response.json() as T;
-      if (cachePath) {
-        await mkdir(dirname(cachePath), { recursive: true });
-        await writeFile(cachePath, JSON.stringify(data));
-      }
-      return data;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 500 * (2 ** attempt)));
+  const flags = new Map<string, string | true>();
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (!arg.startsWith('--')) usage();
+    const name = arg.slice(2);
+    if (['resume', 'no-asset-check', 'help'].includes(name)) flags.set(name, true);
+    else {
+      const value = argv[++i];
+      if (value === undefined) usage();
+      flags.set(name, value);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  if (flags.has('help')) usage();
+  const lang = flags.get('lang');
+  if (lang !== 'en' && lang !== 'ja') usage();
+  const today = new Date().toISOString().slice(0, 10).replaceAll('-', '.');
+  const version = typeof flags.get('version') === 'string' ? (flags.get('version') as string) : `${today}.001`;
+  if (!/^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{3}$/.test(version)) throw new Error(`--version must be YYYY.MM.DD.NNN, got ${version}`);
+  const sets = typeof flags.get('sets') === 'string' ? (flags.get('sets') as string).split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+  if (flags.has('sets') && !sets?.length) usage();
+  return {
+    language: lang,
+    sets,
+    outDir: resolve(typeof flags.get('out') === 'string' ? (flags.get('out') as string) : 'dist'),
+    version,
+    resume: flags.has('resume'),
+    cacheDir: resolve(typeof flags.get('cache-dir') === 'string' ? (flags.get('cache-dir') as string) : '.cache'),
+    baseUrl: (typeof flags.get('base-url') === 'string' ? (flags.get('base-url') as string) : `${DEFAULT_REPO}/releases/download/catalog-v${version}`).replace(/\/$/, ''),
+    concurrency: Number(flags.get('concurrency') ?? 8),
+    maxCacheAgeHours: Number(flags.get('max-cache-age-hours') ?? 24),
+    checkAssets: !flags.has('no-asset-check')
+  };
 }
 
-async function mapConcurrent<T, R>(items: readonly T[], limit: number, mapper: (item: T) => Promise<R>): Promise<R[]> {
-  const output = new Array<R>(items.length);
-  let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
-      const current = cursor++;
-      if (current >= items.length) return;
-      output[current] = await mapper(items[current]);
-    }
-  }));
-  return output;
+function gitSha(): string {
+  try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return 'nogit'; }
 }
 
-function canonicalVariant(row: Json): { key: string; variant: string; detail: string } {
-  const type = String(row.type ?? 'normal');
-  const subtype = String(row.subtype ?? '');
-  const foil = String(row.foil ?? '');
-  const size = String(row.size ?? 'standard');
-  const stamps = Array.isArray(row.stamp) ? row.stamp.map(String).sort() : [];
-  const normalizedStamps = stamps.join('|').toLowerCase().replace(/[ _]/g, '-');
-  let variant = type === 'reverse' ? 'reverse_holo' : type === 'holo' ? 'holo' : 'normal';
-  if (subtype === 'shadowless') variant = 'shadowless';
-  else if (normalizedStamps.includes('1st-edition') || normalizedStamps.includes('1st-edition')) variant = 'first_edition';
-  else if (stamps.length > 0 || foil || size !== 'standard') variant = 'promo_stamped';
-  const detail = [subtype, foil, size !== 'standard' ? size : '', stamps.join(',')].filter(Boolean).join(' · ');
-  return { key: sha256(Buffer.from(JSON.stringify([type, subtype, foil, size, stamps]))), variant, detail };
+function startRssSampler(): () => number {
+  let peak = process.memoryUsage().rss;
+  const timer = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss); }, 25);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+    const kernelMax = typeof process.resourceUsage === 'function' ? process.resourceUsage().maxRSS * 1024 : 0;
+    return Math.max(peak, process.memoryUsage().rss, kernelMax);
+  };
 }
 
-function cents(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return Math.round(value * 100);
+async function writeJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temp = `${path}.part`;
+  await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`);
+  await rename(temp, path);
 }
 
-function insertPrices(db: Database.Database, language: Language, card: CardDetail, variant: { variant: string; detail: string; key: string }, detail: Json, capturedAt: string): number {
-  const pricing = detail.pricing as Json | undefined;
-  if (!pricing) return 0;
-  let count = 0;
-  const cardmarket = pricing.cardmarket as Json | null | undefined;
-  if (cardmarket && typeof cardmarket === 'object') {
-    const values = [cents(cardmarket.low), cents(cardmarket.avg), null, cents(cardmarket['avg-holo']), cents(cardmarket.trend ?? cardmarket['trend-holo'])];
-    if (values.some((value) => value !== null)) {
-      db.prepare(`INSERT OR REPLACE INTO catalog_latest_prices VALUES (?, ?, 'cardmarket', ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?)`)
-        .run(language, card.id, variant.variant, variant.detail, variant.key, values[0], values[1], values[2], values[3], values[4], typeof cardmarket.updated === 'string' ? cardmarket.updated : null, capturedAt);
-      count += 1;
-    }
-  }
-  const tcgplayer = pricing.tcgplayer as Json | null | undefined;
-  if (tcgplayer && typeof tcgplayer === 'object') {
-    const preferred = variant.variant === 'reverse_holo' ? 'reverse-holofoil' : variant.variant === 'first_edition' ? '1st-edition-holofoil' : variant.variant === 'holo' || variant.detail.includes('pokeball') || variant.detail.includes('masterball') ? 'holofoil' : 'normal';
-    const quote = tcgplayer[preferred] as Json | undefined;
-    if (quote && typeof quote === 'object') {
-      const values = [cents(quote.lowPrice), cents(quote.midPrice), cents(quote.highPrice), cents(quote.marketPrice)];
-      if (values.some((value) => value !== null)) {
-        db.prepare(`INSERT OR REPLACE INTO catalog_latest_prices VALUES (?, ?, 'tcgplayer', ?, ?, ?, 'USD', ?, ?, ?, ?, NULL, ?, ?)`)
-          .run(language, card.id, variant.variant, variant.detail, `${variant.key}:${preferred}`, values[0], values[1], values[2], values[3], typeof tcgplayer.updated === 'string' ? tcgplayer.updated : null, capturedAt);
-        count += 1;
-      }
-    }
-  }
-  return count;
-}
+interface RunFile { runId: string; builtAt: string; version: string; language: CatalogLanguage }
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const started = performance.now();
-  const startRss = rss();
-  let peakRss = startRss;
-  const sample = () => { peakRss = Math.max(peakRss, rss()); };
-  const cacheRoot = resolve('.cache', options.language);
-  const list = await fetchJson<SetBrief[]>(urlFor(options.language, 'sets'), join(cacheRoot, '_sets.json'));
-  const selected = options.sets ? list.filter((set) => options.sets?.includes(set.id)) : list;
-  if (options.sets && selected.length !== options.sets.length) throw new Error('At least one requested set was not present in TCGdex set list.');
-  const setDetails = await mapConcurrent(selected, 8, (set) => fetchJson<Json>(urlFor(options.language, `sets/${set.id}`), join(cacheRoot, '_sets', `${set.id}.json`)));
-  const briefs = setDetails.flatMap((set) => (Array.isArray(set.cards) ? set.cards as CardBrief[] : []).map((card) => ({ card, set })));
-  const cards = await mapConcurrent(briefs, 8, ({ card }) => fetchJson<CardDetail>(urlFor(options.language, `cards/${card.id}`), join(cacheRoot, `${card.id}.json`)));
-  sample();
+  const stopRss = startRssSampler();
+  const { language, version, outDir } = options;
+  await mkdir(outDir, { recursive: true });
 
-  await mkdir(options.outDir, { recursive: true });
-  const version = new Date().toISOString().slice(0, 10).replaceAll('-', '.') + '.001';
-  const dbPath = join(options.outDir, `catalog-${options.language}-${version}.db`);
-  const db = new Database(dbPath);
-  const schema = await readFile(new URL('./schema.sql', import.meta.url), 'utf8');
-  db.exec(schema);
-  const builtAt = now();
-  const insertSet = db.prepare(`INSERT INTO catalog_sets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  let unpublishedSets = 0;
-  for (const set of setDetails) {
-    const cardsInSet = Array.isArray(set.cards) ? set.cards : [];
-    const status = cardsInSet.length === 0 ? 'unpublished' : 'published';
-    if (status === 'unpublished') unpublishedSets += 1;
-    const symbol = typeof set.symbol === 'string' ? set.symbol.replace('/univ/', `/${options.language}/`) + '.webp' : null;
-    insertSet.run(options.language, set.id, set.name, normalize(String(set.name)), (set.serie as Json | undefined)?.id ?? null, status, set.releaseDate ?? null, (set.cardCount as Json | undefined)?.official ?? null, (set.cardCount as Json | undefined)?.total ?? null, typeof set.logo === 'string' ? `${set.logo}.webp` : null, symbol, JSON.stringify(set), builtAt);
+  // 1. Freeze run id / UTC cutoff (a resumed run keeps the original ones).
+  const runPath = join(options.cacheDir, language, 'run.json');
+  let run: RunFile | null = null;
+  if (options.resume) {
+    try {
+      const existing = JSON.parse(await readFile(runPath, 'utf8')) as RunFile;
+      if (existing.version === version) run = existing;
+    } catch { /* no previous run */ }
   }
-  const insertCard = db.prepare(`INSERT INTO catalog_cards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const insertVariant = db.prepare(`INSERT INTO catalog_variants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  let variants = 0;
-  let prices = 0;
-  for (const card of cards) {
-    const flags = card.variants ?? {};
-    const variantRows = Array.isArray(card.variants_detailed) && card.variants_detailed.length ? card.variants_detailed : [{ type: 'normal', size: 'standard' }];
-    insertCard.run(options.language, card.id, card.set.id, card.localId, localIdSort(card.localId), card.name, normalize(card.name), card.rarity ?? null, card.category ?? null, card.illustrator ?? null, card.image ?? null, Number(Boolean(flags.normal)), Number(Boolean(flags.holo)), Number(Boolean(flags.reverse)), Number(Boolean(flags.firstEdition)), Number(Boolean(flags.wPromo)), JSON.stringify(Object.entries(flags).filter(([, value]) => value).map(([key]) => key)), JSON.stringify(card), builtAt, typeof card.updated === 'string' ? card.updated : null);
-    for (const row of variantRows) {
-      const variant = canonicalVariant(row);
-      insertVariant.run(options.language, card.id, variant.key, variant.variant, variant.detail, row.type ?? null, row.subtype ?? null, row.foil ?? null, row.size ?? null, JSON.stringify(row.stamp ?? []), row.variantId ?? null, JSON.stringify(row));
-      variants += 1;
-      prices += insertPrices(db, options.language, card, variant, row, builtAt);
-    }
-  }
-  const fingerprint = sha256(Buffer.from(schema));
-  db.prepare(`INSERT INTO schema_migrations VALUES (1, ?, ?)`).run(builtAt, fingerprint);
-  db.prepare(`INSERT INTO catalog_meta VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(options.language, version, SCHEMA_VERSION, builtAt, BUILDER_VERSION, setDetails.length, cards.length, builtAt, fingerprint);
-  db.pragma('foreign_keys = ON');
-  db.exec('VACUUM');
-  db.close();
-  sample();
+  run ??= { runId: randomUUID(), builtAt: new Date().toISOString(), version, language };
+  await writeJson(runPath, run);
+  const builderVersion = `${BUILDER_NAME}@${BUILDER_PACKAGE_VERSION}+${gitSha()}`;
+  log(`run ${run.runId} ${language} ${version} cutoff ${run.builtAt}${options.resume ? ' (resume)' : ''}`);
 
-  const bytes = await readFile(dbPath);
-  const crawlDurationMs = Math.round(performance.now() - started);
-  const compressStarted = performance.now();
-  const compressed = await compress(bytes, 19);
-  const compressDurationMs = Math.round(performance.now() - compressStarted);
+  // 2-3. Crawl (cached on disk, resumable).
+  const fetcher = new Fetcher({
+    concurrency: options.concurrency,
+    maxCacheAgeMs: options.resume ? Number.POSITIVE_INFINITY : options.maxCacheAgeHours * 3600 * 1000,
+    onLog: log
+  });
+  const crawlStarted = performance.now();
+  const crawled = await crawl(fetcher, { language, sets: options.sets, cacheRoot: options.cacheDir, log });
+  const symbolUrls = [...crawled.details.values()].map((d) => symbolUrl(d.symbol, language)).filter((u): u is string => u !== null);
+  const missingAssets = options.checkAssets ? await checkAssetUrls(fetcher, symbolUrls, crawled.warnings) : new Set<string>();
+  const crawlMs = Math.round(performance.now() - crawlStarted);
+  if (crawled.failures.length) {
+    for (const failure of crawled.failures.slice(0, 20)) log(`FAILED ${failure.unit}: ${failure.error}`);
+    throw new Error(`${crawled.failures.length} crawl unit(s) failed; refusing to publish an incomplete pack (rerun with --resume)`);
+  }
+  for (const warning of crawled.warnings) log(`warning: ${warning}`);
+
+  // Bootstrap set index (ALL sets of the language, shells included).
+  const index: CatalogSetIndexEntry[] = crawled.list.map((brief) => {
+    const entry = mapSetIndexEntry(crawled.details.get(brief.id)!, { language, syncedAt: run.builtAt });
+    if (entry.symbolUrl && missingAssets.has(entry.symbolUrl)) entry.symbolUrl = null;
+    return entry;
+  }).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const setIndexPath = join(outDir, `set-index-${language}.json`);
+  await writeJson(setIndexPath, index);
+
+  // 4-5. Build, verify, hash, compress, round-trip.
+  const migrations = loadCatalogMigrations();
+  const fingerprint = schemaFingerprint(migrations);
+  const dbPath = join(outDir, `catalog-${language}-${version}.db`);
   const zstPath = `${dbPath}.zst`;
-  await writeFile(zstPath, compressed);
-  const counts: Counts = { sets: setDetails.length, cards: cards.length, variants, prices, unpublishedSets };
-  const manifest = {
-    manifestVersion: 1,
+  const buildStarted = performance.now();
+  const built = buildCatalogDb(`${dbPath}.part`, {
+    language, version, builtAt: run.builtAt, cutoffAt: run.builtAt, builderVersion, details: crawled.details,
+    selectedSetIds: crawled.selectedSetIds, cards: crawled.cards, missingAssets, migrations
+  });
+  const verified = verifyCatalogDb(`${dbPath}.part`, { language, version, counts: built.counts, fingerprint });
+  await rm(dbPath, { force: true });
+  await rename(`${dbPath}.part`, dbPath);
+  const buildMs = Math.round(performance.now() - buildStarted);
+  for (const suffix of ['-wal', '-shm', '-journal']) {
+    if (await fileSize(dbPath + suffix).then(() => true, () => false)) throw new Error(`Unexpected sidecar ${dbPath}${suffix}`);
+  }
+  const raw = await sha256File(dbPath);
+  log(`built ${dbPath}: ${raw.bytes} bytes sha256 ${raw.sha256}`);
+
+  const compressStarted = performance.now();
+  await compressFile(dbPath, `${zstPath}.part`, ZSTD_LEVEL);
+  await rm(zstPath, { force: true });
+  await rename(`${zstPath}.part`, zstPath);
+  const compressMs = Math.round(performance.now() - compressStarted);
+  const compressed = await sha256File(zstPath);
+
+  const verifyStarted = performance.now();
+  const roundTripPath = `${dbPath}.roundtrip.part`;
+  const roundTrip = await decompressFile(zstPath, roundTripPath);
+  if (roundTrip.windowBytes > MAX_WINDOW_BYTES) throw new Error(`zstd window ${roundTrip.windowBytes} exceeds the device decoder limit ${MAX_WINDOW_BYTES}`);
+  if (roundTrip.bytes !== raw.bytes || roundTrip.sha256 !== raw.sha256) throw new Error('Round-trip decompression does not reproduce the database bytes');
+  verifyCatalogDb(roundTripPath, { language, version, counts: built.counts, fingerprint });
+  await rm(roundTripPath, { force: true });
+  const verifyMs = Math.round(performance.now() - verifyStarted);
+  log(`compressed ${compressed.bytes} bytes (ratio ${(raw.bytes / compressed.bytes).toFixed(2)}), round-trip OK`);
+
+  // 6. Manifest + metrics.
+  const entry: ManifestEntry = {
     currentVersion: null,
     targetVersion: version,
-    builtAt,
-    languages: {
-      [options.language]: {
-        currentVersion: null,
-        targetVersion: version,
-        fullPackUrl: `https://github.com/Flashyvevo/flashydex/releases/download/catalog-v${version}/catalog-${options.language}-${version}.db.zst`,
-        compressedBytes: compressed.byteLength,
-        uncompressedBytes: bytes.byteLength,
-        sha256: sha256(bytes),
-        compressedSha256: sha256(compressed),
-        schemaVersion: SCHEMA_VERSION,
-        builtAt,
-        counts
-      }
+    fullPackUrl: `${options.baseUrl}/catalog-${language}-${version}.db.zst`,
+    setIndexUrl: `${options.baseUrl}/set-index-${language}.json`,
+    compressedBytes: compressed.bytes,
+    uncompressedBytes: raw.bytes,
+    sha256: raw.sha256,
+    compressedSha256: compressed.sha256,
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    builtAt: run.builtAt,
+    counts: built.counts
+  };
+  const manifestPath = join(outDir, 'catalog-manifest.json');
+  const manifest: CatalogManifest = mergeManifest(await readExistingManifest(manifestPath), language, entry);
+  const problems = validateManifest(manifest);
+  if (problems.length) throw new Error(`Manifest validation failed:\n- ${problems.join('\n- ')}`);
+  await writeJson(manifestPath, manifest);
+
+  const peakRssBytes = stopRss();
+  const sqliteVersion = new Database(':memory:').prepare('select sqlite_version() as v').pluck().get() as string;
+  const metrics = {
+    metricsVersion: 1,
+    runId: run.runId,
+    status: 'ok',
+    language,
+    version,
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    sha256: raw.sha256,
+    compressedSha256: compressed.sha256,
+    compressedBytes: compressed.bytes,
+    uncompressedBytes: raw.bytes,
+    compressionRatio: Number((raw.bytes / compressed.bytes).toFixed(4)),
+    savingsPercent: Number((100 * (1 - compressed.bytes / raw.bytes)).toFixed(2)),
+    crawlMs,
+    buildMs,
+    compressMs,
+    decompressMs: roundTrip.ms,
+    verifyMs,
+    downloadMs: null,
+    peakMemoryBytes: peakRssBytes,
+    installedFootprintBytes: raw.bytes,
+    counts: built.counts,
+    crawl: { ...fetcher.stats, finalConcurrency: fetcher.currentConcurrency, selectedSets: crawled.selectedSetIds.length, totalSetsInLanguage: crawled.list.length },
+    sets: options.sets ?? null,
+    warnings: [...crawled.warnings, ...built.warnings],
+    unavailable: {
+      downloadMs: 'NOT_PUBLISHED',
+      peakMemoryBytes_attribution: 'builder process peak RSS (zstd-napi and better-sqlite3 run in-process; no decode subprocess)'
+    },
+    toolchain: {
+      builder: builderVersion, node: process.version, platform: `${process.platform}-${process.arch}`, sqlite: sqliteVersion,
+      zstdLibrary: 'zstd-napi@0.0.13', zstdLevel: ZSTD_LEVEL, zstdWindowBytes: roundTrip.windowBytes, schemaFingerprint: fingerprint, pageSize: verified.pageSize, journalMode: verified.journalMode
     }
   };
-  const metrics = { language: options.language, version, compressedBytes: compressed.byteLength, uncompressedBytes: bytes.byteLength, compressionRatio: Number((compressed.byteLength / bytes.byteLength).toFixed(4)), crawlDurationMs, compressDurationMs, peakRssBytes: Math.max(peakRss, rss()), installedFootprintBytes: bytes.byteLength, counts };
-  await writeFile(join(options.outDir, 'catalog-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-  await writeFile(join(options.outDir, `catalog-${options.language}-${version}.metrics.json`), `${JSON.stringify(metrics, null, 2)}\n`);
-  await rename(dbPath, join(options.outDir, `catalog-${options.language}.db`));
-  console.log(JSON.stringify({ db: join(options.outDir, `catalog-${options.language}.db`), zst: zstPath, metrics }, null, 2));
+  const metricsPath = join(outDir, `catalog-${language}-${version}.metrics.json`);
+  await writeJson(metricsPath, metrics);
+
+  process.stdout.write(`${JSON.stringify({
+    ok: true, language, version,
+    files: { db: dbPath, pack: zstPath, manifest: manifestPath, metrics: metricsPath, setIndex: setIndexPath },
+    manifestEntry: entry, metrics
+  }, null, 2)}\n`);
 }
 
-void main().catch((error: unknown) => { console.error(error); process.exitCode = 1; });
+main().catch((error: unknown) => {
+  process.stderr.write(`[catalog-builder] FAILED: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+  process.exitCode = 1;
+});

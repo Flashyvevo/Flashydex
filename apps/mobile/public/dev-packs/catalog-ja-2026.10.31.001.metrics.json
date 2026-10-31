@@ -1,0 +1,60 @@
+{
+  "metricsVersion": 1,
+  "runId": "f0682ae0-9b31-4bc2-88d5-1582f7ffc640",
+  "status": "ok",
+  "language": "ja",
+  "version": "2026.10.31.001",
+  "schemaVersion": 1,
+  "sha256": "3fa9fc09a7bce618e94620e927f80f8caebfea7c03cdd779cabe0da9cbbd7339",
+  "compressedSha256": "7757a29bc6f3e29fc0aa0fe3fc1d8ffc03fe50ed25014271a6b96233e55abaf8",
+  "compressedBytes": 120318,
+  "uncompressedBytes": 1658880,
+  "compressionRatio": 13.7875,
+  "savingsPercent": 92.75,
+  "crawlMs": 1593,
+  "buildMs": 194,
+  "compressMs": 580,
+  "decompressMs": 10,
+  "verifyMs": 21,
+  "downloadMs": null,
+  "peakMemoryBytes": 353898496,
+  "installedFootprintBytes": 1658880,
+  "counts": {
+    "sets": 1,
+    "cards": 210,
+    "variants": 516,
+    "prices": 516,
+    "unpublishedSets": 0
+  },
+  "crawl": {
+    "requests": 399,
+    "cacheHits": 0,
+    "retries": 0,
+    "http429": 0,
+    "http404": 0,
+    "bytes": 1325667,
+    "finalConcurrency": 8,
+    "selectedSets": 1,
+    "totalSetsInLanguage": 184
+  },
+  "sets": [
+    "SV2a"
+  ],
+  "warnings": [],
+  "unavailable": {
+    "downloadMs": "NOT_PUBLISHED",
+    "peakMemoryBytes_attribution": "builder process peak RSS (zstd-napi and better-sqlite3 run in-process; no decode subprocess)"
+  },
+  "toolchain": {
+    "builder": "flashydex-catalog-builder@0.1.0+c3fba3f",
+    "node": "v24.19.0",
+    "platform": "win32-x64",
+    "sqlite": "3.53.4",
+    "zstdLibrary": "zstd-napi@0.0.13",
+    "zstdLevel": 19,
+    "zstdWindowBytes": 8388608,
+    "schemaFingerprint": "9157e30e11dd2035a243ecc82d255e99795773aebeb3160520a697981dac942b",
+    "pageSize": 4096,
+    "journalMode": "delete"
+  }
+}

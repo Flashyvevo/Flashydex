@@ -486,3 +486,34 @@ BackupService.create(input, onProgress?, signal?) and previewRestore(input,onPro
 All screen routes remain ARCHITECTURE/UX URLs. Accepted R1 grouped grid (no per-copy fallback), R2 localId, R3 value/count sorts, R5 collecting/completion, R6 known Pocket, R7 no-price. Set-code/abbreviation R4 and recognition manifest R8/R9 remain follow-up, no new Phase1 scanner work. Aliases priced=none|some / pocket=1 map to typed priced/hideTcgPocket; no stale app HTTP calls. Form condition default unknown, not assumed NM. Undo bulk add calls remove per returned ID and must show any partial failure (no atomic multi-delete promised).
 
 No camera/scan create, price scraping, arbitrary SQL/catalog wipe/update, public upload or remote backup implementation in Phase1. Grade/manual price mutate only with copy. Read/write tests must assert durable state, not HTTP status.
+
+## Director notes — binding corrections (2026-10-30, Claude Opus director)
+
+Added by the Phase 1 implementation director. Rationale and the full decision log: `.agent/DIRECTOR-DECISIONS.md`. Nothing above is changed; these notes fill gaps.
+
+1. **Contract check.** DATA-MODEL already keys the catalog by `(language, id=tcgdex_id)`, uses the BRIEF variant enum + `variantDetail`, `status published|unpublished` for empty shells, nullable `imageUrl`, and Dashboard carries `pricedCopies`/`totalCopies` ("N of M copies priced"). No correction needed.
+2. **S2 owned-price refresh** — no new Selection scope. The data layer computes `{scope:'followed', sets: distinct (language,setId) of owned catalog copies}` and calls `SyncService.start({mode:'prices_only', ...})`.
+3. **S3 single-set fill-in** = `SyncService.start({mode:'refresh', selection:{scope:'followed', sets:[setKey]}})`. No per-card refresh method in Phase 1.
+4. **S5** — `AppSettings` is not extended. Theme is dark-only in Phase 1; `haptics`/`searchLanguage` are UI-local preferences (`localStorage` keys `flashydex.pref.*`), not personal data, not exported.
+5. **S6** — no `BackupService.lastBackup()`. UI records `flashydex.lastBackup` `{at,totalCards}` locally after a successful create.
+6. **S7 (binding)** — catalog DB files live in a backup-excluded directory (iOS `Library/Caches` or `isExcludedFromBackup=true`; Android no-backup/cache dir); `flashydex-user.db` lives in normal backed-up app storage.
+7. **S8** — "Remove catalog" = `CatalogInstallService.uninstall`. No `eraseAllUserData` in Phase 1.
+8. **S9 (binding)** — bootstrap set index, see CATALOG-PACKS Director notes. Exposed through the hook `useSetIndex(language)` (order: installed catalog → manifest `setIndexUrl` → bundled `apps/mobile/src/data/bootstrap/set-index-<lang>.json`).
+9. **Quick-add condition default is `null`** (unspecified). Variant preselection by catalog priority stays.
+10. **Install phase → UX stage mapping** and failure-reason mapping: `.agent/DIRECTOR-DECISIONS.md` D12. Byte-range resume is not offered in Phase 1.
+
+### UI↔data hook surface (`apps/mobile/src/data`, binding for Stage B)
+
+`apps/mobile/src/data/index.ts` exports everything below. Hooks are TanStack Query v5 wrappers over the core services above; inputs/outputs are exactly the core zod input/DTO types (exported from `@flashydex/schemas` or `@flashydex/core`). Mutations invalidate the affected query keys (collection, dashboard, sets, card detail) after durable commit. No hook ever returns placeholder data.
+
+- Bootstrap: `<AppServicesProvider>` (opens user DB, runs user migrations, opens installed catalogs, recovers interrupted install jobs, constructs services), `useAppStartup(): {status:'opening'|'ready'|'error'; error: DomainError|null}`, `useServices()` (escape hatch; prefer hooks).
+- Settings: `useSettings()`, `useUpdateSettings()`.
+- Dashboard: `useDashboard(input?: {currency?})`.
+- Collection: `useCollection(query)` (useInfiniteQuery, `groupBy` defaults to `'card'`, returns pages of `CollectionCardGroup` or `OwnedDto`), `useOwnedCopy(id)`, `useAddCopies()` (wraps `add`/`bulkAdd`; returns created copies), `useUpdateCopy()`, `useRemoveCopy()`.
+- Acquisitions / locations / groups / custom: `useAcquisitions(q)`, `useUpdateAcquisition()`, `useLocations(q)`, `useCreateLocation()`, `useUpdateLocation()`, `useRemoveLocation()`, `useGroups(q)`, `useCreateGroup()`, `useUpdateGroup()`, `useRemoveGroup()`, `useCustomCard(id)`, `useCreateCustomCard()`, `useUpdateCustomCard()`, `useRemoveCustomCard()`.
+- Catalog: `useCardSearch(query)` (debounce is the UI's job; hook cancels stale queries via the query key), `useCatalogCard({language,cardId,copiesOffset?})`, `useSets(query)`, `useSet({language,setId})`, `useSetCards(query)` (infinite), `useSetIndex(language)`.
+- Catalog install (app-scoped, survives navigation): `useCatalogManifest()` (checkManifest), `useCatalogStatus(language)`, `useCatalogInstall(): {start(language), cancel(), progress: CatalogProgress|null, active: boolean}`, `useUninstallCatalog()`, `useRollbackCatalog()`.
+- Sync (secondary path): `useActiveSync()` (latest run, polls while active), `useStartSync()`, `useCancelSync()`, `useResumeSync()`, `useUpdateOwnedPrices()` (note 2), `useRefreshSet()` (note 3).
+- Transfer/backup: `useExportFile()`, `useShareExport()`, `usePickFile()`, `useImportDryRun()`, `useImport(id)`, `useImportCommit()`, `useBackupCapabilities()`, `useCreateBackup()`, `usePreviewRestore()`, `useRestore()`.
+- Errors: hooks surface `DomainError` (`code`, `message`, `details`) unchanged so the UI maps codes to UX.md §12 copy.
+11. **(Stage C, C11) Collector-number display field.** `CardSummary` and `OwnedDto` gain `setOfficialCount: SafeInt.nullable()` — the set's upstream `officialCount` read from the installed catalog at read time (never stored in the owned snapshot; `null` when the catalog/set is absent or the count is unknown). UI shows `localId/officialCount` when `setOfficialCount > 0`, else `localId` alone.

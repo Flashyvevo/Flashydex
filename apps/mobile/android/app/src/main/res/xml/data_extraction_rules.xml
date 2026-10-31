@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (API 31+) Auto Backup / device transfer rules.
+     Catalog packs are replaceable, re-downloadable data (docs/COMPRESSION-STORAGE.md, Director ruling S7):
+     keep them out of cloud backup and device-to-device transfer. The user DB stays backed up. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="flashydex/catalogs" />
+        <exclude domain="file" path="flashydex/packs" />
+        <exclude domain="cache" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="flashydex/catalogs" />
+        <exclude domain="file" path="flashydex/packs" />
+        <exclude domain="cache" />
+    </device-transfer>
+</data-extraction-rules>
