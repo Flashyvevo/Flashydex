@@ -159,9 +159,12 @@ jobs:
           test -n "$NETLIFY_AUTH_TOKEN"
           test -n "$NETLIFY_SITE_ID"
           npx --yes netlify-cli@17.37.2 deploy --dir .netlify-packs-site --prod --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
-      - name: Verify deployed stable manifest is reachable
+      - name: Verify deployed manifest and packs from the outside (bytes, CORS, MIME, caching)
         shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           curl --fail --show-error --silent --location "$PACKS_ORIGIN/catalog-manifest.json" -o deployed-catalog-manifest.json
           cmp tools/catalog-builder/dist/catalog-manifest.json deployed-catalog-manifest.json
+          bash scripts/netlify/verify-pack-site.sh "$PACKS_ORIGIN" tools/catalog-builder/dist/catalog-manifest.json

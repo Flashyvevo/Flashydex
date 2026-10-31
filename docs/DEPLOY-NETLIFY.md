@@ -16,7 +16,13 @@ Set this exact public build variable on the FlashyDex application site for both 
 FLASHYDEX_MANIFEST_URL=https://flashydex-catalog-packs.netlify.app/catalog-manifest.json
 ```
 
-Vite exposes `FLASHYDEX_` values to the client, so this is public configuration: never put credentials in it. If the packs site is given a different Netlify subdomain, update both the workflow `PACKS_ORIGIN` and this environment value before its first pack deployment.
+Also set the trusted pack origin explicitly (core rejects any manifest/pack URL outside this allowlist; the compiled default is the same origin, but the explicit value makes the deployed build independent of the source default):
+
+```text
+FLASHYDEX_TRUSTED_ORIGINS=https://flashydex-catalog-packs.netlify.app
+```
+
+Vite exposes `FLASHYDEX_` values to the client, so this is public configuration: never put credentials in it. If the packs site is given a different Netlify subdomain, update the workflow `PACKS_ORIGIN`, both environment values, and `DEFAULT_TRUSTED_ORIGINS` in `apps/mobile/src/platform/catalog-config.ts` before its first pack deployment. Environment variables are read at build time: after changing them, trigger a new deploy (Deploys → Trigger deploy → Clear cache and deploy site).
 
 The catalog workflow also needs these GitHub Actions repository secrets:
 
@@ -46,7 +52,25 @@ Cross-origin isolation headers remain deliberately commented out. The chosen `op
 2. Copy the site ID from Site configuration → General → Site details.
 3. Create a Netlify personal access token that can deploy to that site.
 4. In GitHub repository Settings → Secrets and variables → Actions, add `NETLIFY_AUTH_TOKEN` and `NETLIFY_PACKS_SITE_ID`.
-5. Run Actions → Catalog packs → Run workflow. It builds EN/JA packs, verifies and archives them in an immutable GitHub Release, deploys the packs site, then fetches the stable manifest URL and byte-compares it to the generated manifest.
+5. Run Actions → Catalog packs → Run workflow. It builds EN/JA packs, verifies and archives them in an immutable GitHub Release, deploys the packs site, then fetches the stable manifest URL, byte-compares it to the generated manifest, and runs `scripts/netlify/verify-pack-site.sh` (CORS, `application/zstd`, no `Content-Encoding`, immutable caching, Content-Length and SHA-256 of every pack named in the manifest).
+
+### One-off local deploy (no CI secrets yet)
+
+The same staged directory can be deployed from a workstation. Build and verify first, then stage and deploy with a browser-authenticated Netlify CLI (`netlify login` stores the token locally; never paste tokens into chat or commits):
+
+```bash
+cd C:/Projects/flashydex/tools/catalog-builder
+npm run catalog:build -- --lang en --version YYYY.MM.DD.NNN --out dist-prod --cache-dir .cache --base-url https://flashydex-catalog-packs.netlify.app --concurrency 8
+npm run catalog:build -- --lang ja --version YYYY.MM.DD.NNN --out dist-prod --cache-dir .cache --base-url https://flashydex-catalog-packs.netlify.app --concurrency 8
+node ../../scripts/validate-catalog-manifest.mjs dist-prod/catalog-manifest.json
+npx tsx src/verify-pack.ts dist-prod/catalog-manifest.json
+cd ../..
+bash scripts/netlify/prepare-pack-site.sh tools/catalog-builder/dist-prod C:/Projects/flashydex-catalog-packs
+npx --yes netlify-cli@17.37.2 deploy --dir C:/Projects/flashydex-catalog-packs --prod --site <packs site ID>
+bash scripts/netlify/verify-pack-site.sh https://flashydex-catalog-packs.netlify.app tools/catalog-builder/dist-prod/catalog-manifest.json
+```
+
+`C:/Projects/flashydex-catalog-packs` is a throwaway generated deploy directory (also usable for Netlify's drag-and-drop deploy), not a repository. Netlify treats `_headers` inside the deployed directory as the site's header rules.
 
 A new packs deploy replaces the packs site's current deploy as a coherent manifest-plus-assets release. A client always fetches the fixed manifest URL first, so it receives URLs for the packs present in that deploy. To roll a pack release back, use the previous deploy in the packs site's Deploys page and publish it; the matching previous manifest and pack files return together.
 

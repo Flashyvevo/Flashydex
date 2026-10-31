@@ -41,3 +41,5 @@ Thumbs.db
 .agent/metrics/packs/
 tools/catalog-builder/.cache/
 apps/mobile/public/dev-packs/full/
+
+tools/catalog-builder/dist-prod/

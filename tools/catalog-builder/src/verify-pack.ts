@@ -10,6 +10,11 @@ import { failedChecks } from './verify-checks';
 interface Entry {
   sha256: string;
   uncompressedBytes: number;
+  compressedBytes: number;
+  compressedSha256?: string;
+  schemaVersion: number;
+  targetVersion: string;
+  fullPackUrl: string;
   counts: { sets: number; cards: number; variants: number; prices: number; unpublishedSets: number };
 }
 interface Manifest { languages: Record<'en' | 'ja', Entry> }
@@ -24,6 +29,11 @@ for (const language of ['en', 'ja'] as const) {
   const pack = join(dirname(manifestPath), `catalog-${language}-${version}.db.zst`);
   const raw = `${pack}.verify.db`;
   await mkdir(dirname(raw), { recursive: true });
+  // Compressed artifact: byte length and SHA-256 must match the manifest before anything is trusted.
+  const compressedHash = createHash('sha256');
+  let compressedBytes = 0;
+  for await (const chunk of createReadStream(pack)) { compressedHash.update(chunk); compressedBytes += chunk.length; }
+  const compressedSha256 = compressedHash.digest('hex');
   await pipeline(createReadStream(pack), new DecompressStream(), createWriteStream(raw));
   const hash = createHash('sha256');
   let bytes = 0;
@@ -34,6 +44,9 @@ for (const language of ['en', 'ja'] as const) {
   const cards = db.prepare('SELECT id, name, local_id AS localId, rarity, image_url AS imageUrl, has_normal AS normal, has_reverse AS reverse, has_holo AS holo, has_first_edition AS firstEdition, w_promo AS wPromo FROM catalog_cards ORDER BY id LIMIT 5').all();
   const tail = db.prepare('SELECT id, name, local_id AS localId, rarity, image_url AS imageUrl, has_normal AS normal, has_reverse AS reverse, has_holo AS holo, has_first_edition AS firstEdition, w_promo AS wPromo FROM catalog_cards ORDER BY id DESC LIMIT 5').all();
   const integrity = db.pragma('integrity_check', { simple: true });
+  const foreignKeyViolations = (db.pragma('foreign_key_check') as unknown[]).length;
+  const meta = db.prepare('SELECT language, version, schema_version AS schemaVersion FROM catalog_meta').all() as Array<{ language: string; version: string; schemaVersion: number }>;
+  const metaMatches = meta.length === 1 && meta[0]!.language === language && meta[0]!.version === entry.targetVersion && meta[0]!.schemaVersion === entry.schemaVersion;
   db.close();
   const checks = await Promise.all([...cards, ...tail].map(async (card: any) => {
     const api = await fetch(`https://api.tcgdex.net/v2/${language}/cards/${encodeURIComponent(card.id)}`);
@@ -42,7 +55,7 @@ for (const language of ['en', 'ja'] as const) {
   }));
   const rawSha256 = hash.digest('hex');
   const { cardsWithoutImage: _cardsWithoutImage, ...manifestCounts } = counts;
-  out.push({ language, sha256: rawSha256, shaMatches: rawSha256 === entry.sha256, bytes, bytesMatch: bytes === entry.uncompressedBytes, integrity, counts, countsMatch: JSON.stringify(manifestCounts) === JSON.stringify(entry.counts), liveChecks: checks });
+  out.push({ language, sha256: rawSha256, shaMatches: rawSha256 === entry.sha256, bytes, bytesMatch: bytes === entry.uncompressedBytes, compressedSha256, compressedShaMatches: entry.compressedSha256 === undefined || compressedSha256 === entry.compressedSha256, compressedBytes, compressedBytesMatch: compressedBytes === entry.compressedBytes, fullPackUrlMatches: entry.fullPackUrl.endsWith(`/catalog-${language}-${version}.db.zst`), integrity, foreignKeyViolations, meta, metaMatches, counts, countsMatch: JSON.stringify(manifestCounts) === JSON.stringify(entry.counts), liveChecks: checks });
   await rm(raw, { force: true });
 }
 process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);

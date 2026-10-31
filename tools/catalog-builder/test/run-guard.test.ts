@@ -69,12 +69,18 @@ describe('immutable artifacts', () => {
 });
 
 describe('verify-pack check gate', () => {
-  const good = { language: 'en', shaMatches: true, bytesMatch: true, countsMatch: true, integrity: 'ok', liveChecks: [{ id: 'a', ok: true }] };
+  const good = {
+    language: 'en', shaMatches: true, bytesMatch: true, countsMatch: true, compressedShaMatches: true, compressedBytesMatch: true,
+    fullPackUrlMatches: true, metaMatches: true, integrity: 'ok', foreignKeyViolations: 0, liveChecks: [{ id: 'a', ok: true }]
+  };
   it('passes when every check is true', () => expect(failedChecks([good])).toEqual([]));
   it('reports every false field', () => {
     expect(failedChecks([{ ...good, shaMatches: false }])).toEqual(['en.shaMatches']);
     expect(failedChecks([{ ...good, bytesMatch: false, countsMatch: false }])).toEqual(['en.bytesMatch', 'en.countsMatch']);
     expect(failedChecks([{ ...good, integrity: 'bad' }])).toEqual(['en.integrity']);
+    expect(failedChecks([{ ...good, compressedShaMatches: false, compressedBytesMatch: false }])).toEqual(['en.compressedShaMatches', 'en.compressedBytesMatch']);
+    expect(failedChecks([{ ...good, fullPackUrlMatches: false, metaMatches: false }])).toEqual(['en.fullPackUrlMatches', 'en.metaMatches']);
+    expect(failedChecks([{ ...good, foreignKeyViolations: 2 }])).toEqual(['en.foreignKeyViolations']);
     expect(failedChecks([{ ...good, liveChecks: [{ id: 'x', ok: false }] }])).toEqual(['en.liveChecks[x]']);
     expect(failedChecks([{ ...good, liveChecks: [] }])).toEqual(['en.liveChecks(empty)']);
   });
