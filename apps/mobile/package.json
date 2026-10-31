@@ -13,7 +13,8 @@
     "e2e": "playwright test",
     "cap:sync": "cap sync",
     "cap:ios": "cap open ios",
-    "cap:android": "cap open android"
+    "cap:android": "cap open android",
+    "dev:https": "cross-env FLASHYDEX_DEV_HTTPS=1 vite --host 0.0.0.0 --port 3200"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "7.0.3",
@@ -55,7 +56,9 @@
     "@types/node": "24.10.1",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "5.1.1",
+    "cross-env": "^10.1.0",
     "eslint": "9.39.5",
     "eslint-plugin-react-hooks": "7.0.1",
     "eslint-plugin-react-refresh": "0.4.24",

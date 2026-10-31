@@ -25,7 +25,8 @@
     "cap:ios": "npm run cap:ios --workspace=@flashydex/mobile",
     "cap:android": "npm run cap:android --workspace=@flashydex/mobile",
     "catalog:build": "npm run catalog:build --workspace=@flashydex/catalog-builder --",
-    "catalog:dev-pack": "node scripts/prepare-dev-pack.mjs"
+    "catalog:dev-pack": "node scripts/prepare-dev-pack.mjs",
+    "dev:https": "npm run dev:https --workspace=@flashydex/mobile"
   },
   "devDependencies": {
     "patch-package": "^8.0.1"

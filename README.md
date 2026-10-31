@@ -62,3 +62,14 @@ npm run cap:android
 ```
 
 Mac/Xcode and on-device verification checklist: `scripts/ios-notes.md`.
+
+## Phone testing over LAN (HTTPS)
+
+Plain `http://<pc-ip>:3200` is a non-secure origin: the browser hides Web Locks, so the app opens **read-only** there (the tab lock cannot be taken). Use the HTTPS dev server instead:
+
+```bash
+npm run dev:https          # self-signed cert, https://<pc-ip>:3200
+bash scripts/lan-url.sh    # prints your LAN IPs
+```
+
+On the phone open `https://<pc-ip>:3200`, accept the certificate warning once ("Show details → visit this website" in Safari; "Advanced → proceed" in Chrome). After that the origin is secure: writes, PWA install and (later) the camera work. Keep the tab in the foreground while it loads.

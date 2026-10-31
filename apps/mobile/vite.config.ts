@@ -4,10 +4,16 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vite';
+import basicSsl from '@vitejs/plugin-basic-ssl';
+
+// `npm run dev:https` → self-signed TLS so a phone on the LAN gets a secure context
+// (Web Locks, PWA install, camera). Accept the certificate once in Safari/Chrome.
+const useHttps = process.env.FLASHYDEX_DEV_HTTPS === '1';
 import { excludeDevPacks } from './scripts/exclude-dev-packs';
 
 export default defineConfig({
   plugins: [
+    ...(useHttps ? [basicSsl({ name: 'flashydex-dev', domains: ['localhost'] })] : []),
     TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
     react(),
     tailwindcss(),
