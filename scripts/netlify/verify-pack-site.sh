@@ -13,7 +13,10 @@ manifest="${2:?local catalog-manifest.json is required}"
 app_origin="${3:-https://flashydex.netlify.app}"
 origin="${origin%/}"
 
-work="$(mktemp -d)"
+# Native-path temp dir: on git-bash/MSYS a bare /tmp/... from mktemp is not openable by native curl/node.
+work="${LOCALAPPDATA:+$LOCALAPPDATA/Temp/}verify-pack-site.$$"
+[ -n "${LOCALAPPDATA:-}" ] || work="$(mktemp -d)"
+mkdir -p "$work"
 trap 'rm -rf "$work"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -40,7 +43,12 @@ node -e '
 ' "$manifest" | while IFS=$'\t' read -r lang kind url bytes sha; do
   echo "== $lang $kind $url"
   case "$url" in "$origin"/*) ;; *) fail "$url is not on $origin" ;; esac
-  curl --fail --show-error --silent -H "Origin: $app_origin" -H "Accept-Encoding: gzip, br, zstd" -D "$work/a.h" "$url" -o "$work/a.bin"
+  if [ "$kind" = pack ]; then
+    # Packs are fetched with an explicit Accept-Encoding so a misconfigured host that re-encodes them is caught.
+    curl --fail --show-error --silent -H "Origin: $app_origin" -H "Accept-Encoding: gzip, br, zstd" -D "$work/a.h" "$url" -o "$work/a.bin"
+  else
+    curl --fail --show-error --silent --compressed -H "Origin: $app_origin" -D "$work/a.h" "$url" -o "$work/a.bin"
+  fi
   [ "$(header "$work/a.h" access-control-allow-origin)" = "*" ] || fail "$url ACAO is not *"
   case "$(header "$work/a.h" cache-control)" in *immutable*) ;; *) fail "$url Cache-Control is not immutable" ;; esac
   if [ "$kind" = pack ]; then
@@ -50,7 +58,7 @@ node -e '
     [ "$actual" = "$bytes" ] || fail "$url downloaded $actual bytes, manifest says $bytes"
     cl="$(header "$work/a.h" content-length)"
     [ -z "$cl" ] || [ "$cl" = "$bytes" ] || fail "$url Content-Length $cl != $bytes"
-    actual_sha="$(sha256sum "$work/a.bin" | cut -d' ' -f1)"
+    actual_sha="$(sha256sum "$work/a.bin" | cut -d' ' -f1 | tr -d '\\')"
     [ -z "$sha" ] || [ "$actual_sha" = "$sha" ] || fail "$url sha256 $actual_sha != manifest compressedSha256 $sha"
     echo "pack OK: $actual bytes, sha256 $actual_sha, $(header "$work/a.h" content-type), $(header "$work/a.h" cache-control)"
   else
