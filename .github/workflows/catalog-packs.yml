@@ -12,6 +12,11 @@ concurrency:
   group: catalog-packs
   cancel-in-progress: false
 
+env:
+  # Owner-created dedicated public pack site. This is also the production
+  # FLASHYDEX_MANIFEST_URL origin documented in docs/DEPLOY-NETLIFY.md.
+  PACKS_ORIGIN: https://flashydex-catalog-packs.netlify.app
+
 jobs:
   build-publish:
     runs-on: ubuntu-latest
@@ -51,24 +56,22 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-          TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
-          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           for L in en ja; do
-            npm run catalog:build -- --lang "$L" --version "$VERSION" --out tools/catalog-builder/dist --cache-dir tools/catalog-builder/.cache --base-url "$BASE_URL" --concurrency 8
+            npm run catalog:build -- --lang "$L" --version "$VERSION" --out tools/catalog-builder/dist --cache-dir tools/catalog-builder/.cache --base-url "$PACKS_ORIGIN" --concurrency 8
           done
           test -f tools/catalog-builder/dist/catalog-en-"${VERSION}".db.zst
           test -f tools/catalog-builder/dist/catalog-ja-"${VERSION}".db.zst
           test -f tools/catalog-builder/dist/catalog-en-"${VERSION}".metrics.json
           test -f tools/catalog-builder/dist/catalog-ja-"${VERSION}".metrics.json
-      - name: Validate catalog manifest schema and release URLs
+      - name: Validate catalog manifest schema and Netlify pack URLs
         shell: bash
         run: |
           set -euo pipefail
           node scripts/validate-catalog-manifest.mjs tools/catalog-builder/dist/catalog-manifest.json
-          if grep -E '"(fullPackUrl|setIndexUrl)"' tools/catalog-builder/dist/catalog-manifest.json | grep -v 'https://'; then
-            echo "non-https pack URL in manifest" >&2
+          if grep -E '"(fullPackUrl|setIndexUrl)"' tools/catalog-builder/dist/catalog-manifest.json | grep -Fv "$PACKS_ORIGIN/"; then
+            echo "manifest contains a non-Netlify pack URL" >&2
             exit 1
           fi
       - name: Verify built packs (hashes, counts, integrity, live TCGdex spot checks)
@@ -100,7 +103,7 @@ jobs:
           cd tools/catalog-builder/dist
           gh release create "$TAG" --draft --target "$GITHUB_SHA" \
             --title "Catalog packs ${VERSION}" \
-            --notes "Full EN and JA catalog packs ${VERSION}; built by workflow run ${GITHUB_RUN_ID}."
+            --notes "Full EN and JA catalog packs ${VERSION}; built by workflow run ${GITHUB_RUN_ID}. Hosted for clients on Netlify; GitHub is the immutable release archive."
           gh release upload "$TAG" \
             catalog-en-"${VERSION}".db.zst \
             catalog-ja-"${VERSION}".db.zst \
@@ -140,3 +143,25 @@ jobs:
             console.log("release read-back verified");
           ' "$READBACK" "$VERSION"
           gh release edit "$TAG" --draft=false
+      - name: Stage the dedicated Netlify packs site
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/netlify/prepare-pack-site.sh tools/catalog-builder/dist .netlify-packs-site
+          test -f .netlify-packs-site/catalog-manifest.json
+      - name: Deploy current packs and stable manifest to Netlify
+        shell: bash
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_PACKS_SITE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$NETLIFY_AUTH_TOKEN"
+          test -n "$NETLIFY_SITE_ID"
+          npx --yes netlify-cli@17.37.2 deploy --dir .netlify-packs-site --prod --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
+      - name: Verify deployed stable manifest is reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --location "$PACKS_ORIGIN/catalog-manifest.json" -o deployed-catalog-manifest.json
+          cmp tools/catalog-builder/dist/catalog-manifest.json deployed-catalog-manifest.json

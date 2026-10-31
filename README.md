@@ -41,8 +41,17 @@ npm run catalog:dev-pack
 Full language: `npm run catalog:build -- --lang ja` (add `--resume` to continue an interrupted crawl). Other flags: `--sets a,b`,
 `--out`, `--version YYYY.MM.DD.NNN`, `--cache-dir`, `--base-url`, `--concurrency 1..8`, `--max-cache-age-hours`, `--no-asset-check`.
 The crawl cache and generated packs under `.agent/metrics/packs/` are gitignored.
-Published packs come from the "Catalog packs" GitHub workflow (manual or weekly), which creates a `catalog-vYYYY.MM.DD` release.
-Details: `docs/CATALOG-PACKS.md`, `docs/COMPRESSION-STORAGE.md`.
+Published packs come from the "Catalog packs" GitHub workflow (manual or weekly). GitHub Releases are the immutable archive; the browser/PWA downloads from the dedicated Netlify packs site so CORS and stable manifest hosting are under FlashyDex control. Deployment, secrets, manifest URL, PWA install, preview, and rollback steps: [`docs/DEPLOY-NETLIFY.md`](docs/DEPLOY-NETLIFY.md).
+
+## Web / PWA deployment
+
+The primary distribution path is an installable HTTPS PWA on Netlify. The production build variable is:
+
+```text
+FLASHYDEX_MANIFEST_URL=https://flashydex-catalog-packs.netlify.app/catalog-manifest.json
+```
+
+This is public client configuration, not a secret. See [`docs/DEPLOY-NETLIFY.md`](docs/DEPLOY-NETLIFY.md) for the one-time site setup and `netlify.toml` for build settings.
 
 ## Tests and checks
 

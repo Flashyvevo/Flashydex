@@ -1,0 +1,21 @@
+# FlashyDex web/PWA deployment. Netlify reads this file from the repository root.
+# FLASHYDEX_MANIFEST_URL is a public Vite build variable. Set it in Netlify's
+# environment variables for Production and Deploy Previews; see docs/DEPLOY-NETLIFY.md.
+
+[build]
+  base = "."
+  command = "npm ci && npm run build --workspace=@flashydex/mobile"
+  publish = "apps/mobile/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[context.production]
+  command = "npm ci && npm run build --workspace=@flashydex/mobile"
+  publish = "apps/mobile/dist"
+
+[context.deploy-preview]
+  command = "npm ci && npm run build --workspace=@flashydex/mobile"
+  publish = "apps/mobile/dist"
+
+# SPA fallback is in apps/mobile/public/_redirects so Vite copies it to dist/.
