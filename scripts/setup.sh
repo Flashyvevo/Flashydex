@@ -4,7 +4,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-npm ci
+if [[ -f package-lock.json ]]; then
+  npm ci
+else
+  npm install
+fi
 
 venv_dir="services/recognition/.venv"
 if command -v py >/dev/null 2>&1; then

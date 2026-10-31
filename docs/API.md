@@ -1,4 +1,4 @@
-# Phase 1 HTTP API
+# FlashyDex — packages/core repository and service interfaces
 
 Normative names and wire shapes. Base `/api`; Next Node route handlers only. API DTO keys camelCase. All responses JSON unless marked download/204. All JSON objects below are strict (`.strict()`); reject unknown keys, not silently discard them. Shared definitions belong in packages/schemas/src/{primitives,entities,api,transfer}.ts. Import/export definitions are in IMPORT-EXPORT.md and are part of this contract.
 

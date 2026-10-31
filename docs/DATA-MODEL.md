@@ -1,6 +1,6 @@
-# Phase 1 data model
+# FlashyDex — Phase 1 data model (Stage A2)
 
-Normative paste target: apps/web/src/db/schema.ts. API DTOs use camelCase keys matching the properties below; database names are snake_case. All tables, columns, nullability, defaults, indexes, keys and database checks are defined in the block. Additional cross-row/service validation is listed after it. No quantity column: every owned_cards row is one physical copy.
+Normative schema target: packages/core/src/db/schema.ts. Repository DTOs use camelCase; SQL names snake_case. Schema, service invariants and mapping below form one contract with [API](API.md), [ARCHITECTURE](ARCHITECTURE.md), [IMPORT-EXPORT](IMPORT-EXPORT.md) and [PHASE1-ACCEPTANCE](PHASE1-ACCEPTANCE.md). No quantity column: each owned_cards row is one physical copy. Identity keys remain (language,id) where id is exact tcgdex_id, not a new renamed provider column. PostgreSQL is a possible server-side mirror later, never the device DB replacement.
 
 ## Portable types and conventions
 
@@ -55,7 +55,9 @@ export const catalogSets = sqliteTable('catalog_sets', {
   id: text('id').notNull(),
   name: text('name').notNull(),
   nameSearch: text('name_search').notNull(),
+  // Provider serie.id (e.g. tcgp), not the translated serie.name.
   series: text('series'),
+  status: text('status', { enum: ['published', 'unpublished'] }).notNull().default('unpublished'),
   releaseDate: text('release_date'),
   officialCount: integer('official_count'),
   totalCount: integer('total_count'),
@@ -66,6 +68,8 @@ export const catalogSets = sqliteTable('catalog_sets', {
 }, t => [
   primaryKey({ columns: [t.language, t.id] }),
   index('cs_language_name').on(t.language, t.nameSearch, t.id),
+  index('cs_visibility').on(t.status, t.series, t.language, t.id),
+  check('cs_status', sql`${t.status} IN ('published','unpublished')`),
   check('cs_language', sql`${t.language} IN ('en','ja')`),
   check('cs_counts', sql`(${t.officialCount} IS NULL OR ${t.officialCount} >= 0)
     AND (${t.totalCount} IS NULL OR ${t.totalCount} >= 0)`),
@@ -82,7 +86,13 @@ export const catalogCards = sqliteTable('catalog_cards', {
   rarity: text('rarity'),
   category: text('category'),
   illustrator: text('illustrator'),
-  imageUrl: text('image_url'),
+  imageUrl: text('image_url'), // Nullable CDN base: never derive a missing image URL.
+  // Raw availability flags: false is not an owner prohibition. wPromo has no UI.
+  hasNormal: integer('has_normal', { mode: 'boolean' }).notNull().default(false),
+  hasHolo: integer('has_holo', { mode: 'boolean' }).notNull().default(false),
+  hasReverse: integer('has_reverse', { mode: 'boolean' }).notNull().default(false),
+  hasFirstEdition: integer('has_first_edition', { mode: 'boolean' }).notNull().default(false),
+  wPromo: integer('w_promo', { mode: 'boolean' }).notNull().default(false),
   // Canonical Variant[] strings and raw provider flags/details remain separate.
   availableVariantsJson: text('available_variants_json').notNull().default('[]'),
   rawJson: text('raw_json').notNull().default('{}'),
@@ -100,6 +110,8 @@ export const catalogCards = sqliteTable('catalog_cards', {
   index('cc_set_sort').on(t.language, t.setId, t.localIdSort, t.id),
   index('cc_rarity').on(t.language, t.rarity),
   check('cc_language', sql`${t.language} IN ('en','ja')`),
+  check('cc_flags', sql`${t.hasNormal} IN (0,1) AND ${t.hasHolo} IN (0,1)
+    AND ${t.hasReverse} IN (0,1) AND ${t.hasFirstEdition} IN (0,1) AND ${t.wPromo} IN (0,1)`),
 ]);
 
 export const customCards = sqliteTable('custom_cards', {
@@ -278,8 +290,9 @@ export const priceSnapshots = sqliteTable('price_snapshots', {
 export const syncState = sqliteTable('sync_state', {
   id: id(),
   status: text('status', { enum: SYNC_STATUSES }).notNull().default('queued'),
-  mode: text('mode', { enum: ['incremental', 'refresh'] }).notNull().default('incremental'),
+  mode: text('mode', { enum: ['incremental', 'refresh', 'prices_only'] }).notNull().default('incremental'),
   languagesJson: text('languages_json').notNull(),
+  selectionJson: text('selection_json').notNull(), // Frozen all/followed selection; see checkpoint v2.
   lockKey: text('lock_key'),
   workerToken: text('worker_token'),
   attempt: integer('attempt').notNull().default(1),
@@ -300,7 +313,7 @@ export const syncState = sqliteTable('sync_state', {
   uniqueIndex('sync_lock').on(t.lockKey),
   index('sync_created').on(t.createdAt, t.id),
   check('sync_status', sql`${t.status} IN ('queued','running','cancel_requested','completed','failed','cancelled','interrupted')`),
-  check('sync_mode', sql`${t.mode} IN ('incremental','refresh')`),
+  check('sync_mode', sql`${t.mode} IN ('incremental','refresh','prices_only')`),
   check('sync_lock_value', sql`${t.lockKey} IS NULL OR ${t.lockKey} = 'catalog'`),
   check('sync_counts', sql`${t.attempt} >= 1 AND ${t.setsDone} >= 0 AND ${t.cardsDone} >= 0 AND ${t.cardsFailed} >= 0
     AND (${t.setsTotal} IS NULL OR ${t.setsTotal} >= ${t.setsDone})
@@ -329,6 +342,33 @@ export const appState = sqliteTable('app_state', {
   check('app_singleton', sql`${t.id} = 'collection'`),
   check('app_revision', sql`${t.collectionRevision} >= 0`),
 ]);
+
+export const appSettings = sqliteTable('app_settings', {
+  id: id(), // singleton 'app', not an account
+  languagesJson: text('languages_json').notNull().default('["en","ja"]'),
+  setsFollowedJson: text('sets_followed_json').notNull().default('[]'),
+  syncAllSets: integer('sync_all_sets', { mode: 'boolean' }).notNull().default(false),
+  hideTcgPocket: integer('hide_tcg_pocket', { mode: 'boolean' }).notNull().default(true),
+  defaultCurrency: text('default_currency', { enum: ['USD', 'EUR'] }).notNull().default('USD'),
+  disclaimerAcknowledged: integer('disclaimer_acknowledged', { mode: 'boolean' }).notNull().default(false),
+  disclaimerAcknowledgedAt: text('disclaimer_acknowledged_at'),
+  onboardingCompletedAt: text('onboarding_completed_at'),
+  updatedAt: updated(),
+}, t => [
+  check('settings_singleton', sql`${t.id} = 'app'`),
+  check('settings_currency', sql`${t.defaultCurrency} IN ('USD','EUR')`),
+  check('settings_booleans', sql`${t.syncAllSets} IN (0,1) AND ${t.hideTcgPocket} IN (0,1)
+    AND ${t.disclaimerAcknowledged} IN (0,1)`),
+  check('settings_disclaimer', sql`(${t.disclaimerAcknowledged} = 0 AND ${t.disclaimerAcknowledgedAt} IS NULL)
+    OR (${t.disclaimerAcknowledged} = 1 AND ${t.disclaimerAcknowledgedAt} IS NOT NULL)`),
+]);
+
+// Core migrator's bootstrap table: not owned by the plugin version-upgrade system.
+export const schemaMigrations = sqliteTable('schema_migrations', {
+  version: text('version').notNull().primaryKey(), // e.g. 0001_initial
+  checksum: text('checksum').notNull(), // lowercase SHA-256 of bundled SQL bytes
+  appliedAt: text('applied_at').notNull(),
+});
 ```
 
 Schema block is complete for Phase 1. `text({enum})` supplies TS inference only; SQL CHECKs above enforce enum integrity. Nullable money-pair checks use explicit non-null branches to avoid SQLite/PG three-valued CHECK semantics accepting a partial pair. API/service validation repeats these constraints for useful errors.
@@ -345,7 +385,9 @@ Schema block is complete for Phase 1. `text({enum})` supplies TS inference only;
 - CollectionGroupMember: many-to-many physical copy memberships; aggregate group quantities by counting member copy rows, never quantities stored on groups.
 - ScanSession: table exists but Phase 1 UI/API cannot create scans. Import/export can preserve rows from supported v1 files. endedAt >= startedAt if present. Deleting a future session cannot delete owned copies.
 - PriceSnapshot: immutable source observation, not current price overwritten on sync. FK targets identity ledger so history survives cache wipe. Observation key = SHA-256 of UTF-8 JSON array `[language,catalogCardId,source,variant,variantDetail,providerVariantKey,currency,sourceUpdatedAt,lowCents,midCents,highCents,marketCents,trendCents]` in exactly that order, no whitespace. No capturedAt in key; repeated identical observations with absent provider date do not grow history. On semantic key conflict retain existing UUID/capturedAt. Validate provider date to UTC, use NULL when invalid/missing; capturedAt always local observation time. Latest within a source/variant uses sourceUpdatedAt DESC NULLS LAST, then capturedAt DESC,id DESC (SQL expression equivalent for SQLite; never let an older provider quote outrank a newer one just because import captured later).
-- SyncState: operational record, no relationship to owned-card lifetime. Checkpoint version=1 shape: `{version:1,languages:Language[],sets:Array<{language:Language,setId:string,status:'pending'|'done'|'failed',cards:Array<{id:string,status:'pending'|'done'|'failed',errorCode:string|null}>,manifestFetched:boolean}>,warnings:Array<{code:string,language:Language,cardId:string|null,message:string}>}`. Retry failed sets/cards explicitly. Completed cards include fresh skips. SetsDone only when manifest fetched and all cards done. lastErrorJson is an API-shaped error without secrets; publicly expose lastError, never workerToken/checkpointJson. Keep warnings bounded to 100 in status; full worker log may contain codes but no personal data. Validate lock/status/token consistency at service boundary.
+- SyncState: operational, no owned lifetime dependency. See checkpoint v2 below. workerToken is an app executor fencing token, never exposed to UI; no Node worker. lastErrorJson contains safe DomainError data, not paths/private data. Selection is frozen at start; resume may not change it. Sync never writes AppSettings or personal rows.
+- AppSettings: singleton id='app'; languagesJson is a distinct nonempty Language[]; setsFollowedJson is a distinct Array<{language:Language,setId:string}>, each language selected. syncAllSets=false with no followed sets is valid preference but cannot start a sync; user chooses sets or all. hideTcgPocket applies to known series='tcgp' in catalog/collection lists, never deletes data or excludes dashboard/export/backup totals implicitly. Unknown catalog series (e.g. offline imported snapshots after cache wipe) is retained and shown, not guessed from card IDs. defaultCurrency USD/EUR changes display/no-price filter, never converts money. Acknowledgement/time pair and onboarding time validated; setting disclaimer acknowledgement supplies current timestamp, clearing clears it. Settings edits persist but do NOT increment collectionRevision or invalidate personal import plans. JSON v1 deliberately does not include app settings; full raw DB does. Privacy/disclaimer remains readable when not acknowledged.
+- SchemaMigration: ordered migration name, SHA-256 SQL checksum and UTC appliedAt. Operational, excluded from portable JSON; migration/restore rules below are binding.
 - DataOperationReceipt: operation id equals import preview UUID, planHash exact lowercase SHA-256; resultJson validated ImportCommitResult. Insert with personal changes in SAME transaction. Retry same UUID/hash returns result, different hash ->409 CONFLICT. Required to close crash window between DB commit and staged-file status update. expiresAt=committedAt+24h; cleanup is operational, not a collection revision. Not exported in JSON/CSV; full SQLite backup naturally includes it.
 - AppState: every successful personal-data mutation (including a delete that changes FK dependants, price override, acquisition/group/storage/custom/grade edits, import) increments revision ONCE per transaction. No-op idempotent membership/import retries may leave it unchanged. Sync, backup and GET never increment it. This revision prevents committing an outdated import/restore preview; it is not per-copy optimistic concurrency or a multi-user model.
 
@@ -355,9 +397,22 @@ There are no unspecified defaults: absent nullable columns are SQL NULL, nonnull
 
 Canonical enum is exactly `normal | holo | reverse_holo | first_edition | promo_stamped | shadowless | other`. TCGdex booleans: normal->normal; holo->holo; reverse->reverse_holo; firstEdition->first_edition; wPromo->promo_stamped. True advertises availability; false/missing doesn't prohibit an explicit manual choice. Unknown detailed variant types become other with raw type/size as nonempty variantDetail. Preserve raw provider variantId in raw JSON, not as a canonical enum.
 
-TCGplayer keys, matched case-insensitively against this closed mapping: normal -> normal; holofoil -> holo; reverse-holofoil -> reverse_holo; 1st-edition-normal -> first_edition with variantDetail='normal'; 1st-edition-holofoil -> first_edition with variantDetail='holo'. Unknown keys -> other + exact key detail, available for display but NEVER automatically applied to a standard copy. Preserve original key in providerVariantKey. Do not assert that first-edition holo and first-edition normal have the same price. Exact key mappings should be fixtures; new keys are not guessed via substring matches.
+TCGdex row-to-variant-to-price mapping is binding (research is evidence, not a competing enum). Resolve detailed rows by type/subtype/normalized stamp/foil/size, NOT array order or variantId (not unique). Normalize stamp case/hyphen/space for matching but preserve raw JSON. Canonical Variant stays unchanged; variantDetail represents qualified prints, including reverse_holo + 'pokeball'/'masterball', holo + 'gold'/'unlimited', first_edition + 'holo'/'normal'/'shadowless:holo', shadowless + 'holo'/'normal', promo_stamped + canonical stamp list, other + explicit size/subtype/type qualifier. Ordinary normal/holo/reverse_holo use ''. Qualifiers are exact normalized strings from matched print attributes, <=120 chars; UI may select confirmed custom qualifier. Never use arbitrary substring matching to pick a price.
 
-TCGplayer fields lowPrice/midPrice/highPrice/marketPrice map to low/mid/high/market cents; trend=NULL. directLowPrice is not a replacement for market. Cardmarket avg->mid, low->low, trend->trend; high/market=NULL. Base fields apply to normal if normal supported; `*-holo` ambiguity is resolved only when exactly one of holo or reverse_holo is supported for the card, then map that suffix to that variant. If both foil variants exist, or neither is asserted, store that quote as other with detail='cardmarket_holo_unspecified' and providerVariantKey='holo'; never apply it to either owned variant. For the verified Furret sample (normal and reverse only), the holo suffix maps to reverse_holo. Duplicate detailed pricing blocks plus top-level fallback must produce one observation per semantic source/key; detailed blocks are not independent marketplaces. If a detailed variant has explicit unambiguous source mapping, prefer it over top-level fallback for that exact quote. Preserve unknown provider keys in rawJson; never fabricate cents.
+| Detailed print / canonical choice | TCGplayer key ON THAT matched product | Cardmarket value |
+|---|---|---|
+| normal, unqualified | normal | avg |
+| holo, unqualified | holofoil | avg if avg-holo null, otherwise avg-holo |
+| reverse_holo, plain | reverse-holofoil | avg-holo, or avg only when that distinct print has no avg-holo |
+| first_edition + normal | 1st-edition (also legacy 1st-edition-normal if actually present) | matched row avg / foil rule |
+| first_edition + holo | 1st-edition-holofoil | matched row foil rule |
+| normal/holo + unlimited | unlimited / unlimited-holofoil respectively | matched unlimited row only |
+| shadowless or first_edition + shadowless qualifier | exact key only if explicitly present on matched row; otherwise null | matched product; shared product means shared price, never invent split |
+| reverse_holo + pokeball/masterball | holofoil on ball-specific product, NOT reverse-holofoil on base product | avg-holo when present, otherwise numeric avg on exact print |
+| holo + gold | holofoil on matched product | numeric avg when avg-holo null |
+| promo_stamped / other (jumbo, no-rarity, copyright etc.) | only explicitly identified key/product, otherwise null | numeric exact-print foil/avg rule, otherwise null |
+
+TCGplayer fields low/mid/high/market map from lowPrice/midPrice/highPrice/marketPrice; trend null. Effective USD value = market then mid then null, NEVER low/directLow fallback. Cardmarket low maps low, avg maps mid, trend maps trend from selected suffix; effective EUR = mid (avg) then null, not trend/low invented fallback. Preserve these auxiliary fields for display/history. When both avg and avg-holo exist choose nonfoil/foil correctly; if only avg exists on an exact holo print, it is that print's value. Ambiguous shared foil quote when both holo/reverse exist is stored other + 'cardmarket_holo_unspecified', never auto-applied. No fallback to another detailed row, currency, grade or root product. Root pricing fallback allowed ONLY if one detailed row and exact print mapping is unambiguous. Repeated blocks dedupe by semantic source/variant/qualifier/product key; providerVariantKey is deterministic `<productId>:<priceKey>:<normalizedPrintQualifier>` for qualified/product-specific quotes (legacy simple keys remain readable). This prevents ball/staff/subtype prices colliding under bare holofoil. observationKey includes it. Unknown keys retained raw and may be other/display-only. Invalid/negative/absent price ->null+warning; genuine zero stays0. Decimal half-up cents parsing, no binary multiply/truncate. No scraping.
 
 Manual override is per physical copy (`manualPriceCents`, `manualPriceCurrency`); setting both NULL clears. User-provided value applies equally to raw/graded and remains unchanged by sync. It is valuation data, not a fake marketplace PriceSnapshot.
 
@@ -370,6 +425,39 @@ Manual override is per physical copy (`manualPriceCents`, `manualPriceCurrency`)
 - Set totalCount = upstream total; catalogCount = count of cached metadata rows whose IDs are in the active fetched manifest (0 if no manifest yet). completionPercent = round(100 * ownedUnique/catalogCount, 2) only when catalogCount>0 AND catalogComplete=true; otherwise NULL. catalogComplete means the fetched set manifest is stored and all its brief rows are present (`catalogCount === totalCount` is NOT sufficient alone when counts differ upstream). Derive manifest enumeration from set rawJson.cards, with ids unique; all enumerated ids present and no unfinished manifest for the set. Extra cached cards removed upstream are excluded from that active manifest for completion/missing results, not deleted. While incomplete expose loaded counts and 'Catalog incomplete', not a false 100%. officialCount is informational; secret/extra cards in manifest are included in denominator.
 - Per-currency valuation: for each USD/EUR return estimatedValueCents (NULL if no valued copies), valuedCopies, unvaluedCopies, totalPaidCents (NULL if no known paid copies in that currency), knownCostCopies, comparableCopies, comparableCostCents, comparableValueCents, gainLossCents. Estimated value includes only known values in that currency; manual override's currency replaces ALL automatic valuations for that copy. Raw automatic quotes can produce separate USD and EUR estimates, never added together. Paid amounts appear only in their recorded currency. Gain/loss is SUM(value-cost) on intersection of valued copies and known cost in SAME currency; NULL if intersection empty. Label this comparable subset, not full portfolio profit. All-null portfolio isn't $0; empty collection is total 0 and currency amounts NULL with zero coverage.
 - Recent copies = createdAt DESC,id DESC, limit 10; stable imported historical createdAt is preserved. Purchase history = acquisition event and per-copy paid fields for owned copies of identity, newest purchasedOn first with unknown dates last.
+
+## SQLite driver compatibility and migrations
+
+Every schema field uses TEXT or INTEGER, nulls, bounded JS numbers, 0/1 booleans and explicit constraints. These are supported by @capacitor-community/sqlite native and its sql.js/jeep-sqlite web adapter through sqlite-proxy; no better-sqlite3-only repository feature, native enum/Date/BigInt/Buffer binding, JSON1/FTS/rowid query dependency, synchronous API or extension loading. JSON is serialized TEXT and validated in zod, not queried through SQLite JSON functions. Use IN chunks <=400 bound values and avoid a platform's variable-count ceiling. Foreign keys enabled/verified on each opened connection. Schema CHECK booleans are SQL integers; proxy/Drizzle boolean codec maps to TS boolean.
+
+Verified upstream v7.0.3 [API](https://raw.githubusercontent.com/capacitor-community/sqlite/v7.0.3/docs/API.md) / [definitions](https://raw.githubusercontent.com/capacitor-community/sqlite/v7.0.3/src/definitions.ts): run and query accept a SINGLE statement, execute accepts raw batch, executeSet takes separate statements/values; explicit transaction API exists and DML defaults to transaction=true. Pass false to inner operations within core UnitOfWork. The API documents Changes.values for RETURNING but returnMode options carry Electron-specific wording; this is NOT enough to assert native/web parity. Phase1 forbids reliance on RETURNING: generated UUID + SELECT in same transaction instead. No blanket claim that SQLite itself lacks RETURNING. get/all/values proxy result row shape and iOS ios_columns normalization must be parity-tested; use explicit ordered projections, including null/0/aliases/aggregates. Node tests construct SAME sqlite-proxy with better-sqlite3 behind driver, never change ORM dialect.
+
+Migrations live as ordered .sql files in packages/core/migrations/ (e.g. 0001_initial.sql); drizzle-kit generation is development-only. Core bundles file bytes/checksums, bootstraps schema_migrations, orders filenames lexicographically, verifies applied prefix/checksums and refuses newer/unknown/drifted schemas. Apply one file's statements and tracking row within ONE explicit transaction; no nested auto-transactions. Split only generator statement-breakpoint markers using a tested loader (a statement can contain quoted semicolons); reject multiple unseparated statements instead of handing them to run/query. DDL execute call can contain one DDL statement; bound seed/receipt writes use run. Failure rolls back that file and stops startup without deleting user DB. On web await saveToStore after commit before advancing reported migration state. Re-running is no-op. Do not simultaneously use plugin addUpgradeStatement/user_version as a second migration authority; plugin connection version fixed by adapter, core schema_migrations is authoritative. Full raw restore requires exact ordered version/checksum fingerprint, not evaluating arbitrary uploaded migration SQL.
+
+## Durable SyncState checkpoint v2
+
+```ts
+type SetKey = { language: 'en'|'ja'; setId: string };
+type Selection = { scope:'all'; sets:[] } | { scope:'followed'; sets:SetKey[] };
+type SyncCheckpointV2 = {
+  version:2; languages:('en'|'ja')[]; selection:Selection;
+  lists:Array<{language:'en'|'ja'; etag:string|null; checkedAt:string;
+    setIds:string[]; fetched:boolean}>;
+  sets:Array<SetKey & {
+    status:'pending'|'running'|'done'|'failed'|'unpublished';
+    manifestFetched:boolean; detailEtag:string|null; checkedAt:string|null;
+    advertisedTotal:number|null; cardsTotal:number|null; cardsDone:number; cardsFailed:number;
+    cards:Array<{id:string; status:'pending'|'done'|'failed'; errorCode:string|null}>;
+  }>;
+  warnings:Array<{code:string;language:'en'|'ja';cardId:string|null;message:string}>;
+};
+```
+
+Validate checkpoint/selection JSON, unique language+set keys/card IDs, no NaN/unbounded warning strings. lists cache successful ETags/listing IDs from previous persisted runs for conditional discovery. Missing local list on304 ->unconditional request. Set-list304 says NOTHING about card fields/prices. Manifest stored before cards; successful brief checkpoint and completion atomically persisted with metadata. New run rechecks unpublished shells even304; unpublished has fetched empty manifest, cardsTotal0, excluded from completion denominator. setsDone counts done+unpublished processed units; cardsDone counts successfully processed/fresh-skipped, NOT failed. cardsTotal null until all selected manifests known; sums reconcile to durable per-set counters. Completed only if all chosen units done/unpublished and no failed/pending work. For prices_only use frozen local selected card manifest, no listing/catalog writes. Resume v2 retains selection/done entries; unsupported checkpoint version marks run interrupted/unresumable and offers new run, never guesses. UI gets per-set summarized counters/lastError and max100 warnings, not full card arrays/tokens. Resume/cancel/fencing/foreground limits are in ARCHITECTURE/API.
+
+## Grouped collection view
+
+Binding owner ruling: groupBy:'card' yields one displayed row per (language,cardId,variant), cardId being exact catalog id or custom UUID under explicit source discriminator. variantDetail subgroups stay represented by copy IDs and details; they do not create extra top-level tiles. Return qty of matching copies, all matching copyIds, totalQty/copyIds for whole group, representative newest matching copy, and conditions/grade/variantDetails summaries. Duplicate eligibility is computed on precise (identity,variant,variantDetail) groups across WHOLE collection before filters. Dashboard unique/duplicates retain that precise equation. groupBy:'copy' is paginated individual rows. Apply filters to copies first, group/paginate matching rows; do not page copies then collapse. API defines large copyId list safety.
 
 ## Safety invariants
 

@@ -1,217 +1,166 @@
-# Phase 1 architecture
+# FlashyDex — local-first architecture (Stage A2)
 
-Status: Stage A implementation contract. BRIEF overrides SPEC. This document, DATA-MODEL.md, API.md, IMPORT-EXPORT.md and PHASE1-ACCEPTANCE.md form one contract; DECISIONS.md explains choices. Names in these documents are normative. SQL uses snake_case; JSON/TypeScript use camelCase unless explicitly CSV.
+Normative Phase 1 target, not an implementation claim. BRIEF OWNER UPDATE / Fixed stack override SPEC's obsolete server direction. Read [DATA-MODEL](DATA-MODEL.md), [repository interfaces](API.md), [transfer](IMPORT-EXPORT.md), [acceptance](PHASE1-ACCEPTANCE.md), [ADRs](DECISIONS.md) and [UX](UX.md) together. SQL snake_case; TS/JSON camelCase. ADR-022 onward supersede incompatible historical ADRs.
 
-## Scope and process boundary
+## Boundary and stack
 
-One trusted owner, one collection, one long-lived Next.js Node process, one SQLite file on local disk. No authentication, public hosting, camera, recognition algorithms, user system or currency conversion in Phase 1. Bind to the LAN, not the public Internet. Phase 1 includes the explicitly assigned variants, grading, purchase tracking, pricing, set completion and data tools despite their later phase numbers in SPEC. See acceptance criteria, not the full scanner MVP, for this phase's exit gate.
+No account, backend API, home server or required connection. Catalog AND personal data live in device SQLite. Unsynced installs launch offline with real empty states, settings/custom entry/import; synced catalog search, collection mutations, cached-price calculations and transfer work offline. Art is best-effort. No camera/recognition implementation in Phase 1. Existing assigned manual-management, price, completion and data-safety gates survive; this is not the scanner MVP.
 
-Next.js 15 App Router, TypeScript strict, Tailwind v4, @serwist/next; Drizzle ORM and better-sqlite3; shared zod contracts and generated JSON Schema; vitest and Playwright. Python 3.12/FastAPI is a skeleton with GET /health only, tested with pytest. Node 22.x is required by tooling; do not silently bless the ambient Node 24 installation.
+Vite + React 19 + strict TypeScript + Tailwind v4 + TanStack Router (file-based) + TanStack Query; Capacitor 7 (iOS first, Android buildable); npm workspaces. Node >=22 (24 supported), Python3.12. No Next.js, Server Components, server actions, app HTTP routes, detached sync process or production Node runtime. better-sqlite3 is a core devDependency for Node tests ONLY, never in mobile/web bundles.
 
-## Exact logical layout
+## Monorepo target
 
-These are implementation target paths, not claims that files already exist. Feature modules own their services and tests. Barrel exports must not import server modules into the browser.
+Paths describe targets, not implemented artifacts.
 
 ```text
 flashydex/
-  package.json                         # npm workspaces: apps/*, packages/*
+  package.json                         # npm workspaces
   package-lock.json
-  .env.example
-  THIRD_PARTY_NOTICES.md
-  docs/                                # architecture, contracts, UX, operator docs
-  .agent/reports/
-  data/                                # ignored; default root, resolved from repo root
-    flashydex.sqlite
-    backups/
-    imports/                           # UUID directories, private uploaded bytes + plans
-    runtime/                           # maintenance coordination; not source control
-  apps/web/
+  docs/
+  apps/mobile/
     package.json
-    next.config.ts
-    tsconfig.json
-    drizzle.config.ts
-    public/manifest.webmanifest
-    public/icons/
-    drizzle/                           # checked-in generated migrations + journal
-    scripts/
-      sync.ts                          # npm run sync -- --lang en,ja
-      sync-worker.ts                   # detached worker entry, same service as CLI
+    vite.config.ts
+    capacitor.config.ts                # appName FlashyDex, webDir dist
+    ios/                               # generated, committed; build on owner's Mac
+    android/                           # generated, committed
+    public/{manifest.webmanifest,icons/,assets/sql-wasm.wasm}
     src/
-      app/
-        layout.tsx
-        page.tsx                       # Dashboard /
-        globals.css
-        collection/page.tsx
-        collection/[ownedId]/page.tsx  # a physical copy, works without catalog
-        cards/[language]/[cardId]/page.tsx
-        sets/page.tsx
-        sets/[language]/[setId]/page.tsx
-        add/page.tsx                    # search -> editable confirmation -> add
-        settings/page.tsx
-        settings/data/page.tsx
-        custom-cards/[customId]/page.tsx
-        sw.ts                          # Serwist, production shell caching only
-        api/
-          health/route.ts
-          catalog/sets/route.ts
-          catalog/sets/[language]/[setId]/route.ts
-          catalog/sets/[language]/[setId]/cards/route.ts
-          catalog/cards/route.ts
-          catalog/cards/[language]/[cardId]/route.ts
-          owned-cards/route.ts
-          owned-cards/bulk/route.ts
-          owned-cards/[ownedId]/route.ts
-          acquisitions/route.ts
-          acquisitions/[id]/route.ts
-          storage-locations/route.ts
-          storage-locations/[id]/route.ts
-          collection-groups/route.ts
-          collection-groups/[id]/route.ts
-          collection-groups/[id]/members/route.ts
-          custom-cards/route.ts
-          custom-cards/[id]/route.ts
-          dashboard/route.ts
-          sync/route.ts
-          sync/[id]/route.ts
-          sync/[id]/cancel/route.ts
-          export/route.ts
-          imports/dry-run/route.ts
-          imports/[id]/route.ts
-          imports/[id]/commit/route.ts
-          backup/route.ts
-          restore/dry-run/route.ts
-          restore/commit/route.ts
+      main.tsx
+      startup.ts
+      routes/                          # TanStack file modules, $param convention
+      routeTree.gen.ts
+      data/                            # TanStack Query keys/hooks/invalidation
+      platform/                        # native/web Platform and SqlDriver
       components/
-        app-shell.tsx
-        bottom-nav.tsx
-        card-art.tsx
-        empty-state.tsx
-        skeletons.tsx
-      db/
-        client.ts                     # server-only singleton; PRAGMAs per connection
-        schema.ts                     # paste schema from DATA-MODEL.md
-        migrate.ts
-      lib/
-        config.ts                     # server env validation + absolute paths
-        http.ts                       # validation, errors, same-origin checks
-        maintenance.ts                # read/write gate + worker quiescence
-        money.ts                      # cents arithmetic, never FX conversion
-        identity.ts                   # composite language/provider key helpers
-      features/
-        catalog/{repository,service,tcgdex,pricing,sync}.ts
-        collection/{repository,service,valuation}.ts
-        data/{export,import,backup,restore}.ts
-      tests/
-        helpers/database.ts
-        catalog.test.ts
-        sync.test.ts
-        collection.test.ts
-        valuation.test.ts
-        import-export.test.ts
-        backup-restore.test.ts
-        api.test.ts
-    e2e/{shell,collection,sets,data}.spec.ts
-  packages/schemas/
-    package.json                       # workspace name @flashydex/schemas
-    tsconfig.json
+      styles/
+    tests/                             # vitest + Testing Library
+    e2e/                               # Playwright 390x844 and 1280x800
+  packages/core/
+    package.json                       # @flashydex/core
+    drizzle.config.ts
+    migrations/                        # ordered generated .sql, bundled at build
     src/
-      primitives.ts
-      entities.ts
-      api.ts
-      transfer.ts
-      recognition.ts                  # type contract only; no implementation
+      db/{schema,driver,proxy,migrate,unit-of-work}.ts
+      repositories/{catalog,collection,settings}.ts
+      services/{sync,portfolio,transfer,backup}.ts
+      tcgdex/{client,parse,prices}.ts
+      domain/{identity,money,errors}.ts
+      platform.ts                      # interfaces only
       index.ts
-    json-schema/
-      collection-export.v1.schema.json
-      import-report.v1.schema.json
+    tests/
+      adapters/node-sqlite.ts           # better-sqlite3 behind sqlite-proxy
+      {driver,migrations,catalog,collection,sync,portfolio,transfer,backup}.test.ts
+  packages/schemas/
+    src/{primitives,entities,api,transfer,recognition,index}.ts
+    json-schema/{collection-export.v1,import-report.v1}.schema.json
     scripts/generate-json-schema.ts
-    tests/transfer.test.ts
-  services/recognition/
+    tests/
+  services/recognition/                 # optional Python3.12 FastAPI health only
     pyproject.toml
-    .venv/                            # ignored, py -3.12 -m venv .venv
-    app/{__init__,main}.py             # /health only, no model dependencies
+    app/{__init__,main}.py
     tests/test_health.py
 ```
 
-The braced names above expand to individual files (e.g. app/main.py); no additional service or queue is required. Extra UI components may be added within implementation ownership without changing contract names. There is deliberately no scanner route or working recognition proxy in Phase 1. Bottom navigation: Dashboard, Collection, Sets, Settings; prominent Add action links to /add. Never label an inactive camera button as working.
+No root data/ DB for app operation. Logical database/export basename is flashydex.db. Plugin connection name flashydex produces physical flashydexSQLite.db (strips supplied .db, adds SQLite.db). Platform resolves getUrl(); never hardcode a path or claim exact physical basename is preserved. ADR-030 records this distinction.
 
-## Request and transaction flow
+## Routes and layers
 
-Browser -> same-origin /api route -> shared zod validation -> feature service -> repository -> Drizzle -> SQLite. Server Components invoke the same read services directly for initial rendering; do not HTTP-fetch localhost from the server. Client filters/mutations use route handlers. No independent server-action mutation implementations in Phase 1: in-app sync is POST /api/sync (the route option in BRIEF), not a long-running action. All route handlers touching SQLite declare runtime='nodejs'; never Edge. No DB handles, recognition origin or filesystem paths in client bundles.
+Preserve UX URLs; [param] is documentation, not Next syntax. TanStack modules use $param.
 
-A service owns transaction boundaries; a repository does not nest its own transaction. Validate references, write copy/grade/acquisition link/group memberships, increment app_state.collection_revision, then commit together. Network I/O is never inside a SQLite transaction. SQL is parameterized. Use explicit projections and batch aggregates; avoid one query per card. Personal mutations are serializable short writes. DB busy timeout 5 seconds then 503 DB_BUSY with Retry-After: 1; never report a partially committed mutation as success.
-
-SQLite connections enable foreign_keys=ON, journal_mode=WAL, busy_timeout=5000. Use transactions for bulk adds, imports, cascading personal deletes and each sync checkpoint. Do not use INSERT OR REPLACE (it can delete rows); use ON CONFLICT DO UPDATE. No application writes catalog identities or user snapshots as a side-effect of a GET. No external API request is necessary to view or edit an existing copy.
-
-## Stable identity and catalog separation
-
-Provider id alone is not a locale key. Every catalog lookup and relation includes language, currently en or ja. `catalog_identities(language,id)` is an immutable minimal identity ledger. `catalog_sets` and `catalog_cards` are replaceable metadata caches. An owned card's catalog_card_id FK targets the ledger, not the metadata cache; the ledger cannot be deleted while personal data refers to it. This is an explicit CatalogCard reference through its stable identity, not an unvalidated free-text FK. Exactly one of catalog_card_id/custom_card_id is set. Denormalized name, setId, setName, localId, language, rarity and imageUrl are personal snapshots, not live foreign joins. A cache wipe deletes catalog_cards then catalog_sets, not the ledger or personal tables. Set metadata can be rebuilt without losing any reference. Catalog sync never updates any owned-card column, including snapshots.
-
-An owned-card identity key in calculations is `(language,catalog_card_id)` or `custom:<uuid>`. Grouped copy counts and duplicates additionally include variant and variantDetail. Variant detail prevents two distinct stamped/other printings being collapsed. See DATA-MODEL for duplicate and completion equations.
-
-## Sync: one engine, CLI and in-app
-
-`npm run sync -- --lang en,ja` runs from repository root (web workspace alias allowed). Flags: --lang en,ja (default en,ja), --mode incremental|refresh (default incremental), --resume <sync UUID> (optional). SIGINT requests cancellation and waits for the current checkpoint. Exit 0 completed, 1 failed, 2 cancelled, 3 another active sync. CLI and HTTP call the same catalog/sync service, same locks and checkpoints.
-
-POST /api/sync creates a durable sync_state row and spawns a detached Node worker with process.execPath plus an explicitly resolved TS runner/compiled entry, absolute cwd/config, stdio redirected to data/runtime/<id>.log. Do not shell-interpolate payloads, depend on PowerShell, or run an untracked promise inside a route request. The worker outlives navigation but not machine shutdown. Node spawn with detached:true + unref() must be tested on Windows and Linux; deployment is a persistent Node host, not serverless. Register a launch failure as failed and release the lock. Poll status every 2 seconds while visible; leaving the page does not cancel work.
-
-`sync_state.lock_key` is UNIQUE nullable TEXT: active row holds literal `catalog`; inactive rows hold NULL. Start/acquire is one transaction; initial queued row already has a random worker_token, heartbeat_at=created_at and lease_expires_at=created_at+30s before spawn, so a crash before launch cannot leave an unrecoverable queued lock. Heartbeat every 5 seconds, lease 30 seconds. Only a worker whose worker_token matches may checkpoint/renew/release. On start, an expired lease is fenced by changing token and marking old run interrupted with lock released in the same transaction. Worker checks its token before every write; a delayed old worker must not resume writes. A resume reuses the interrupted/failed/cancelled run UUID, obtains a new token, increments attempt, resets lastError, retains checkpoint, and excludes concurrent starts. Completed runs cannot resume (409). Status reads label any expired active job (queued/running/cancel_requested) `interrupted` in the response, without writing on GET; the next start/resume performs recovery. Cancellation is durable cancel_requested, observed between batches; cancelling an inactive job is an idempotent no-op.
-
-Algorithm:
-1. Fetch language set listings in configured order, sorted by provider id. Persist a checkpoint manifest containing language, each set id, set-detail cards and per-card done/failure records. Progress is durable JSON TEXT, not an in-memory iterator. Listing/set-detail failures leave that unit incomplete.
-2. Upsert set metadata with composite keys. Upsert brief cards (detail_synced_at=NULL only for newly created cards); insert identity ledger rows before metadata. Preserve previously detailed fields on brief refresh.
-3. Fetch missing card details; incremental skips only detail_synced_at within last 24 hours, refresh fetches every card. Never use matching set counts alone to declare a set complete: Pokeum's count shortcut misses partial detail failures and price updates. Card counts refer to enumerated manifest, not number of successes.
-4. Default network concurrency 4, configurable 1..8; 20-second request timeout, maximum 3 attempts on transport, 429 and 5xx (1s, 2s exponential delays, capped Retry-After at 30s). Permanent 4xx/invalid provider shapes are recorded, not silently swallowed. Write batches at most 25 cards, plus immutable deduplicated price observations, and checkpoint/progress in the SAME DB transaction. No local full-image download/index in this phase; retain CDN URLs.
-5. Persist counts: setsTotal, setsDone, cardsTotal, cardsDone, cardsFailed. cardsTotal nullable until all manifests discovered. Done means processed successfully or deliberately skipped fresh; failures are not done. Snapshot manifests allow retry of failed entries and exact resumption after process death. A run with remaining failures ends failed, retains useful catalog data and can resume. Never mark 100% completed on partial failure. Set detail is refreshed on each new run even if count unchanged; resumed run uses its existing manifest.
-6. Incremental/refresh are upserts only. Removed upstream cards are not pruned automatically. Finish/cancel/fail clears lock_key and records finished_at; cancel preserves partial data. No sync path writes owned_cards, custom_cards, grades, acquisitions, memberships, overrides or collection_revision.
-
-Reference inspiration: .agent/reference/pokeum/app/reference/tcgdex.py separates pure parsers and transport and builds asset URLs; store.py uses explicit conflict updates; sync.py batches bounded detail fetches and idempotent work. Adapt those ideas, not its unlocalized primary keys, default normal=true assumption, swallowed failures or count-only freshness check. No reference code has been copied into these documents. If implementation copies any, retain MIT notice in THIRD_PARTY_NOTICES.md.
-
-## Pricing/read semantics
-
-Sync parses `variants_detailed[].pricing` and top-level `pricing` as fallback; deduplicate repeated provider blocks before inserting. Raw JSON is retained for provider evolution. Money is parsed from decimal text with decimal half-up to integer cents (no binary-float multiply-and-truncate). Missing/negative/invalid values remain NULL with a sync warning; zero is legitimate. PriceSnapshot uniqueness is semantic observation key described in DATA-MODEL, not sync run time. No scraping.
-
-Per copy: manual override wins in its currency, otherwise only raw, exact supported variant prices can apply. USD: latest TCGplayer market then mid then low. EUR: Cardmarket trend then mid then low. Do not fall back across variants, grading states or currencies. Unsupported, graded-without-override, unknown-price copies are unvalued. Metrics return per-currency buckets, known-cost coverage and excluded-copy counts; never silently mix EUR/USD or show unknown as free. Card Details exposes provider and capturedAt and missing fields. No grade multiplier or condition discount is fabricated.
-
-## Data operations and maintenance
-
-See IMPORT-EXPORT for exchange contract. Dry-run uploads are staged under private data/imports/<UUID>, not public/. Server persists canonical plan, input SHA-256, result report, expiry and collectionRevision. Commit checks all of them and runs one transaction. JSON exports are consistent reads with all personal tables and relevant price history; CSV is a loss-limited interoperable copy view, explicitly labelled. Never export secrets, runtime lock tokens or absolute paths.
-
-Backups use better-sqlite3 online backup API to a unique file: copying only a live WAL database main file is unsafe. GET backup streams the completed, integrity-checked SQLite snapshot; generated backup stays in configured backup directory. Restore stages an uploaded SQLite file, validates integrity, FK checks and exact supported migration version read-only without evaluating extensions or uploaded SQL. It returns a short-lived preview token/hash. Commit requires explicit confirmation. During replacement, reject new API work with 503 MAINTENANCE, stop/fence workers, drain readers/writers, online-backup the current database, close all handles including worker handles, replace DB plus managed WAL/SHM lifecycle on the same volume, reopen and check integrity. Failed replace reopens the previous verified copy. Acquire an OS-atomic exclusive directory lock in data/runtime for restore and require every application/CLI DB entry to check it; all workers must acknowledge stopped before replacement (otherwise 409 ACTIVE_WORK). No user-supplied filesystem path is accepted. This is a single deployment maintenance operation, not multi-node coordination. Requires persistent disk and write access. Document final startup recovery marker if the machine dies mid-swap; startup chooses only an integrity-verified prior or staged database, never creates an empty replacement silently.
-
-## LAN/PWA and security boundary
-
-`npm run dev` in apps/web runs `next dev -H 0.0.0.0 -p 3200`. Check port before starting; do not create another server. Windows Firewall access should be limited to the Private LAN profile. Phone opens http://<pc-ip>:3200; core browser UI/manual entry must work there. A service worker/install prompt and future camera APIs require HTTPS on a LAN address: do not promise full PWA installation over plain LAN HTTP. Production uses `next build` then `next start -H 0.0.0.0 -p 3200`, with trusted local HTTPS termination for install testing. Cache static app shell only, not /api responses, personal mutations or import/backup data. Offline shell explains network requirement; no offline mutation queue in Phase 1.
-
-Every mutation validates configured APP_ORIGIN against Origin; accept same origin (including configured LAN host), reject missing Origin on browser mutations except authorized local CLI service calls that do not use HTTP. For automation, allow a local-only configured bearer ADMIN_API_TOKEN instead of Origin; disabled if absent. CORS disabled; no wildcard access. Host allowlist from APP_ORIGIN plus localhost dev origins prevents DNS-rebinding access. GET exports/backup require allowed Host and same-origin fetch metadata or configured bearer; UI downloads fetch a Blob from same origin. Token is server-only. This is basic LAN request safety, not authentication against a malicious LAN peer. Destructive restore needs confirmation and is never a GET.
-
-Input caps: JSON body 1 MiB ordinary routes, data uploads 25 MiB, backup/restore 512 MiB; import max 100,000 copy rows and 250,000 total entity rows. Return 413 before parsing oversized uploads, use streaming temp files, never trust extension/MIME alone. Enforce URL scheme https/http only on art; no server-side fetch of arbitrary supplied art URLs. Third-party fetches restricted to configured TCGdex origin. No SQL/stack/paths/tokens in API errors. Private data routes Cache-Control: no-store.
-
-## Configuration (server only unless stated)
-
-| Variable | Default / validation |
+| URL | Screen |
 |---|---|
-| NODE_ENV | normal Next semantics |
-| APP_ORIGIN | required absolute origin for deployed LAN host; dev http://localhost:3200 |
-| DATABASE_PATH | data/flashydex.sqlite, resolved from repository root, not process cwd |
-| DATA_DIR | data, resolved from repository root; imports/runtime under it |
-| BACKUP_DIR | data/backups; same local filesystem for restore staging |
-| TCGDEX_BASE_URL | https://api.tcgdex.net/v2; validated HTTPS origin/path, test injection permitted |
-| TCGDEX_LANGUAGES | en,ja; nonempty distinct list restricted to en/ja |
-| SYNC_CONCURRENCY | 4, integer 1..8 |
-| SYNC_FRESH_HOURS | 24, positive integer |
-| RECOGNITION_BASE_URL | http://127.0.0.1:8100; unused in Phase 1 except operator config validation |
-| ADMIN_API_TOKEN | optional strong secret; never NEXT_PUBLIC_* |
-| NEXT_PUBLIC_APP_NAME | flashydex; cosmetic only |
+| `/` | Dashboard |
+| `/collection` | grouped grid / compact list |
+| `/collection/[ownedId]` | exact-copy editor, snapshot-safe |
+| `/cards/[language]/[cardId]` | catalog detail |
+| `/custom-cards/new` | custom definition creation |
+| `/custom-cards/[customId]` | custom detail/edit |
+| `/sets` | sets |
+| `/sets/[language]/[setId]` | detail/missing/duplicates |
+| `/add` | search -> editable confirmation -> bulk add |
+| `/settings` | defaults, first-run entry, About/disclaimer/privacy |
+| `/settings/data` | sync/transfer/backup |
+| `/settings/locations` | locations |
 
-App version is read from workspace package.json, not a manually maintained export value. After Node22 `npm ci`, apply checked-in migrations with `npm run db:migrate` before starting app/CLI; schema generation belongs to development, not startup. The initial migration seeds app_state with id='collection', collection_revision=0 and a canonical UTC updated_at. The application must not create an empty replacement or silently migrate an uploaded restore. Upload/lease/time limits above are constants shared by API/tests; do not add conflicting magic defaults. Log job IDs and error codes, not imported notes/certificates or secret headers.
+No /scan route in Phase1. Active nav Dashboard/Collection/Sets/Settings plus prominent Add. UX may retain center disabled Scan explainer, never imply camera works. No reload to save/navigate. URL aliases lang/cond/dupes/loc/set map into typed inputs in hooks, not HTTP requests.
 
-## Recognition seam (reserved, not Phase 1 endpoints)
+```text
+UI / TanStack Router
+ -> TanStack Query hooks in apps/mobile/src/data
+ -> packages/core repositories/services + strict zod validation
+ -> Drizzle sqlite-proxy + core UnitOfWork
+ -> SqlDriver
+      native: @capacitor-community/sqlite
+      web: same plugin -> jeep-sqlite -> sql.js WASM -> IndexedDB
+      tests: Node better-sqlite3 -> SAME sqlite-proxy callback
+```
 
-Future browser -> Next POST /api/recognition -> server-side multipart POST /v1/recognize on FastAPI. Shared contract stub: request image bytes (JPEG/PNG/WebP, maximum 10 MiB), languages: Language[], scanSessionId?: UUID; response {requestId: UUID, status:'confident'|'uncertain'|'no_match'|'no_card_detected', candidates: Array<{catalogCardId:string,language:Language,confidence:number /*0..1*/,variant:Variant|null}>, durationMs:nonnegative integer}. Maximum THREE candidates total, best first; uncertain has no auto-selected winner. No persistence until an editable owner confirmation calls ordinary owned-card API. FastAPI GET /health returns {status:'ok',service:'recognition',version:string}; no recognition implementation, OCR or model install now. Next timeout/503 mapping will use normal error envelope later.
+Core imports schemas, not React/TanStack/Capacitor/browser/Node/native DB packages. Inject Platform/SqlDriver. Use explicit projections and batched enrichment, not per-card queries. Durable mutations invalidate collection/dashboard/set/detail keys; checkpoints invalidate catalog keys. Cancelling a stale read ignores results; cancelling UI work does not roll back committed mutations.
 
-## PostgreSQL migration path
+## Startup, migrations and durability
 
-Keep schema/repository boundaries. PKs remain UUID TEXT or composite provider TEXT keys. ISO UTC timestamps/date-only strings remain TEXT initially on PG as well; a later migration may cast explicitly to timestamptz/date, not implicitly reinterpret timezone. integer cents map to PG INTEGER with bounds <=2,147,483,647 per amount; aggregate via BIGINT/Number safe-integer guard. SQLite boolean integer 0/1 maps to PG BOOLEAN; JSON TEXT may remain TEXT, later migrate to JSONB with explicit casting. Every FK/index/check and on-delete behavior has a PG equivalent. No SQLite FTS, JSON1 query dependency, rowid, replace semantics or SQLite enum type.
+1. Register adapters. Web mount/define jeep-sqlite, await readiness, load bundled sql-wasm.wasm, initWebStore, open persisted DB. No CDN runtime dependency. Hold a single writable instance lock (Web Locks if available; otherwise reject second writable tab explicitly). SQLite leases alone cannot coordinate separate sql.js memory copies.
+2. Open unencrypted logical connection flashydex; enable/verify foreign_keys=ON, supported busy_timeout=5000. Native WAL only after capability check; web cannot depend on WAL/native filesystem PRAGMAs.
+3. Apply bundled ordered packages/core/migrations/*.sql through core migrator + schema_migrations(version/checksum/appliedAt). Bootstrap tracking table IF NOT EXISTS; each file plus receipt atomic. Drizzle-kit generates during development, never on device. Unknown future schema/checksum drift blocks without deleting DB. Initial migration seeds app_state/app_settings.
+4. Load AppSettings; recover abandoned SyncState as interrupted, retain progress. Failure shows storage retry/recovery, never silent empty replacement. Mount Router/Query after init. First-run explains sync size/time, offers language/set selection and skip/offline use; no automatic full crawl.
 
-Generate PG-specific Drizzle schema/migrations (`pg-core`, driver pg) from this model when requested; do not pretend SQLite migration SQL runs on PG. Export consistent rows in FK order and import in a transaction; verify row counts, IDs, check constraints and currency totals. Replace LIKE case matching with normalized search columns and same escaped parameter behavior; compare pagination ordering in integration tests. Replace PRAGMAs/online backup/maintenance and lease acquisition with PG equivalents; sync conditional leases and logical identity keys remain unchanged. No PG runtime or dual-dialect abstraction is needed in Phase 1.
+UnitOfWork queues ALL single-connection tasks including reads, owns explicit beginTransaction/commitTransaction/rollbackTransaction; scoped handles avoid queue re-entry. Inside transaction run/execute use transaction=false (plugin default true); no nested/savepoint dependency. No network/share/haptics inside transaction. UUIDs in service then SELECT by known keys, no RETURNING/last_insert_rowid dependency. ON CONFLICT DO UPDATE, never INSERT OR REPLACE.
+
+Proxy handles run|all|get|values. SELECT -> plugin query (one statement) -> positional arrays in explicit projection order; strip ios_columns metadata when present, preserve null/0, never rely on arbitrary object enumeration. Bound DML ->run, DDL ->execute. execute permits raw batches, but core sends migration statements singly using drizzle-kit statement-breakpoint delimiters, not naive semicolon splitting. run/query NEVER receive multiple statements. DATA-MODEL specifies compatible SQL surface.
+
+Web COMMIT alone isn't persistence: await saveToStore('flashydex') with queue held before successful mutation/checkpoint/migration. Quota/flush failure stops writes, raises PersistenceError, never says Saved. In-memory commit may exceed durable state: reopen last persisted DB before retry, use receipt for uncertain import, never blindly repeat bulk add. Offer recovery JSON if possible. Flush committed state only. Native success is SQLite commit. Personal transaction increments app_state.collection_revision once; sync never does.
+
+## Test same core, not a Node substitute
+
+Vitest real temporary SQLite FILES on Node>=22 with better-sqlite3 behind async SqlDriver; instantiate Drizzle through sqlite-proxy just like app. SAME repositories/migrator/services. Do not substitute drizzle-orm/better-sqlite3 in tests (misses proxy/async bugs). Fakes supply HTTP/clock/UUID/hash/filesystem/share/haptics/fault injection, not integration repositories. Web/native parity tests cover row ordering/aliases/nulls/booleans/joins/aggregates, FK errors, rollback/migrations and reopen durability. Node passing doesn't prove iOS bridge/IndexedDB.
+
+## Foreground device sync
+
+SyncService is app-scoped, not component-owned. Navigation doesn't stop foreground work. Suspend stops scheduling/checkpoints if time permits; OS kill/tab closure can interrupt anytime. Startup marks abandoned run interrupted; user-requested resume. No guaranteed iOS background job, nightly scheduler, CLI or detached server process.
+
+Selection: languages en/ja, all sets OR language-qualified followed keys. AppSettings preferences; frozen run selection. Default concurrency8, configurable6..8, adaptive throttling floor1. Unique lock_key=catalog, worker_token fencing (legacy name now means app executor), heartbeat5s/lease30s. Verify token per write transaction. Web also needs single writable instance lock.
+
+1. Conditional GET /v2/{lang}/sets using previous successful list ETag. 304 skips discovery ONLY, never text/image/price refresh. Use saved listing, otherwise unconditional GET. CORS * does not expose ETag or guarantee If-None-Match preflight: web falls back to normal GET if unavailable.
+2. Selected set detail, URL-encode IDs once including SM1+. Store advertised counts AND cards[] manifest. Empty shell ->catalog_sets.status=unpublished, hidden normally, recheck EVERY new catalog run even list304. Nonempty ->published. No count-only freshness or automatic pruning. officialCount0 displays localId alone.
+3. Persist checkpoint v2. Brief upsert preserves detail, image_url nullable. Incremental fetches missing/failed/stale details (24h freshness); refresh all selected. prices_only re-GETs existing selected detail and writes PriceSnapshot ONLY plus operational SyncState, no catalog/owned update. Metadata timestamp doesn't suppress requested price refresh.
+4. Fetch/validate outside SQL; serialized batches <=25 cards + deduplicated immutable prices + per-set/card checkpoint in SAME transaction/web flush. Yield between batches. Web AbortController20s; native connect/read20s each, not hard wall-time abort. Initial attempt+3 retries,1/2/4s+jitter; Retry-After capped60s. 429 halves concurrency floor1, slowly recover to configured bound. Retry transport/429/5xx, not permanent4xx/schema error. Persist failures/warnings; incomplete ->failed, never false100%.
+5. Cancel persists cancel_requested, stops scheduling, aborts web if possible. Native CapacitorHttp has no guaranteed abort API: fence/drop late responses, finish bounded in-flight work. Mark cancelled/release lock, keep data/checkpoint. Resume same UUID/new token/attempt, skip done/retry failed/pending. Crash rolls back card/progress together.
+
+Transport in apps/mobile/src/platform: explicit CapacitorHttp.request on native to bypass WKWebView quirks; fetch on web; no global patch. API and asset CDN CORS * are BRIEF verified facts, no proxy needed. Origin allowlist/encoded paths/lowercase headers,304 no JSON parse,200 zod-validated. Web cannot set User-Agent; no custom-header preflight requirement merely for client identification. No @tcgdex/sdk.
+
+Reference ideas: .agent/reference/pokeum/app/reference/tcgdex.py pure parsers/URLs, sync.py fetch/writer separation, store.py upserts. Don't copy count-only freshness/unlocalized keys/default-normal/image download. No code copied here; implementation copying code retains MIT notice in THIRD_PARTY_NOTICES.md.
+
+## Storage footprint and image policy
+
+Research36,517 EN+JA briefs, ~36k detail calls; full crawl ~15–25min planning estimate, not phone SLA. Selection reduces download.
+
+UNMEASURED planning calculation:4/8/12KiB normalized+raw metadata/card ->142.6/285.3/427.9MiB for36,517, BEFORE indexes/ledger/history/manifests/journal/serialization. Budget roughly250–700MiB initially; reserve >=2x current DB for backup/staging/serialization. Measure actual footprint/history growth. sql.js holds DB in RAM; persistence can transiently duplicate it. Browser quota/eviction/RAM vary; use navigator.storage.estimate/persist if available, low-space warnings/small selections/regular JSON export, catch quota failure. OPFS is a future adapter possibility, NOT a verified pinned-v7 jeep capability; documented baseline is IndexedDB/localforage.
+
+Art nullable base ->styled placeholder, no invented URL. {image}/low.webp grids,/high.webp detail;63:88/lazy loading. Logo .webp; symbol univ ->selected language then .webp, nullable on404. Native WebView/HTTP/browser cache only, evictable. No predownload/base64 art/guaranteed offline art; ~26k images at16–20KiB adds ~406–508MiB thumbnails alone. Explicit offline image cache Phase7. PWA caches bundled shell/assets/WASM, not transfer files/mutation results. Production HTTPS/localhost offline testing separate from LAN HTTP.
+
+## Transfer, backup and optional servers
+
+IMPORT-EXPORT keeps v1 JSON/exact CSV. Picker ->bounded private file ->dryRun ->explicit confirm ->atomic commit+receipt. Native Filesystem cache/getUri ->Share; web File picker/Blob download. Share cancellation isn't export data loss; share resolution isn't proof external save.
+
+Backup always portable JSON; raw DB copy additional capability-gated output, not fictitious native online-backup API. Quiesce sync/queue, checkpoint WAL successfully, close all handles, resolve/copy DB to cache, reopen/validate then share. Web saveToLocalDisk documented, not universal Share-compatible URI. Raw replacement requires proven platform support, integrity/FK/migration fingerprint, RESTORE confirmation/safety copy/recovery. Unsupported platforms explain JSON import merge/update, not pretend whole-DB replacement.
+
+Phase7 optional BackupSyncPort mirrors exports/changes to owner-selected authenticated server later with opt-in/conflict/privacy design. PostgreSQL path = SERVER-SIDE MIRROR LATER, NOT replacement for device SQLite. Keep text IDs/ISO times/integer cents/explicit FKs portable; PG schema/migrations/driver/backup separate future work, no dual-dialect runtime now.
+
+Phase2 RecognitionPort selects optional FastAPI endpoint OR on-device ORT Web/Mobile. Shared shape: image<=10MiB,languages,optional scanSessionId; status confident|uncertain|no_match|no_card_detected; max THREE ranked candidates(language/catalogCardId/confidence/optional variant hint),durationMs. Editable confirmation ->CollectionRepo only persistence path. Missing/unlicensed weights cannot become fake production encoder. Phase1 Python GET /health ->{status:ok,service:recognition,version:string}, never startup dependency; no recognizer installed.
+
+## App Store, privacy and configuration
+
+Bundle native HTML/JS/CSS/WASM, no production server.url website wrapper, OTA/remote code loading/evaluated JS/SQL migrations or hidden remote features. Catalog/images validated data only. Reviewer needs no LAN/server; offline empty states work.
+
+FlashyDex identity: no Pokémon/Nintendo marks/character art in app name/icon/splash/store screenshots. Settings/About exact disclaimer: “FlashyDex is not affiliated with Nintendo, Creatures, GAME FREAK or The Pokémon Company”. Acknowledgement stored without blocking local access. Privacy: no collection by us; disclose direct TCGdex API/CDN IP/request metadata; no analytics/photo uploads. Explicit user share/export only. OS cloud-backup behavior must match policy; don't claim cloud-free if automatic backup enabled.
+
+Prepare NSCameraUsageDescription/NSPhotoLibraryUsageDescription, never request permissions Phase1. Audit Filesystem required-reason PrivacyInfo.xcprivacy. No custom encryption; included SQLCipher/library export compliance still reviewed. Safe-area shell/sheets/bottom controls; rem/Dynamic-Type-friendly scale/no viewport text lock; VoiceOver/aria nav+primary labels,44px targets/reduced motion. Native haptics/share not prerequisites for DB writes. Actual Mac/simulator/device verification required, docs don't imply App Store approval.
+
+Project build env FLASHYDEX_ prefix; Vite envPrefix explicitly includes it, all client values public. Name FlashyDex/logical DB flashydex.db/HTTPS TCGdex base/concurrency8 defaults; languages/sets/currency in AppSettings. No admin bearer/APP_ORIGIN/server DB path. npm run dev ->vite --host 0.0.0.0 --port 3200; no second server, stop agent-started server. Mac:npx cap sync ios && npx cap open ios. Plain LAN HTTP doesn't prove install/service-worker support.
+
+## Capability evidence (curl checked for this revision)
+
+- [Capacitor](https://capacitorjs.com/docs), [v7 HTTP](https://capacitorjs.com/docs/v7/apis/http): explicit native helper, patch default disabled, timeouts/large-bridge caveat.
+- [SQLite v7.0.3 README](https://raw.githubusercontent.com/capacitor-community/sqlite/v7.0.3/README.md), [API](https://raw.githubusercontent.com/capacitor-community/sqlite/v7.0.3/docs/API.md), [definitions](https://raw.githubusercontent.com/capacitor-community/sqlite/v7.0.3/src/definitions.ts): native/web, suffix, transactions, single-statement run/query, execute batches, RETURNING caveat, IndexedDB/saveToStore/getUrl. Checked v7 deliberately, not only latest v8.
+- [v7 Filesystem](https://capacitorjs.com/docs/v7/apis/filesystem), [Share](https://capacitorjs.com/docs/v7/apis/share): file URIs/privacy manifest/Android cache sharing/web caveat.
+- [Drizzle proxy](https://orm.drizzle.team/docs/connect-drizzle-proxy), [sqlite driver](https://raw.githubusercontent.com/drizzle-team/drizzle-orm/main/drizzle-orm/src/sqlite-proxy/driver.ts), [session](https://raw.githubusercontent.com/drizzle-team/drizzle-orm/main/drizzle-orm/src/sqlite-proxy/session.ts): async positional-row contract. Tooling pins versions/proves parity.

@@ -1,0 +1,526 @@
+/*
+ * FlashyDex design tokens: CSS custom properties ONLY (no real properties, no rules
+ * that style elements). Source of truth: docs/DESIGN-TOKENS.md (owner: Opus, UX lead).
+ *
+ * Consumption (apps/mobile/src/styles/globals.css, implementer-owned):
+ *   @import "tailwindcss";
+ *   @import "./tokens.css";
+ *   @theme inline { ...mapping in DESIGN-TOKENS.md §9... }
+ *
+ * Runtime hooks the platform layer sets on <html> (apps/mobile/src/platform/):
+ *   class  .platform-ios | .platform-android | .platform-web    from Capacitor.getPlatform()
+ *   attr   data-theme="dark|light"                               theme (dark = default/missing)
+ *   attr   data-text-size="default|large|ax"                     bucket of --ps-text-scale
+ *   style  --ps-text-scale: <0.875..2>                           TextZoom.getPreferred(), clamped
+ *   style  --ps-keyboard-inset: <px>                             Keyboard plugin / visualViewport
+ *   class  .has-sync-pill                                        while the sync pill is shown
+ *
+ * Units: TYPE and TAP TARGETS are rem (they follow the user's text size). SPACING and
+ * CHROME are px (they do not), so large text never pushes the tab bar or the 3-column
+ * grid off a 390 px screen. Reason: DESIGN-TOKENS.md §4.2.
+ *
+ * Prefix: every token is --ps- (kept on purpose: internal, never user-visible, ~200 names
+ * and the Tailwind mapping already use it; a rename would buy nothing).
+ * Never hard-code a hex value, px font size or ad-hoc duration in a component.
+ */
+
+/* ------------------------------------------------------------------ */
+/* 1. Theme-independent tokens                                         */
+/* ------------------------------------------------------------------ */
+:root {
+  /* --- Text scale (Dynamic Type / Android font scale) ---------------- */
+  --ps-text-scale: 1;                                   /* set inline by the platform layer */
+  --ps-root-font-size: calc(100% * var(--ps-text-scale)); /* globals.css: html { font-size: var(--ps-root-font-size) } */
+
+  /* --- Typography ------------------------------------------------- */
+  /* Web + Android: Inter Variable bundled with the app (@fontsource-variable/inter, OFL-1.1),
+     never fetched from a CDN. iOS overrides to the system font (SF Pro) in §6. */
+  --ps-font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic UI", Meiryo, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  --ps-font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Menlo, Consolas,
+    "Roboto Mono", monospace;
+
+  /* Type scale (rem → follows --ps-text-scale). size / line-height / weight / tracking.
+     Display and H1 are capped so a 2x text setting cannot make them wrap the hero. */
+  --ps-text-display: min(2rem, 48px);   /* 32px at 1x — dashboard value only */
+  --ps-text-display-lh: 1.1875;         /* unitless: 38/32 */
+  --ps-text-display-weight: 700;
+  --ps-text-display-tracking: -0.02em;
+
+  --ps-text-h1: min(1.75rem, 40px);     /* 28px at 1x */
+  --ps-text-h1-lh: 1.2143;              /* 34/28 */
+  --ps-text-h1-weight: 700;
+  --ps-text-h1-tracking: -0.015em;
+
+  --ps-text-h2: 1.25rem;                /* 20px */
+  --ps-text-h2-lh: 1.4;                 /* 28/20 */
+  --ps-text-h2-weight: 650;
+  --ps-text-h2-tracking: -0.01em;
+
+  --ps-text-h3: 1.0625rem;              /* 17px */
+  --ps-text-h3-lh: 1.4118;              /* 24/17 */
+  --ps-text-h3-weight: 600;
+
+  --ps-text-body: 1rem;                 /* 16px at 1x — also every <input> (never < 16px: no iOS focus zoom) */
+  --ps-text-body-lh: 1.5;
+  --ps-text-body-weight: 400;
+
+  --ps-text-small: 0.875rem;            /* 14px */
+  --ps-text-small-lh: 1.4286;
+
+  --ps-text-caption: 0.8125rem;         /* 13px */
+  --ps-text-caption-lh: 1.3846;
+
+  --ps-text-micro: 0.75rem;             /* 12px — badges/chips only, ≥600 wt */
+  --ps-text-micro-lh: 1.3333;
+  --ps-text-micro-weight: 650;
+  --ps-text-micro-tracking: 0.01em;
+
+  /* Chrome labels are capped: native tab bars do not grow with Dynamic Type either. */
+  --ps-tab-label-size: min(var(--ps-text-micro), 15px);
+  --ps-topbar-title-size: min(var(--ps-text-h3), 22px);
+
+  /* --- Spacing (px, 4px grid; Tailwind @theme sets --spacing: 4px to match) --- */
+  --ps-space-0: 0px;
+  --ps-space-1: 4px;
+  --ps-space-2: 8px;
+  --ps-space-3: 12px;
+  --ps-space-4: 16px;
+  --ps-space-5: 20px;
+  --ps-space-6: 24px;
+  --ps-space-8: 32px;
+  --ps-space-10: 40px;
+  --ps-space-12: 48px;
+  --ps-space-16: 64px;
+
+  /* --- Safe areas & keyboard ------------------------------------------ */
+  /* env() is correct on iOS (viewport-fit=cover, contentInset 'never'). On Android with
+     Capacitor 7 adjustMarginsForEdgeToEdge='force' the WebView already sits between the
+     system bars, env() is 0 and so are these. If a later Capacitor injects
+     --safe-area-inset-* variables (Cap 8 SystemBars insetsHandling:'css'), they win. */
+  --ps-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --ps-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --ps-safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --ps-safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --ps-keyboard-inset: 0px;           /* height of the on-screen keyboard over the WebView */
+
+  /* --- Layout ------------------------------------------------------- */
+  --ps-page-x: 16px;                  /* gutters at 390px */
+  --ps-page-left: max(var(--ps-page-x), var(--ps-safe-left));
+  --ps-page-right: max(var(--ps-page-x), var(--ps-safe-right));
+  --ps-page-max: 1280px;
+  --ps-grid-gap: 8px;
+  --ps-tile-min: 108px;               /* → 3 columns at 390px */
+  --ps-sidebar-w: 240px;              /* ≥1024px (web dev, PWA, iPad landscape) */
+
+  /* Chrome (px; platform overrides in §6) */
+  --ps-topbar-h: 56px;
+  --ps-tabbar-h: 64px;
+  --ps-topbar-total: calc(var(--ps-topbar-h) + var(--ps-safe-top));
+  --ps-tabbar-total: calc(var(--ps-tabbar-h) + var(--ps-safe-bottom));
+  --ps-tab-icon: 24px;
+  --ps-tab-indicator-w: 32px;         /* web: 32×4 bar above the icon */
+  --ps-tab-indicator-h: 4px;
+  --ps-scan-fab: 60px;                /* center Scan button (disabled in Phase 1) */
+  --ps-scan-raise: 12px;              /* how far the Scan circle rises above the bar */
+
+  /* Sync progress pill (floats above the tab bar while a catalog download runs) */
+  --ps-syncpill-h: 32px;
+  --ps-syncpill-space: 0px;           /* .has-sync-pill → pill + gap */
+
+  /* What scrolling content must clear at the bottom on mobile */
+  --ps-content-pad-bottom: calc(var(--ps-tabbar-total) + var(--ps-syncpill-space) + 16px);
+  /* Where toasts sit (above tab bar, pill and keyboard) */
+  --ps-toast-bottom: calc(max(var(--ps-tabbar-total), var(--ps-keyboard-inset)) + var(--ps-syncpill-space) + 8px);
+
+  /* Bottom sheets */
+  --ps-sheet-radius: 20px;
+  --ps-sheet-handle-w: 36px;
+  --ps-sheet-handle-h: 5px;
+  --ps-sheet-max-h: calc(100dvh - var(--ps-safe-top) - 8px);
+  --ps-sheet-pad-bottom: calc(max(var(--ps-safe-bottom), var(--ps-keyboard-inset)) + 16px);
+  --ps-sheet-dismiss-distance: 120px; /* drag-down distance (or velocity) that dismisses */
+
+  /* Pull-to-refresh */
+  --ps-pull-threshold: 64px;
+  --ps-pull-max: 96px;
+
+  /* Targets (rem so they grow with text; clamped) */
+  --ps-tap: clamp(44px, 2.75rem, 56px);     /* 44pt minimum (Apple HIG) */
+  --ps-tap-lg: clamp(48px, 3rem, 60px);     /* 48dp (Material) — nav items, primary buttons */
+
+  /* Card art geometry — real card 63×88 mm, ~3 mm corner radius */
+  --ps-card-aspect: 63 / 88;
+  --ps-radius-card: 4.8% / 3.4%;
+
+  /* --- Radii -------------------------------------------------------- */
+  --ps-radius-xs: 4px;
+  --ps-radius-sm: 6px;
+  --ps-radius-md: 10px;
+  --ps-radius-lg: 14px;
+  --ps-radius-xl: 20px;
+  --ps-radius-full: 9999px;
+
+  /* --- Z layers ----------------------------------------------------- */
+  --ps-z-sticky: 10;
+  --ps-z-nav: 30;
+  --ps-z-syncpill: 35;
+  --ps-z-sheet: 40;
+  --ps-z-toast: 50;
+  --ps-z-blocking: 60;                /* restore / erase overlays */
+
+  /* --- Motion -------------------------------------------------------- */
+  --ps-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ps-ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);   /* entering */
+  --ps-ease-accelerate: cubic-bezier(0.3, 0, 1, 1);        /* leaving  */
+  --ps-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);     /* badge pop, success check */
+  --ps-ease-page: cubic-bezier(0.2, 0, 0, 1);              /* push/pop (platform override §6) */
+  --ps-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);         /* sheet open/settle */
+
+  /* Durations that MOVE things (transform). Zeroed under reduced motion. */
+  --ps-dur-move-fast: 160ms;
+  --ps-dur-move: 240ms;
+  --ps-dur-move-slow: 360ms;          /* bottom sheet */
+  --ps-dur-page: 300ms;               /* push/pop page transition */
+
+  /* Durations that only FADE/RECOLOR. Kept under reduced motion. */
+  --ps-dur-instant: 80ms;
+  --ps-dur-fade-fast: 120ms;
+  --ps-dur-fade: 200ms;
+  --ps-dur-fade-slow: 320ms;
+
+  /* Distances (become 0 under reduced motion) */
+  --ps-move-y-sm: 4px;
+  --ps-move-y-md: 12px;
+  --ps-page-enter-x: 24px;            /* web: short slide + fade */
+  --ps-page-exit-x: -12px;
+  --ps-press-scale: 0.97;
+  --ps-pop-scale: 1.12;
+
+  --ps-dur-shimmer: 1400ms;
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. Dark theme (DEFAULT)                                              */
+/* ------------------------------------------------------------------ */
+:root,
+[data-theme="dark"] {
+  --ps-color-scheme: dark;
+
+  --ps-bg: #0b0d12;
+  --ps-surface: #12151c;
+  --ps-surface-2: #1a1e27;
+  --ps-surface-3: #232835;
+  --ps-overlay: rgb(5 6 10 / 0.72);
+  --ps-border: #262c3a;
+  --ps-border-strong: #3a4256;
+  --ps-border-input: #687186;
+
+  --ps-fg: #f2f4f8;            /* 17.6:1 on bg */
+  --ps-fg-muted: #a3abbd;      /*  8.4:1 on bg */
+  --ps-fg-subtle: #7d8699;     /*  5.3:1 on bg, 4.56:1 on surface-2 */
+  --ps-fg-disabled: #4f5668;   /* disabled only (exempt) */
+
+  --ps-accent: #ffcb05;
+  --ps-accent-hover: #ffd83d;
+  --ps-accent-pressed: #e6b600;
+  --ps-on-accent: #1a1400;     /* 12.1:1 */
+  --ps-accent-fg: #ffcb05;     /* accent AS text on bg/surface */
+  --ps-accent-soft: rgb(255 203 5 / 0.14);
+  --ps-focus-ring: #ffcb05;
+
+  --ps-positive: #34d399;
+  --ps-positive-soft: rgb(52 211 153 / 0.14);
+  --ps-negative: #f87171;
+  --ps-negative-soft: rgb(248 113 113 / 0.14);
+  --ps-warning: #fbbf24;
+  --ps-warning-soft: rgb(251 191 36 / 0.14);
+  --ps-info: #60a5fa;
+  --ps-info-soft: rgb(96 165 250 / 0.14);
+  --ps-danger-solid: #dc2626;
+  --ps-on-danger: #ffffff;
+
+  /* Chrome (top bar, tab bar). Solid by default; iOS makes it translucent in §6.
+     Text on chrome: --ps-fg, --ps-fg-muted, --ps-chrome-accent-fg only (checked over
+     worst-case white AND black content). */
+  --ps-chrome-bg: var(--ps-surface);
+  --ps-chrome-bg-translucent: rgb(18 21 28 / 0.86);
+  --ps-chrome-backdrop: none;
+  --ps-chrome-border: var(--ps-border);
+  --ps-chrome-accent-fg: #ffcb05;     /* active tab label/icon, top-bar text buttons */
+  --ps-tab-indicator-bg: var(--ps-accent);
+  --ps-sheet-handle: var(--ps-fg-subtle);
+
+  --ps-rarity-common: #94a3b8;
+  --ps-rarity-uncommon: #4ade80;
+  --ps-rarity-rare: #60a5fa;
+  --ps-rarity-holo: #a78bfa;
+  --ps-rarity-ultra: #f472b6;
+  --ps-rarity-illustration: #fb923c;
+  --ps-rarity-secret: #facc15;
+  --ps-rarity-secret-2: #f59e0b;
+  --ps-rarity-promo: #22d3ee;
+  --ps-rarity-unknown: #64748b;
+
+  --ps-cond-nm: #22c55e;   --ps-on-cond-nm: #04210f;
+  --ps-cond-lp: #84cc16;   --ps-on-cond-lp: #1a2604;
+  --ps-cond-mp: #eab308;   --ps-on-cond-mp: #251c00;
+  --ps-cond-hp: #f97316;   --ps-on-cond-hp: #2a1100;
+  --ps-cond-dmg: #dc2626;  --ps-on-cond-dmg: #ffffff;
+  --ps-cond-unknown: #3a4256; --ps-on-cond-unknown: #d5d9e2;
+
+  --ps-grade-bg: #f2f4f8;
+  --ps-grade-fg: #0b0d12;
+  --ps-grade-gem-ring: #ffcb05;
+
+  --ps-variant-bg: rgb(11 13 18 / 0.78);
+  --ps-variant-fg: #f2f4f8;
+  --ps-variant-foil-a: #a78bfa;
+  --ps-variant-foil-b: #22d3ee;
+
+  --ps-qty-bg: #ffcb05;
+  --ps-qty-fg: #1a1400;
+
+  --ps-art-empty-bg: #161a23;
+  --ps-art-empty-border: #2a3040;
+  --ps-skeleton-base: #1a1e27;
+  --ps-skeleton-highlight: #262c3a;
+
+  --ps-hairline-top: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --ps-shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --ps-shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+  --ps-shadow-3: 0 12px 40px rgb(0 0 0 / 0.6);
+  --ps-shadow-card: 0 1px 2px rgb(0 0 0 / 0.6), 0 6px 18px rgb(0 0 0 / 0.35);
+  --ps-shadow-scan: 0 0 0 4px var(--ps-bg), 0 6px 24px rgb(255 203 5 / 0.35);
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. Light theme                                                       */
+/* ------------------------------------------------------------------ */
+[data-theme="light"] {
+  --ps-color-scheme: light;
+
+  --ps-bg: #f6f7f9;
+  --ps-surface: #ffffff;
+  --ps-surface-2: #eef0f4;
+  --ps-surface-3: #e3e6ec;
+  --ps-overlay: rgb(14 17 22 / 0.45);
+  --ps-border: #d9dde5;
+  --ps-border-strong: #b9bfcc;
+  --ps-border-input: #848c9e;
+
+  --ps-fg: #0e1116;
+  --ps-fg-muted: #4a5263;
+  --ps-fg-subtle: #646c7d;
+  --ps-fg-disabled: #a6acb8;
+
+  --ps-accent: #ffcb05;
+  --ps-accent-hover: #ffd83d;
+  --ps-accent-pressed: #e6b600;
+  --ps-on-accent: #1a1400;
+  --ps-accent-fg: #8a6a00;     /* 5.1:1 on white */
+  --ps-accent-soft: rgb(255 203 5 / 0.22);
+  --ps-focus-ring: #1d4ed8;
+
+  --ps-positive: #047857;
+  --ps-positive-soft: rgb(4 120 87 / 0.1);
+  --ps-negative: #b91c1c;
+  --ps-negative-soft: rgb(185 28 28 / 0.08);
+  --ps-warning: #9a4806;       /* A2: was #b45309 (4.10:1 on its soft tint over bg — failed) → 5.13:1 */
+  --ps-warning-soft: rgb(154 72 6 / 0.1);
+  --ps-info: #1d4ed8;
+  --ps-info-soft: rgb(29 78 216 / 0.08);
+  --ps-danger-solid: #b91c1c;
+  --ps-on-danger: #ffffff;
+
+  --ps-chrome-bg: var(--ps-surface);
+  --ps-chrome-bg-translucent: rgb(255 255 255 / 0.9);
+  --ps-chrome-backdrop: none;
+  --ps-chrome-border: var(--ps-border);
+  --ps-chrome-accent-fg: #6b5100;     /* #8a6a00 drops to 4.04:1 on translucent chrome over black art */
+  --ps-tab-indicator-bg: var(--ps-accent);
+  --ps-sheet-handle: var(--ps-border-input);
+
+  --ps-rarity-common: #64748b;
+  --ps-rarity-uncommon: #16a34a;
+  --ps-rarity-rare: #2563eb;
+  --ps-rarity-holo: #7c3aed;
+  --ps-rarity-ultra: #db2777;
+  --ps-rarity-illustration: #ea580c;
+  --ps-rarity-secret: #ca8a04;
+  --ps-rarity-secret-2: #b45309;
+  --ps-rarity-promo: #0891b2;
+  --ps-rarity-unknown: #94a3b8;
+
+  --ps-cond-nm: #15803d;   --ps-on-cond-nm: #ffffff;
+  --ps-cond-lp: #4d7c0f;   --ps-on-cond-lp: #ffffff;
+  --ps-cond-mp: #a16207;   --ps-on-cond-mp: #ffffff;
+  --ps-cond-hp: #c2410c;   --ps-on-cond-hp: #ffffff;
+  --ps-cond-dmg: #b91c1c;  --ps-on-cond-dmg: #ffffff;
+  --ps-cond-unknown: #e3e6ec; --ps-on-cond-unknown: #3b4252;
+
+  --ps-grade-bg: #0e1116;
+  --ps-grade-fg: #ffffff;
+  --ps-grade-gem-ring: #ca8a04;
+
+  --ps-variant-bg: rgb(255 255 255 / 0.88);
+  --ps-variant-fg: #0e1116;
+  --ps-variant-foil-a: #7c3aed;
+  --ps-variant-foil-b: #0891b2;
+
+  --ps-qty-bg: #0e1116;
+  --ps-qty-fg: #ffcb05;
+
+  --ps-art-empty-bg: #eef0f4;
+  --ps-art-empty-border: #d9dde5;
+  --ps-skeleton-base: #e8ebf0;
+  --ps-skeleton-highlight: #f4f6f9;
+
+  --ps-hairline-top: inset 0 1px 0 rgb(255 255 255 / 0.6);
+  --ps-shadow-1: 0 1px 2px rgb(16 24 40 / 0.06);
+  --ps-shadow-2: 0 4px 16px rgb(16 24 40 / 0.08);
+  --ps-shadow-3: 0 12px 40px rgb(16 24 40 / 0.16);
+  --ps-shadow-card: 0 1px 2px rgb(16 24 40 / 0.1), 0 6px 18px rgb(16 24 40 / 0.08);
+  --ps-shadow-scan: 0 0 0 4px var(--ps-surface), 0 6px 20px rgb(202 138 4 / 0.35);
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. Responsive overrides (web dev / PWA / iPad)                       */
+/* ------------------------------------------------------------------ */
+@media (min-width: 640px) {
+  :root {
+    --ps-page-x: 24px;
+    --ps-grid-gap: 12px;
+    --ps-tile-min: 136px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --ps-page-x: 32px;
+    --ps-grid-gap: 16px;
+    --ps-tile-min: 160px;
+    --ps-text-h1: min(2rem, 44px);
+    --ps-text-h1-lh: 1.25;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. Large text buckets (data-text-size set from --ps-text-scale)      */
+/*    default < 1.12 ≤ large < 1.4 ≤ ax                                  */
+/* ------------------------------------------------------------------ */
+[data-text-size="large"] {
+  --ps-syncpill-h: 36px;
+}
+
+[data-text-size="ax"] {
+  --ps-tile-min: 150px;               /* 2 columns at 390px so names stay readable */
+  --ps-syncpill-h: 40px;
+  --ps-topbar-h: 60px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. Platform overrides (class set from Capacitor.getPlatform())       */
+/* ------------------------------------------------------------------ */
+.platform-ios {
+  /* SF Pro: native look, zero bytes, best Dynamic Type metrics; Hiragino for JA names. */
+  --ps-font-sans: -apple-system, system-ui, "SF Pro Text", "Helvetica Neue", "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", sans-serif, "Apple Color Emoji";
+
+  --ps-topbar-h: 44px;                /* UINavigationBar */
+  --ps-tabbar-h: 50px;                /* UITabBar is 49pt; +1 keeps 44pt targets with labels */
+  --ps-tab-indicator-w: 0px;          /* iOS marks the active tab by tint only */
+  --ps-tab-indicator-h: 0px;
+
+  /* Translucent bars with backdrop blur, like UIKit chrome */
+  --ps-chrome-bg: var(--ps-chrome-bg-translucent);
+  --ps-chrome-backdrop: saturate(180%) blur(20px);
+
+  --ps-sheet-radius: 14px;
+  --ps-sheet-handle-w: 36px;          /* UISheetPresentationController grabber 36×5 */
+  --ps-sheet-handle-h: 5px;
+
+  /* Push = new page slides fully in from the right, old page shifts 30% (UIKit) */
+  --ps-dur-page: 350ms;
+  --ps-ease-page: cubic-bezier(0.32, 0.72, 0, 1);
+  --ps-page-enter-x: 100%;
+  --ps-page-exit-x: -30%;
+}
+
+.platform-ios[data-text-size="ax"] {
+  --ps-topbar-h: 52px;
+}
+
+.platform-android {
+  /* Material 3 */
+  --ps-topbar-h: 64px;                /* M3 small top app bar */
+  --ps-tabbar-h: 64px;                /* M3 short navigation bar */
+  --ps-tab-indicator-w: 56px;         /* M3 active indicator pill behind the icon */
+  --ps-tab-indicator-h: 32px;
+  --ps-tab-indicator-bg: var(--ps-accent-soft);
+
+  --ps-sheet-radius: 28px;            /* M3 bottom sheet */
+  --ps-sheet-handle-w: 32px;          /* M3 drag handle 32×4 */
+  --ps-sheet-handle-h: 4px;
+
+  /* M3 shared-axis X: short slide + fade */
+  --ps-dur-page: 300ms;
+  --ps-ease-page: cubic-bezier(0.2, 0, 0, 1);
+  --ps-page-enter-x: 30px;
+  --ps-page-exit-x: -30px;
+}
+
+/* Sync pill visible → content and toasts clear it */
+.has-sync-pill {
+  --ps-syncpill-space: calc(var(--ps-syncpill-h) + 8px);
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. Increased contrast (iOS "Increase Contrast", Windows/macOS)       */
+/* ------------------------------------------------------------------ */
+@media (prefers-contrast: more) {
+  :root,
+  [data-theme="dark"] {
+    --ps-fg-subtle: #a3abbd;          /* 7.2:1 on surface-2 */
+    --ps-border: #687186;
+    --ps-border-strong: #8b93a6;
+    --ps-chrome-bg-translucent: var(--ps-surface);
+  }
+  [data-theme="light"] {
+    --ps-fg-subtle: #3b4252;          /* 8.8:1 on surface-2 */
+    --ps-border: #848c9e;
+    --ps-border-strong: #6b7385;
+    --ps-chrome-bg-translucent: var(--ps-surface);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. Reduced motion: kill MOVEMENT, keep FADES/COLOR feedback          */
+/*    (WKWebView follows iOS Reduce Motion; Android WebView follows      */
+/*    "Remove animations")                                               */
+/* ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  .platform-ios,
+  .platform-android {
+    --ps-dur-move-fast: 1ms;
+    --ps-dur-move: 1ms;
+    --ps-dur-move-slow: 1ms;
+    --ps-move-y-sm: 0px;
+    --ps-move-y-md: 0px;
+    --ps-page-enter-x: 0px;           /* page change becomes a crossfade over --ps-dur-fade */
+    --ps-page-exit-x: 0px;
+    --ps-dur-page: 200ms;
+    --ps-press-scale: 1;
+    --ps-pop-scale: 1;
+    --ps-ease-spring: cubic-bezier(0.2, 0, 0, 1);
+    --ps-dur-shimmer: 0ms;
+  }
+}
+
+/*
+ * Haptics are not CSS. The event → Capacitor Haptics mapping lives in
+ * DESIGN-TOKENS.md §7.3 and is implemented once in apps/mobile/src/platform/haptics.ts.
+ */

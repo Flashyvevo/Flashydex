@@ -1,19 +1,21 @@
-# flashydex
+# FlashyDex
 
-Self-hosted Pokémon TCG collection manager. This repository is a Phase 1 scaffold.
+Local-first TCG collection manager for iOS, Android, and the web. The app keeps its catalog and collection data in SQLite on the device; no server is required for normal use.
 
 ## Prerequisites
 
-- Node.js 22.x and npm 10+
-- Python 3.12 (`py -3.12` on Windows or `python3.12` on Linux)
+- Node.js 22 or newer (`.nvmrc` is 22)
+- npm 10 or newer
+- Python 3.12 for the recognition-service health skeleton
 
 ## Setup
 
 ```bash
+npm install
 bash scripts/setup.sh
 ```
 
-The setup script installs workspace dependencies, creates `services/recognition/.venv`, installs the recognition skeleton dependencies, and prints the LAN URL for a phone.
+`npm install` copies the web SQLite WASM asset and generates abstract FlashyDex PWA icons. The setup script uses `npm ci` when a lockfile is present, then creates `services/recognition/.venv`.
 
 ## Development
 
@@ -21,7 +23,7 @@ The setup script installs workspace dependencies, creates `services/recognition/
 npm run dev
 ```
 
-The web app listens on `0.0.0.0:3200`. Find LAN URLs again with:
+Vite listens on `0.0.0.0:3200` for LAN testing. Print a phone URL with:
 
 ```bash
 bash scripts/lan-url.sh
@@ -32,12 +34,15 @@ bash scripts/lan-url.sh
 ```bash
 npm run typecheck
 npm run lint
-npm run test
-npm run e2e
+npm test
 npm run build
+npm run e2e
+npm run cap:sync
+npm run cap:ios
+npm run cap:android
 npm run db:generate
-npm run db:migrate
-npm run sync -- --lang en,ja  # intentionally not implemented yet
 ```
 
-`FLASHYDEX_DB_PATH` optionally overrides the SQLite path. It defaults to `./data/flashydex.db` relative to `apps/web` when running the web app.
+The web SQLite implementation uses `jeep-sqlite` and sql.js. Native builds use `@capacitor-community/sqlite`; run `npm run cap:sync` after every web build before opening the native projects. See `scripts/ios-notes.md` for the Mac/Xcode steps.
+
+FlashyDex is not affiliated with Nintendo, Creatures, GAME FREAK, or The Pokémon Company.

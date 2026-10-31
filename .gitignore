@@ -1,13 +1,16 @@
 # dependencies and builds
 node_modules/
-.next/
-out/
+dist/
 coverage/
 playwright-report/
 test-results/
+*.tsbuildinfo
+
+# Capacitor local state
+apps/mobile/.capacitor/
+apps/mobile/public/sql-wasm.wasm
 
 # local application data
-apps/web/data/
 *.db
 *.db-shm
 *.db-wal

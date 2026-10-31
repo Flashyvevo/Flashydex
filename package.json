@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "packageManager": "npm@10.9.2",
   "engines": {
-    "node": ">=22 <23",
+    "node": ">=22",
     "npm": ">=10"
   },
   "workspaces": [
@@ -12,14 +12,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=@flashydex/web",
-    "build": "npm run build --workspace=@flashydex/web",
-    "test": "npm run test --workspace=@flashydex/web && bash scripts/test-recognition.sh",
-    "e2e": "npm run e2e --workspace=@flashydex/web",
-    "typecheck": "npm run typecheck --workspace=@flashydex/web && npm run typecheck --workspace=@flashydex/schemas",
-    "lint": "npm run lint --workspace=@flashydex/web",
-    "db:generate": "npm run db:generate --workspace=@flashydex/web",
-    "db:migrate": "npm run db:migrate --workspace=@flashydex/web",
-    "sync": "bash scripts/sync-placeholder.sh"
+    "postinstall": "node scripts/copy-sql-wasm.mjs && node apps/mobile/scripts/generate-icons.mjs",
+    "dev": "npm run dev --workspace=@flashydex/mobile",
+    "build": "npm run build --workspace=@flashydex/mobile",
+    "test": "npm run test --workspace=@flashydex/core && npm run test --workspace=@flashydex/mobile && bash scripts/test-recognition.sh",
+    "e2e": "npm run e2e --workspace=@flashydex/mobile",
+    "typecheck": "npm run typecheck --workspace=@flashydex/core && npm run typecheck --workspace=@flashydex/schemas && npm run typecheck --workspace=@flashydex/mobile",
+    "lint": "npm run lint --workspace=@flashydex/mobile",
+    "db:generate": "npm run db:generate --workspace=@flashydex/core",
+    "cap:sync": "npm run cap:sync --workspace=@flashydex/mobile",
+    "cap:ios": "npm run cap:ios --workspace=@flashydex/mobile",
+    "cap:android": "npm run cap:android --workspace=@flashydex/mobile"
   }
 }

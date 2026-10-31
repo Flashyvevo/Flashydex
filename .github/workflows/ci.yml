@@ -24,14 +24,9 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Vitest
-        run: npm run test --workspace=@flashydex/web
-      - name: Pytest
-        run: python -m pytest services/recognition/tests
-      - name: Next build
+      - name: Vitest and pytest
+        run: npm test
+      - name: Vite build
         run: npm run build
-      - name: Playwright smoke (non-blocking)
-        continue-on-error: true
-        run: |
-          npx playwright install --with-deps chromium
-          npm run e2e
+      - name: Capacitor sync smoke
+        run: npm run cap:sync
