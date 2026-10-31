@@ -37,12 +37,12 @@ function baseCopy(error: unknown): Omit<ErrorCopy, "detail"> {
     case 'STORAGE_FULL':
       return { code, title: 'Your device is full', body: 'Nothing was saved. Free up space in Settings → General → iPhone Storage (Android: Settings → Storage), then try again.' };
     case 'PERSISTENCE_FAILED':
-      return { code, title: 'Your last change may not have saved', body: 'FlashyDex reloaded your data. Check the card, then try again if it’s missing.' };
+      return { code, title: 'Your last change may not have saved', body: 'Editing is paused while FlashyDex re-checks what was saved. Check the card afterwards and add it again if it’s missing — don’t retry before checking.' };
     case 'DB_UNAVAILABLE':
     case 'MIGRATION_FAILED':
       return { code, title: 'FlashyDex couldn’t open your data', body: 'Your collection hasn’t been deleted. Close and reopen the app. If this keeps happening, update FlashyDex from the App Store.' };
     case 'MAINTENANCE':
-      return { code, title: 'Restoring a backup', body: 'Keep FlashyDex open.' };
+      return { code, title: 'FlashyDex is busy', body: 'A restore or catalog change is in progress. Keep FlashyDex open and try again in a moment.' };
     case 'ACTIVE_SYNC':
     case 'ACTIVE_WORK':
       return { code, title: 'A download is already running', body: 'Starts when the current download finishes.' };
@@ -61,8 +61,12 @@ function baseCopy(error: unknown): Omit<ErrorCopy, "detail"> {
     case 'INVALID_CSV':
       return { code, title: 'This file can’t be imported', body: 'It isn’t a FlashyDex export or a CSV with the expected columns. See the format guide.' };
     case 'BACKUP_INVALID':
+      return { code, title: 'This backup can’t be used', body: 'It isn’t a FlashyDex backup, or it’s damaged. Your data is unchanged.' };
     case 'BACKUP_VERSION_UNSUPPORTED':
-      return { code, title: 'This backup can’t be used', body: 'It isn’t a FlashyDex backup, or it’s damaged.' };
+      return { code, title: 'This backup needs a newer FlashyDex', body: 'It was made by a newer version of the app. Update FlashyDex, then try again. Your data is unchanged.' };
+    case 'ALREADY_RESTORED':
+      return { code, title: 'Already restored', body: 'This backup was already restored. Choose the file again to restore it once more.' };
+    case 'SIZE_LIMIT':
     case 'PAYLOAD_TOO_LARGE':
       return { code, title: 'File too large', body: 'The limit is 25 MB for imports and 512 MB for backups.' };
     case 'FILE_IO':
@@ -77,7 +81,7 @@ function baseCopy(error: unknown): Omit<ErrorCopy, "detail"> {
     case 'APP_UPDATE_REQUIRED':
       return { code, title: 'Update FlashyDex', body: 'This catalog needs a newer version of the app.' };
     case 'INSTANCE_LOCK':
-      return { code, title: 'FlashyDex is open in another tab', body: 'Close the other tab to use FlashyDex here.' };
+      return { code, title: 'Editing is off in this tab', body: 'Only one FlashyDex tab can edit at a time. Close the other tab and reload, or open FlashyDex over https or on localhost.' };
     case 'VALIDATION_ERROR':
       return { code, title: 'Check the highlighted fields', body: 'Something in the form isn’t valid.' };
     default:

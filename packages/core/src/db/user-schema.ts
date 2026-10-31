@@ -405,3 +405,32 @@ export const schemaMigrations = sqliteTable('schema_migrations', {
   checksum: text('checksum').notNull(),
   appliedAt: text('applied_at').notNull()
 });
+
+/** D45: one durable admission row for install / uninstall / rollback / sync / restore (single PK value 'lock'). */
+export const workAdmission = sqliteTable(
+  'work_admission',
+  {
+    id: id(),
+    kind: text('kind', { enum: ['install', 'uninstall', 'rollback', 'sync', 'restore'] }).notNull(),
+    token: text('token').notNull(),
+    languagesJson: text('languages_json').notNull(),
+    acquiredAt: text('acquired_at').notNull()
+  },
+  (t) => [
+    check('wa_single', sql`${t.id} = 'lock'`),
+    check('wa_kind', sql`${t.kind} IN ('install','uninstall','rollback','sync','restore')`)
+  ]
+);
+
+/** D40: .fdx restore receipts (operational; never exported or restored). */
+export const restoreReceipts = sqliteTable(
+  'restore_receipts',
+  {
+    id: id(),
+    backupHash: text('backup_hash').notNull(),
+    resultJson: text('result_json').notNull(),
+    restoredAt: text('restored_at').notNull(),
+    expiresAt: text('expires_at').notNull()
+  },
+  (t) => [index('restore_receipt_expiry').on(t.expiresAt)]
+);

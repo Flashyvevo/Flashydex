@@ -36,8 +36,8 @@ describe('user database bootstrap (61)', () => {
       const names = (await t.user.rows("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map((r) => String(r[0]));
       expect(names).toEqual([
         'acquisitions', 'app_settings', 'app_state', 'catalog_annotations', 'catalog_identities', 'catalog_install_jobs', 'collection_group_members',
-        'collection_groups', 'custom_cards', 'data_operation_receipts', 'grades', 'installed_catalogs', 'owned_cards', 'pack_metrics', 'price_snapshots',
-        'scan_sessions', 'schema_migrations', 'storage_locations', 'sync_state'
+        'collection_groups', 'custom_cards', 'data_operation_receipts', 'grades', 'installed_catalogs', 'owned_cards', 'pack_metrics', 'price_snapshots', 'restore_receipts',
+        'scan_sessions', 'schema_migrations', 'storage_locations', 'sync_state', 'work_admission'
       ]);
       expect(await t.user.rows('SELECT id, collection_revision FROM app_state')).toEqual([['collection', 0]]);
       expect(await t.user.rows('SELECT id, languages_json, hide_tcg_pocket, default_currency FROM app_settings')).toEqual([['app', '["en","ja"]', 1, 'USD']]);
@@ -60,7 +60,7 @@ describe('user database bootstrap (61)', () => {
     const t = await createTestDatabases();
     try {
       const tables = Object.values(userSchema).filter((v) => v && typeof v === 'object' && Symbol.for('drizzle:IsDrizzleTable') in (v as object)) as SQLiteTable[];
-      expect(tables.length).toBe(19);
+      expect(tables.length).toBe(21);
       for (const table of tables) {
         const config = getTableConfig(table);
         const info = (await t.user.rows(`PRAGMA table_info(${config.name})`)).map((r) => ({ name: String(r[1]), notnull: Number(r[3]), pk: Number(r[5]) }));

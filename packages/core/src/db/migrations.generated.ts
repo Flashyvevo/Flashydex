@@ -9,6 +9,10 @@ export const USER_MIGRATIONS: readonly MigrationFile[] = [
   {
     "version": "0001_seed",
     "sql": "INSERT INTO `app_state` (`id`, `collection_revision`, `updated_at`) VALUES ('collection', 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));\n--> statement-breakpoint\nINSERT INTO `app_settings` (`id`, `languages_json`, `sets_followed_json`, `sync_all_sets`, `hide_tcg_pocket`, `default_currency`, `disclaimer_acknowledged`, `disclaimer_acknowledged_at`, `onboarding_completed_at`, `updated_at`) VALUES ('app', '[\"en\",\"ja\"]', '[]', 0, 1, 'USD', 0, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));\n--> statement-breakpoint\nINSERT INTO `installed_catalogs` (`language`, `version`, `sha256`, `installed_at`, `status`, `schema_version`, `generation`, `active_ref`) VALUES ('en', NULL, NULL, NULL, 'absent', NULL, 0, NULL);\n--> statement-breakpoint\nINSERT INTO `installed_catalogs` (`language`, `version`, `sha256`, `installed_at`, `status`, `schema_version`, `generation`, `active_ref`) VALUES ('ja', NULL, NULL, NULL, 'absent', NULL, 0, NULL);\n"
+  },
+  {
+    "version": "0002_admission_restore",
+    "sql": "CREATE TABLE `work_admission` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`kind` text NOT NULL,\n\t`token` text NOT NULL,\n\t`languages_json` text NOT NULL,\n\t`acquired_at` text NOT NULL,\n\tCONSTRAINT `wa_single` CHECK(`id` = 'lock'),\n\tCONSTRAINT `wa_kind` CHECK(`kind` IN ('install','uninstall','rollback','sync','restore'))\n);\n--> statement-breakpoint\nCREATE TABLE `restore_receipts` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`backup_hash` text NOT NULL,\n\t`result_json` text NOT NULL,\n\t`restored_at` text NOT NULL,\n\t`expires_at` text NOT NULL\n);\n--> statement-breakpoint\nCREATE INDEX `restore_receipt_expiry` ON `restore_receipts` (`expires_at`);\n"
   }
 ];
 

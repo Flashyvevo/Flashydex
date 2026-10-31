@@ -44,8 +44,15 @@ export function createJeepLikeConnection(sqlite: Database.Database): JeepLikeCon
 
 export type ProxyFactory = (connection: JeepLikeConnection) => ProxyCallback;
 
-export function createNodeDriver(path: string, options: { readonly?: boolean; label?: string; proxyFactory?: ProxyFactory } = {}): SqlDriver & { raw: Database.Database } {
-  const sqlite = new Database(path, { readonly: options.readonly === true, fileMustExist: options.readonly === true });
+export interface NodeDriverFaults {
+  /** Called after every committed transaction; throw to simulate a failed flush (web IndexedDB quota / save failure). */
+  afterCommit?: () => Promise<void>;
+  /** Called by reopen() after the handle is closed and before it is re-opened: swap the file contents here to simulate pre-/post-commit persisted state. */
+  beforeReopen?: () => void | Promise<void>;
+}
+
+export function createNodeDriver(path: string, options: { readonly?: boolean; label?: string; proxyFactory?: ProxyFactory; faults?: NodeDriverFaults } = {}): SqlDriver & { raw: Database.Database } {
+  let sqlite = new Database(path, { readonly: options.readonly === true, fileMustExist: options.readonly === true });
   if (options.readonly !== true) sqlite.pragma('synchronous = OFF'); // test speed only: crash durability is not under test here
   const proxy: ProxyCallback = options.proxyFactory ? options.proxyFactory(createJeepLikeConnection(sqlite)) : async (sql, params, method) => {
     const bound = params.map((p) => (typeof p === 'boolean' ? (p ? 1 : 0) : p === undefined ? null : p));
@@ -57,10 +64,22 @@ export function createNodeDriver(path: string, options: { readonly?: boolean; la
     const rows = statement.raw(true).all(...bound);
     return { rows: method === 'get' ? (rows[0] ?? []) : rows } as { rows: unknown[] };
   };
+  const faults = options.faults;
   return {
     label: options.label ?? path,
     proxy,
-    raw: sqlite,
+    get raw() {
+      return sqlite;
+    },
+    ...(faults?.afterCommit ? { afterCommit: faults.afterCommit } : {}),
+    ...(options.readonly === true ? {} : {
+      async reopen() {
+        if (sqlite.open) sqlite.close();
+        await faults?.beforeReopen?.();
+        sqlite = new Database(path);
+        sqlite.pragma('synchronous = OFF');
+      }
+    }),
     async close() {
       if (sqlite.open) sqlite.close();
     }
@@ -87,6 +106,7 @@ export class FixedEnvironment implements Environment {
 }
 
 class DirectoryCatalogSource implements CatalogSource {
+  readonly writable = true;
   constructor(private readonly dir: string, private readonly proxyFactory?: ProxyFactory) {}
   path(language: Language): string {
     return join(this.dir, `catalog-${language}.db`);
@@ -113,12 +133,12 @@ export interface TestDatabases {
 }
 
 /** Fresh temp-directory user DB (FILE, foreign_keys ON, migrated) + a directory-backed catalog source. */
-export async function createTestDatabases(options: { dir?: string; env?: FixedEnvironment; proxyFactory?: ProxyFactory } = {}): Promise<TestDatabases> {
+export async function createTestDatabases(options: { dir?: string; env?: FixedEnvironment; proxyFactory?: ProxyFactory; userFaults?: NodeDriverFaults } = {}): Promise<TestDatabases> {
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), 'flashydex-test-'));
   mkdirSync(dir, { recursive: true });
   const env = options.env ?? new FixedEnvironment();
   const source = new DirectoryCatalogSource(dir, options.proxyFactory);
-  const user = new Db(createNodeDriver(join(dir, "flashydex-user.db"), { label: "flashydex-user", proxyFactory: options.proxyFactory }));
+  const user = new Db(createNodeDriver(join(dir, "flashydex-user.db"), { label: "flashydex-user", proxyFactory: options.proxyFactory, ...(options.userFaults ? { faults: options.userFaults } : {}) }));
   await user.initialize();
   await migrate(user, USER_MIGRATIONS, env.clock.now);
   const databases = new DatabaseSet(user, source);

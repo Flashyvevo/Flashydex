@@ -16,6 +16,7 @@ import {
   useDashboard,
   useResumeSync,
   useSettings,
+  useStartSync,
   useSyncCapabilities,
   useUpdateOwnedPrices,
   useUpdateSettings
@@ -140,8 +141,8 @@ function LanguageRow({
   const isInstalled = installed?.status === 'installed';
   const running = install.active && install.progress?.language === language;
   const progress = install.progress?.language === language ? install.progress : null;
-  const failedHere = !!lastCode;
-  const code = failedHere || (!running && !isInstalled) ? (install.error?.code ?? status.data?.lastError?.code) : undefined;
+  const sessionCode = install.errorLanguage === language ? install.error?.code : undefined;
+  const code = running ? undefined : (sessionCode ?? (lastCode ? status.data?.lastError?.code : undefined) ?? (!isInstalled ? status.data?.lastError?.code : undefined));
   void progress;
 
   if (running && progress) {
@@ -204,7 +205,7 @@ function LanguageRow({
         </div>
         {isInstalled && entry?.updateAvailable && entry.compatible ? (
           <Button variant="secondary" softDisabled={needsNet} aria-describedby={needsNet ? reasonId : undefined} onClick={onDownload} data-testid={`catalog-download-${language}`}>
-            Update · {formatBytes(entry.compressedBytes)}
+            {failure?.retry ? 'Retry' : `Update · ${formatBytes(entry.compressedBytes)}`}
           </Button>
         ) : !isInstalled ? (
           <Button variant="primary" softDisabled={needsNet || (!entry && !loadingManifest)} aria-describedby={needsNet ? reasonId : undefined} onClick={onDownload} data-testid={`catalog-download-${language}`}>
@@ -223,7 +224,7 @@ function LanguageRow({
         </p>
       )}
       {language === 'ja' && !isInstalled && <p className="text-caption text-fg-muted">Many older Japanese cards have no pictures in the catalog yet.</p>}
-      {failure && !isInstalled && (
+      {failure && (
         <Banner tone={failureReason(code) === 'schema' ? 'warning' : 'negative'}>
           {failure.text}
         </Banner>
@@ -250,6 +251,16 @@ function PricesSection() {
   const start = async () => {
     try {
       await update.mutateAsync();
+      haptic('select');
+    } catch (e) {
+      if (!isCancelled(e)) toast.show({ message: describeError(e).body, tone: 'negative' });
+    }
+  };
+
+  const incremental = useStartSync();
+  const startIncremental = async () => {
+    try {
+      await incremental.mutateAsync({ mode: 'incremental' });
       haptic('select');
     } catch (e) {
       if (!isCancelled(e)) toast.show({ message: describeError(e).body, tone: 'negative' });
@@ -310,6 +321,11 @@ function PricesSection() {
               </p>
             )}
           </>
+        )}
+        {syncCaps.incremental && (
+          <Button className="mt-3" full softDisabled={!net.online || !!active} loading={incremental.isPending} onClick={() => void startIncremental()} data-testid="sync-incremental">
+            Check for new cards
+          </Button>
         )}
         {run && run.status === 'completed' && run.mode === 'prices_only' && (
           <p className="mt-2 text-caption text-fg-muted">

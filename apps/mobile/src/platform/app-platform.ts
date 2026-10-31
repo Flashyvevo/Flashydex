@@ -6,6 +6,7 @@ import { PlatformError, SizeLimitError, type FileRef, type Platform } from '@fla
 import { sha256 } from 'hash-wasm';
 import localforage from 'localforage';
 import { uuidV4 } from '../lib/uuid';
+import { capacitorHttp, nativeHttpGet } from './native-http';
 
 /**
  * Capacitor / web implementation of core's `Platform` (docs/API.md "Platform adapter").
@@ -30,7 +31,8 @@ const toBase64 = async (bytes: Uint8Array): Promise<string> => {
 
 const ALLOWED_HTTP_HOSTS = new Set(['api.tcgdex.net', 'assets.tcgdex.net']);
 
-async function pickBytes(accept: string): Promise<{ name: string; mime: string; bytes: Uint8Array } | null> {
+/** The size is checked against `maxBytes` from `File.size` BEFORE any bytes are read into memory (R13). */
+async function pickBytes(accept: string, maxBytes: number): Promise<{ name: string; mime: string; bytes: Uint8Array } | null> {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -47,6 +49,7 @@ async function pickBytes(accept: string): Promise<{ name: string; mime: string; 
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
       if (!file) return finish(null);
+      if (file.size > maxBytes) return finish(null, new SizeLimitError('The selected file is too large', { maxBytes }));
       try {
         finish({ name: file.name, mime: file.type, bytes: new Uint8Array(await file.arrayBuffer()) });
       } catch {
@@ -66,9 +69,8 @@ export const platform: Platform = {
 
   filesystem: {
     async pick({ kind, maxBytes }) {
-      const picked = await pickBytes(kind === 'backup' ? '.fdx,application/zip,application/octet-stream' : '.json,.csv,application/json,text/csv,text/plain');
+      const picked = await pickBytes(kind === 'backup' ? '.fdx,application/vnd.flashydex.backup+zip,application/zip,application/octet-stream' : '.json,.csv,application/json,text/csv,text/plain', maxBytes);
       if (!picked) return null;
-      if (picked.bytes.byteLength > maxBytes) throw new SizeLimitError('The selected file is too large', { maxBytes });
       const id = uuidV4();
       await store.setItem(id, picked.bytes);
       const safeName = picked.name.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 200) || 'file';
@@ -151,6 +153,7 @@ export const platform: Platform = {
   async http({ url, headers, timeoutMs }, signal) {
     const target = new URL(url);
     if (target.protocol !== 'https:' || !ALLOWED_HTTP_HOSTS.has(target.hostname)) throw new PlatformError('HTTP_FAILED', 'This host is not allowed');
+    if (Capacitor.isNativePlatform()) return nativeHttpGet(capacitorHttp, { url, headers, timeoutMs }, signal);
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), timeoutMs);
     const onAbort = () => timeout.abort();

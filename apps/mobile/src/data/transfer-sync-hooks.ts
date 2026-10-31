@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   BackupCapabilities, BackupCreate, ById, DomainError, ExportInput, FileRef, ImportCommit, ImportCommitResult, ImportDryRun, ImportReport, Input,
-  PickInput, RestoreCommit, RestoreDryRun, ShareInput, SyncDto, SyncStart
+  PickInput, RestoreCommit, RestoreDryRun, Services, ShareInput, SyncDto, SyncStart
 } from '@flashydex/core';
 import { ValidationError } from '@flashydex/core';
 import { useServices, useServicesIfReady } from './context';
@@ -97,22 +97,40 @@ export function useBackupCapabilities() {
   const services = useServicesIfReady();
   return useQuery<BackupCapabilities, DomainError>({ queryKey: keys.backupCapabilities(), enabled: services !== null, queryFn: () => (services as NonNullable<typeof services>).backup.capabilities({}) });
 }
+type BackupApi = Services['backup'];
+export type BackupResultDto = Awaited<ReturnType<BackupApi['create']>>;
+export type BackupPreviewDto = Awaited<ReturnType<BackupApi['previewRestore']>>;
+export type RestoreResultDto = Awaited<ReturnType<BackupApi['restore']>>;
+export type BackupProgressEvent = Parameters<NonNullable<Parameters<BackupApi['create']>[1]>>[0];
+type Controls = { onProgress?: (progress: BackupProgressEvent) => void; signal?: AbortSignal };
+
 export function useCreateBackup() {
   const services = useServices();
-  return useMutation({ retry: false, mutationFn: (input: Input<typeof BackupCreate>) => services.backup.create(input) });
+  return useMutation<BackupResultDto, DomainError, { input: Input<typeof BackupCreate> } & Controls>({
+    retry: false,
+    mutationFn: ({ input, onProgress, signal }) => services.backup.create(input, onProgress, signal)
+  });
 }
 export function usePreviewRestore() {
   const services = useServices();
-  return useMutation({ retry: false, mutationFn: (input: Input<typeof RestoreDryRun>) => services.backup.previewRestore(input) });
+  return useMutation<BackupPreviewDto, DomainError, { input: Input<typeof RestoreDryRun> } & Controls>({
+    retry: false,
+    mutationFn: ({ input, onProgress, signal }) => services.backup.previewRestore(input, onProgress, signal)
+  });
 }
+/** Restore replaces ALL personal data: on success every cached query (not just `fd` ones) is refetched. */
 export function useRestore() {
   const services = useServices();
   const qc = useQueryClient();
-  return useMutation({ retry: false, mutationFn: (input: Input<typeof RestoreCommit>) => services.backup.restore(input), onSuccess: () => invalidateAll(qc) });
+  return useMutation<RestoreResultDto, DomainError, { input: Input<typeof RestoreCommit> } & Controls>({
+    retry: false,
+    mutationFn: ({ input, onProgress, signal }) => services.backup.restore(input, onProgress, signal),
+    onSuccess: () => qc.invalidateQueries()
+  });
 }
 
 /** What the sync engine can do on this platform; the UI disables the rest with an honest caption. */
-export function useSyncCapabilities(): { pricesOnly: boolean; refresh: boolean; reason: string | null } {
+export function useSyncCapabilities(): { pricesOnly: boolean; refresh: boolean; incremental: boolean; reason: string | null } {
   const services = useServicesIfReady();
-  return services ? services.sync.capabilities() : { pricesOnly: false, refresh: false, reason: null };
+  return services ? services.sync.capabilities() : { pricesOnly: false, refresh: false, incremental: false, reason: null };
 }

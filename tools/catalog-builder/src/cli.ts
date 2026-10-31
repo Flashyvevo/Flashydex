@@ -11,10 +11,13 @@ import { checkAssetUrls, crawl } from './crawl';
 import { Fetcher } from './http';
 import { mergeManifest, readExistingManifest, validateManifest, type CatalogManifest, type ManifestEntry } from './manifest';
 import { loadCatalogMigrations, schemaFingerprint } from './migrations';
+import { TCGDEX_API } from './crawl';
+import { assertResumeCompatible, cacheConfigHash, commitImmutableArtifact, hashSetIds, type RunBinding } from './run-guard';
 import { MAX_WINDOW_BYTES, ZSTD_LEVEL, compressFile, decompressFile, fileSize, sha256File } from './zstd';
 
 const BUILDER_NAME = 'flashydex-catalog-builder';
 const BUILDER_PACKAGE_VERSION = '0.1.0';
+const ZSTD_LIBRARY_ID = 'zstd-napi@0.0.13';
 const DEFAULT_REPO = 'https://github.com/Flashyvevo/Flashydex';
 
 interface Options {
@@ -100,7 +103,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await rename(temp, path);
 }
 
-interface RunFile { runId: string; builtAt: string; version: string; language: CatalogLanguage }
+interface RunFile { runId: string; builtAt: string; version: string; language: CatalogLanguage; binding?: RunBinding; selectedSetIdsHash?: string }
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
@@ -110,14 +113,26 @@ async function main(): Promise<void> {
 
   // 1. Freeze run id / UTC cutoff (a resumed run keeps the original ones).
   const runPath = join(options.cacheDir, language, 'run.json');
+  const migrations = loadCatalogMigrations();
+  const fingerprint = schemaFingerprint(migrations);
+  const binding: RunBinding = {
+    setSelectionHash: hashSetIds(options.sets),
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    schemaFingerprint: fingerprint,
+    nodeVersion: process.version,
+    builderPackageVersion: BUILDER_PACKAGE_VERSION,
+    zstdLibrary: ZSTD_LIBRARY_ID,
+    apiBase: TCGDEX_API
+  };
   let run: RunFile | null = null;
   if (options.resume) {
     try {
       const existing = JSON.parse(await readFile(runPath, 'utf8')) as RunFile;
       if (existing.version === version) run = existing;
     } catch { /* no previous run */ }
+    if (run) assertResumeCompatible(run.binding, binding);
   }
-  run ??= { runId: randomUUID(), builtAt: new Date().toISOString(), version, language };
+  run ??= { runId: randomUUID(), builtAt: new Date().toISOString(), version, language, binding };
   await writeJson(runPath, run);
   const builderVersion = `${BUILDER_NAME}@${BUILDER_PACKAGE_VERSION}+${gitSha()}`;
   log(`run ${run.runId} ${language} ${version} cutoff ${run.builtAt}${options.resume ? ' (resume)' : ''}`);
@@ -126,10 +141,11 @@ async function main(): Promise<void> {
   const fetcher = new Fetcher({
     concurrency: options.concurrency,
     maxCacheAgeMs: options.resume ? Number.POSITIVE_INFINITY : options.maxCacheAgeHours * 3600 * 1000,
+    cacheConfig: cacheConfigHash(language, TCGDEX_API),
     onLog: log
   });
   const crawlStarted = performance.now();
-  const crawled = await crawl(fetcher, { language, sets: options.sets, cacheRoot: options.cacheDir, log });
+  const crawled = await crawl(fetcher, { language, sets: options.sets, cacheRoot: options.cacheDir, discoveryMaxAgeMs: options.resume ? undefined : 0, log });
   const symbolUrls = [...crawled.details.values()].map((d) => symbolUrl(d.symbol, language)).filter((u): u is string => u !== null);
   const missingAssets = options.checkAssets ? await checkAssetUrls(fetcher, symbolUrls, crawled.warnings) : new Set<string>();
   const crawlMs = Math.round(performance.now() - crawlStarted);
@@ -138,6 +154,13 @@ async function main(): Promise<void> {
     throw new Error(`${crawled.failures.length} crawl unit(s) failed; refusing to publish an incomplete pack (rerun with --resume)`);
   }
   for (const warning of crawled.warnings) log(`warning: ${warning}`);
+
+  const selectedHash = hashSetIds(crawled.selectedSetIds);
+  if (options.resume && run.selectedSetIdsHash && run.selectedSetIdsHash !== selectedHash) {
+    throw new Error(`--resume refused: resolved set selection changed since the original run (${run.selectedSetIdsHash} -> ${selectedHash})`);
+  }
+  run.selectedSetIdsHash = selectedHash;
+  await writeJson(runPath, run);
 
   // Bootstrap set index (ALL sets of the language, shells included).
   const index: CatalogSetIndexEntry[] = crawled.list.map((brief) => {
@@ -149,8 +172,6 @@ async function main(): Promise<void> {
   await writeJson(setIndexPath, index);
 
   // 4-5. Build, verify, hash, compress, round-trip.
-  const migrations = loadCatalogMigrations();
-  const fingerprint = schemaFingerprint(migrations);
   const dbPath = join(outDir, `catalog-${language}-${version}.db`);
   const zstPath = `${dbPath}.zst`;
   const buildStarted = performance.now();
@@ -159,19 +180,17 @@ async function main(): Promise<void> {
     selectedSetIds: crawled.selectedSetIds, cards: crawled.cards, missingAssets, migrations
   });
   const verified = verifyCatalogDb(`${dbPath}.part`, { language, version, counts: built.counts, fingerprint });
-  await rm(dbPath, { force: true });
-  await rename(`${dbPath}.part`, dbPath);
   const buildMs = Math.round(performance.now() - buildStarted);
   for (const suffix of ['-wal', '-shm', '-journal']) {
-    if (await fileSize(dbPath + suffix).then(() => true, () => false)) throw new Error(`Unexpected sidecar ${dbPath}${suffix}`);
+    if (await fileSize(`${dbPath}.part${suffix}`).then(() => true, () => false)) throw new Error(`Unexpected sidecar ${dbPath}${suffix}`);
   }
+  log(`db artifact: ${await commitImmutableArtifact(`${dbPath}.part`, dbPath)}`);
   const raw = await sha256File(dbPath);
   log(`built ${dbPath}: ${raw.bytes} bytes sha256 ${raw.sha256}`);
 
   const compressStarted = performance.now();
   await compressFile(dbPath, `${zstPath}.part`, ZSTD_LEVEL);
-  await rm(zstPath, { force: true });
-  await rename(`${zstPath}.part`, zstPath);
+  log(`pack artifact: ${await commitImmutableArtifact(`${zstPath}.part`, zstPath)}`);
   const compressMs = Math.round(performance.now() - compressStarted);
   const compressed = await sha256File(zstPath);
 
@@ -238,7 +257,7 @@ async function main(): Promise<void> {
     },
     toolchain: {
       builder: builderVersion, node: process.version, platform: `${process.platform}-${process.arch}`, sqlite: sqliteVersion,
-      zstdLibrary: 'zstd-napi@0.0.13', zstdLevel: ZSTD_LEVEL, zstdWindowBytes: roundTrip.windowBytes, schemaFingerprint: fingerprint, pageSize: verified.pageSize, journalMode: verified.journalMode
+      zstdLibrary: ZSTD_LIBRARY_ID, zstdLevel: ZSTD_LEVEL, zstdWindowBytes: roundTrip.windowBytes, schemaFingerprint: fingerprint, pageSize: verified.pageSize, journalMode: verified.journalMode
     }
   };
   const metricsPath = join(outDir, `catalog-${language}-${version}.metrics.json`);

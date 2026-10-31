@@ -1,4 +1,7 @@
-import { ConflictError, DomainError, MaintenanceError, PersistenceError, StorageError, toDomainError } from '../errors';
+import { ConflictError, DomainError, MaintenanceError, PersistenceError, StorageError, UnsupportedCapabilityError, toDomainError } from '../errors';
+
+export type StorageReason = 'ok' | 'persistence_failed' | 'instance_lock' | 'maintenance';
+export type StorageStatus = { writable: boolean; reason: StorageReason; message: string | null };
 
 /**
  * SqlDriver = one SQLite connection behind the Drizzle `sqlite-proxy` callback contract.
@@ -17,6 +20,8 @@ export interface SqlDriver {
   readonly proxy: ProxyCallback;
   /** Web only: flush the in-memory database to its persistent store. Awaited after every committed transaction. */
   afterCommit?(): Promise<void>;
+  /** Discard in-memory state and re-read the persisted DB (D43). Absent = recovery from a persistence failure is impossible without a reload. */
+  reopen?(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -72,6 +77,9 @@ export class Db {
   private tail: Promise<unknown> = Promise.resolve();
   private readonly direct: Executor;
   private maintenance = false;
+  private persistenceFailed = false;
+  private instanceLock: { message: string } | null = null;
+  private readonly listeners = new Set<(s: StorageStatus) => void>();
 
   constructor(readonly driver: SqlDriver, readonly readOnly = false) {
     this.direct = new Executor(driver.proxy);
@@ -107,6 +115,55 @@ export class Db {
 
   setMaintenance(on: boolean): void {
     this.maintenance = on;
+    this.notify();
+  }
+
+  /** D42: the page does not own the writer lock; every personal write is refused with INSTANCE_LOCK. */
+  setInstanceLock(block: { message: string } | null): void {
+    this.instanceLock = block;
+    this.notify();
+  }
+
+  status(): StorageStatus {
+    if (this.instanceLock) return { writable: false, reason: 'instance_lock', message: this.instanceLock.message };
+    if (this.persistenceFailed) return { writable: false, reason: 'persistence_failed', message: 'The last change may not have been saved. FlashyDex must reload your data before more changes.' };
+    if (this.maintenance) return { writable: false, reason: 'maintenance', message: 'Storage is being maintained.' };
+    return { writable: true, reason: 'ok', message: null };
+  }
+
+  subscribe(listener: (s: StorageStatus) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private notify(): void {
+    const s = this.status();
+    for (const l of [...this.listeners]) { try { l(s); } catch { /* observer errors are isolated */ } }
+  }
+
+  /** The error every write gets while the Db is blocked, or null. */
+  writeBlockError(): DomainError | null {
+    if (this.instanceLock) return new StorageError('INSTANCE_LOCK', this.instanceLock.message);
+    if (this.persistenceFailed) return new PersistenceError('The last change may not have been saved. Recover storage before making more changes.');
+    if (this.maintenance) return new MaintenanceError();
+    return null;
+  }
+
+  /**
+   * D43 recovery: reopen the driver (discard in-memory state, re-read persisted state), re-verify foreign keys, then clear the
+   * persistence latch. Throws UNSUPPORTED_CAPABILITY when the driver cannot reopen (the UI must then reload the page).
+   */
+  async recover(): Promise<StorageStatus> {
+    const reopen = this.driver.reopen;
+    if (!reopen) throw new UnsupportedCapabilityError('This storage driver cannot reopen; reload the app to recover.');
+    await this.lock(async () => {
+      await reopen.call(this.driver);
+      await this.direct.run('PRAGMA foreign_keys = ON');
+      if (Number(await this.direct.scalar<number>('PRAGMA foreign_keys')) !== 1) throw new StorageError('DB_UNAVAILABLE', `Foreign keys could not be enabled on ${this.label}`);
+      this.persistenceFailed = false;
+    });
+    this.notify();
+    return this.status();
   }
 
   rows(sql: string, params: readonly unknown[] = []): Promise<Row[]> {
@@ -133,8 +190,11 @@ export class Db {
    */
   transaction<T>(fn: (tx: Exec) => Promise<T>): Promise<T> {
     if (this.readOnly) throw new StorageError('DB_UNAVAILABLE', `${this.label} is read-only`);
-    if (this.maintenance) throw new MaintenanceError();
+    const blocked = this.writeBlockError();
+    if (blocked) return Promise.reject(blocked);
     return this.lock(async () => {
+      const again = this.writeBlockError(); // a latch set while this call was queued must still stop it
+      if (again) throw again;
       await this.direct.run('BEGIN IMMEDIATE');
       let result: T;
       try {
@@ -153,6 +213,8 @@ export class Db {
         try {
           await this.driver.afterCommit();
         } catch {
+          this.persistenceFailed = true; // fail closed: COMMIT happened, durability is unknown
+          this.notify();
           throw new PersistenceError();
         }
       }

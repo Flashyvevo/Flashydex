@@ -1,29 +1,20 @@
 /**
- * Catalog pack install API (device side). The data builder wraps this in `CatalogInstallService`
- * (user-DB journal + installed_catalogs); nothing here touches the user DB.
+ * Catalog pack device API. Core's `CatalogInstallService` drives it through `CatalogInstallPort` v2 (platform/app-database.ts);
+ * nothing here touches the user DB or validates catalog SQL.
  *
- *   installCatalogPack(entry, { onProgress, signal }) -> { language, version, sha256, bytes, ref, previousRef, counts, metrics }
- *   finalizeCatalogInstall(language)   // after the caller's durable commit: drop the retained previous copy
- *   rollbackCatalogInstall(language)   // commit failed: put the previous copy back
- *   openCatalogDb(language)            // read-only SQLiteDBConnection for the ACTIVE catalog (wrap with createProxyCallback)
+ *   stageCatalogPack(entry, { trustedOrigins, onProgress, signal }) -> { language, version, sha256, bytes, candidateRef, metrics }
+ *   getCatalogStorage().activate / restorePrevious / discardPrevious / discardCandidate / inspect / remove
+ *   fetchManifestText({ maxBytes })   // bounded stream read, never response.text() first
+ *   openCatalogDb(language)           // read-only SQLiteDBConnection for the ACTIVE catalog (wrap with createProxyCallback)
  */
-import type { CatalogLanguageCode, CatalogManifestEntry } from '@flashydex/core';
-import { PackInstallError, resolvePackUrl, type CatalogPackEntry } from './installer';
+import { PackInstallError, resolvePackUrl } from './installer';
 
 export {
-  PackInstallError, closeCatalogDb, finalizeCatalogInstall, getCatalogStorage, installCatalogPack, isCatalogInstalled, openCatalogDb, openCatalogDbWritable,
-  removeCatalog, resolvePackUrl, rollbackCatalogInstall
+  PackInstallError, closeCatalogDb, getCatalogStorage, isCatalogInstalled, openCatalogDb, openCatalogDbWritable, openCatalogRef, removeCatalog,
+  resolvePackUrl, stageCatalogPack
 } from './installer';
-export type { CatalogCounts, CatalogPackEntry, DeviceInstallMetrics, InstallOptions, InstallResult } from './installer';
-export type { CatalogHandle } from './catalog-handle';
-
-export interface CatalogManifestShape {
-  manifestVersion: 1;
-  currentVersion: string | null;
-  targetVersion: string;
-  builtAt: string;
-  languages: Partial<Record<CatalogLanguageCode, CatalogManifestEntry>>;
-}
+export type { DeviceInstallMetrics, PackEntryInput, StageOptions, StageProgress, StageResult, WritableCatalog } from './installer';
+export type { CatalogHandle, CatalogLanguageCode, CatalogStorage, DiskState } from './storage-types';
 
 /** Manifest URL: `FLASHYDEX_MANIFEST_URL` (Vite envPrefix), dev default `/dev-packs/catalog-manifest.json`. Null in production when unset. */
 export function manifestUrl(): string | null {
@@ -32,27 +23,54 @@ export function manifestUrl(): string | null {
   return import.meta.env.DEV ? '/dev-packs/catalog-manifest.json' : null;
 }
 
-export async function fetchManifest(url: string | null = manifestUrl(), signal?: AbortSignal): Promise<CatalogManifestShape> {
+/**
+ * Bounded manifest read (R09): the body is consumed with a stream reader and aborted the moment it exceeds `maxBytes`
+ * (PAYLOAD_TOO_LARGE); `response.text()` is never called on an unbounded body. Returns the final URL after redirects so core
+ * can check it against trustedOrigins.
+ */
+export async function fetchManifestText(
+  { maxBytes, url = manifestUrl() }: { maxBytes: number; url?: string | null },
+  signal?: AbortSignal
+): Promise<{ text: string; finalUrl: string; requestedUrl: string }> {
   if (!url) throw new PackInstallError('HTTP_FAILED', 'No catalog manifest URL is configured');
+  const requestedUrl = resolvePackUrl(url);
   let response: Response;
   try {
-    response = await fetch(resolvePackUrl(url), { signal, cache: 'no-store' });
+    response = await fetch(requestedUrl, { signal, cache: 'no-store' });
   } catch (error) {
     if (signal?.aborted) throw new PackInstallError('CANCELLED', 'Cancelled');
     throw new PackInstallError('HTTP_FAILED', `Manifest request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!response.ok) throw new PackInstallError('HTTP_FAILED', `Manifest HTTP ${response.status}`);
-  const manifest = (await response.json()) as CatalogManifestShape;
-  if (manifest?.manifestVersion !== 1 || typeof manifest.languages !== 'object' || manifest.languages === null) {
-    throw new PackInstallError('PACK_INVALID', 'Unsupported or malformed catalog manifest');
+  if (!response.ok || !response.body) throw new PackInstallError('HTTP_FAILED', `Manifest HTTP ${response.status}`);
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body.cancel().catch(() => undefined);
+    throw new PackInstallError('PAYLOAD_TOO_LARGE', 'The catalog manifest is too large');
   }
-  return manifest;
-}
-
-/** Entries of a manifest with their language attached, in en, ja order. */
-export function manifestEntries(manifest: CatalogManifestShape): CatalogPackEntry[] {
-  return (['en', 'ja'] as const).flatMap((language) => {
-    const entry = manifest.languages[language];
-    return entry ? [{ ...entry, language }] : [];
-  });
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+      if (received > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new PackInstallError('PAYLOAD_TOO_LARGE', 'The catalog manifest is too large');
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof PackInstallError) throw error;
+    if (signal?.aborted) throw new PackInstallError('CANCELLED', 'Cancelled');
+    throw new PackInstallError('HTTP_FAILED', `Manifest download interrupted: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const bytes = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return { text: new TextDecoder('utf-8').decode(bytes), finalUrl: response.url || requestedUrl, requestedUrl };
 }

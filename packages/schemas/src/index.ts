@@ -3,3 +3,4 @@ export * from './entities';
 export * from './api';
 export * from './manifest';
 export * from './transfer';
+export * from './backup';

@@ -6,6 +6,8 @@ import { ToastProvider } from '../components/overlay';
 import { Button, EmptyState, ErrorState, LinkButton } from '../components/ui';
 import { hideSplash, installBackButton } from '../lib/native';
 import { useKeyboardInset } from '../components/shell';
+import { InstanceLockScreen } from '../components/instance-lock';
+import { StorageStatusUi } from '../components/storage-status';
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -42,6 +44,10 @@ function Gate() {
     return () => clearTimeout(t);
   }, [startup.status]);
 
+  if (startup.status === 'locked') {
+    hideSplash();
+    return <InstanceLockScreen />;
+  }
   if (startup.status === 'error') {
     hideSplash();
     return (
@@ -58,7 +64,12 @@ function Gate() {
       </div>
     ) : null;
   }
-  return <Ready />;
+  return (
+    <>
+      <StorageStatusUi />
+      <Ready />
+    </>
+  );
 }
 
 const OPEN_BEFORE_ONBOARDING = ['/settings/about', '/settings/privacy', '/settings/licenses', '/dev'];

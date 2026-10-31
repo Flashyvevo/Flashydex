@@ -15,6 +15,13 @@
       "when": 1793411644037,
       "tag": "0001_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793427371839,
+      "tag": "0002_admission_restore",
+      "breakpoints": true
     }
   ]
 }

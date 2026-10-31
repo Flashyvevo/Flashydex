@@ -21,6 +21,8 @@ export interface CrawlOptions {
   language: CatalogLanguage;
   sets?: readonly string[];
   cacheRoot: string;
+  /** Max cache age for discovery units (set list + set shells). 0 = always revalidate (new run); undefined = fetcher default. */
+  discoveryMaxAgeMs?: number;
   log: (message: string) => void;
 }
 
@@ -35,7 +37,7 @@ export async function crawl(fetcher: Fetcher, options: CrawlOptions): Promise<Cr
   const failures: CrawlResult['failures'] = [];
   const warnings: string[] = [];
 
-  const list = await fetcher.getJson<RawSetBrief[]>(`${TCGDEX_API}/${language}/sets`, join(langRoot, 'sets.json'));
+  const list = await fetcher.getJson<RawSetBrief[]>(`${TCGDEX_API}/${language}/sets`, join(langRoot, 'sets.json'), options.discoveryMaxAgeMs);
   if (!Array.isArray(list) || list.length === 0) throw new Error(`TCGdex returned no sets for ${language}`);
   const ids = list.map((s) => s.id);
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate set ids in /v2/${language}/sets`);
@@ -44,7 +46,7 @@ export async function crawl(fetcher: Fetcher, options: CrawlOptions): Promise<Cr
   const detailList = await pool(list, 8, async (brief): Promise<[string, RawSetDetail | null]> => {
     try {
       const detail = await fetcher.getJson<RawSetDetail>(
-        `${TCGDEX_API}/${language}/sets/${encodeIdForPath(brief.id)}`, join(langRoot, 'sets', `${encodeIdForPath(brief.id)}.json`)
+        `${TCGDEX_API}/${language}/sets/${encodeIdForPath(brief.id)}`, join(langRoot, 'sets', `${encodeIdForPath(brief.id)}.json`), options.discoveryMaxAgeMs
       );
       if (detail.id !== brief.id) throw new Error(`set detail id ${detail.id} != list id ${brief.id}`);
       return [brief.id, detail];

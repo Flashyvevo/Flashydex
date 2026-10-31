@@ -186,11 +186,13 @@ describe('SyncService resume / cancel / lock / recovery (acceptance 36)', () => 
     expect(resumed.status).toBe('completed');
   });
 
-  it('refresh / incremental are honest UNSUPPORTED_CAPABILITY, and capabilities() says so', async () => {
+  it('capabilities() reports every mode on a writable catalog; a read-only catalog source keeps refresh/incremental honestly unsupported', async () => {
     const t = await setup(1, () => ({ status: 200 }));
+    expect(t.sync.capabilities()).toEqual({ pricesOnly: true, refresh: true, incremental: true, reason: null });
+    (t.h.t.databases as unknown as { source: { writable: boolean } }).source.writable = false;
     await expect(t.sync.start({ mode: 'refresh', selection: SELECTION })).rejects.toBeInstanceOf(UnsupportedCapabilityError);
     await expect(t.sync.start({ mode: 'incremental' })).rejects.toBeInstanceOf(UnsupportedCapabilityError);
-    expect(t.sync.capabilities()).toEqual({ pricesOnly: true, refresh: false, reason: null });
+    expect(t.sync.capabilities()).toMatchObject({ pricesOnly: false, refresh: false, incremental: false });
   });
 
   it('parses Retry-After seconds and HTTP dates', () => {

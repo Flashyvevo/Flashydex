@@ -17,6 +17,12 @@ export interface Platform {
   clock: { now(): string };
   ids: { uuid(): string };
   hash: { sha256(bytes: Uint8Array): Promise<string> };
+  /** Phase-1 image-cache seam (interface only; R13). Optional: platforms without a cache omit it. */
+  imageCache?: {
+    get(key: string): Promise<Blob | null>;
+    put(key: string, value: Blob): Promise<void>;
+    clear(): Promise<void>;
+  };
 }
 
 /** Clock + id source used by every service (subset of Platform so tests can inject fixed values). */

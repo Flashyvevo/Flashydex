@@ -1,13 +1,22 @@
-import type { CatalogInstallPort, CatalogSource, PackEntry, PackInstallResult, SqlDriver } from '@flashydex/core';
+import type { CatalogInstallPort, CatalogSource, PackDiskState, PackEntry, PackStageResult, SqlDriver } from '@flashydex/core';
 import { Capacitor } from '@capacitor/core';
 import { closeLogicalConnection, flushWebStore, openLogicalConnection, USER_DB_NAME } from './sqlite';
 import { createProxyCallback } from './sqlite-proxy';
 import {
-  closeCatalogDb, finalizeCatalogInstall, getCatalogStorage, installCatalogPack, manifestUrl, openCatalogDb, openCatalogDbWritable, removeCatalog, resolvePackUrl,
-  rollbackCatalogInstall, PackInstallError
+  closeCatalogDb, fetchManifestText, getCatalogStorage, openCatalogDb, openCatalogDbWritable, openCatalogRef, removeCatalog, stageCatalogPack,
+  type CatalogLanguageCode
 } from './pack-install';
+import { NATIVE_CATALOG_WRITES } from './pack-install/native-store';
 
-/** The user DB as a core `SqlDriver`: one connection, sqlite-proxy callback, web store flushed after every committed transaction. */
+/**
+ * The user DB as a core `SqlDriver`: one connection, sqlite-proxy callback, web store flushed after every committed transaction.
+ *
+ * `reopen` is deliberately NOT implemented (R02). jeep-sqlite 2.8.0 `closeConnection` -> `Database.close()` runs
+ * `saveToStore()` first (node_modules/jeep-sqlite/dist/collection/utils/database.js:110-126), i.e. it would WRITE the in-memory snapshot
+ * (the very state whose flush just failed) back to IndexedDB before closing, and the plugin offers no discard-without-save. So on web
+ * `services.storage.recover()` rejects and the UI offers a real `location.reload()`, which re-reads the persisted bytes. On native the
+ * flush is a no-op (SQLite commits are already durable), so a persistence latch cannot occur there.
+ */
 export async function createUserDriver(): Promise<SqlDriver> {
   const connection = await openLogicalConnection(USER_DB_NAME);
   const web = Capacitor.getPlatform() === 'web';
@@ -19,8 +28,15 @@ export async function createUserDriver(): Promise<SqlDriver> {
   };
 }
 
+const isWeb = () => Capacitor.getPlatform() === 'web';
+/** Web keeps catalog writes (in-memory sql.js + IndexedDB put). Native is OFF until the writable-copy design is proven on a Mac (R04). */
+const catalogWrites = (): boolean => (isWeb() ? true : NATIVE_CATALOG_WRITES); // TODO(R04-mac): native catalogWrites switch
+
 /** Catalog connections are read-only handles owned by the pack installer; an absent catalog is `null`, never created. */
 export const catalogSource: CatalogSource = {
+  get writable() {
+    return catalogWrites();
+  },
   async open(language) {
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const connection = await openCatalogDb(language);
@@ -31,24 +47,27 @@ export const catalogSource: CatalogSource = {
     };
   },
   async openWritable(language) {
+    if (!catalogWrites()) return null;
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const handle = await openCatalogDbWritable(language);
-    const web = Capacitor.getPlatform() === 'web';
     return {
       label: `catalog-${language}-rw`,
       proxy: createProxyCallback(handle.connection),
-      afterCommit: web ? () => handle.flush() : undefined,
+      afterCommit: isWeb() ? () => handle.flush() : undefined,
       close: () => handle.close()
     };
   },
   release: (language) => closeCatalogDb(language)
-};
+} as CatalogSource;
 
 const MANIFEST_MAX_BYTES = 256 * 1024;
+const languageOf = (ref: string): CatalogLanguageCode => (/catalog-ja/.test(ref) ? 'ja' : 'en');
 
-/** CatalogInstallPort over apps/mobile/src/platform/pack-install (streamed download -> zstd -> SHA-256 -> staged file -> activate). */
+/**
+ * CatalogInstallPort v2 over apps/mobile/src/platform/pack-install. The adapter only stages bytes and moves files; core validates
+ * (`validateCatalogCandidate` over `openForValidation`), journals, and decides rollback from `inspect` (disk truth, never memory).
+ */
 export function createInstallPort(): CatalogInstallPort {
-  const pendingPrevious = new Set<'en' | 'ja'>();
   return {
     allowDevUrls: import.meta.env.DEV,
     capabilities() {
@@ -58,46 +77,35 @@ export function createInstallPort(): CatalogInstallPort {
         fullInstall: true,
         atomicActivation: storage.capabilities.atomicRename,
         attachReads: false,
+        catalogWrites: catalogWrites(),
         reason: native ? null : 'The web build keeps the catalog in memory: development and limited mode. Install the app for the full catalog.'
       };
     },
-    async fetchManifest(signal) {
-      const url = manifestUrl();
-      if (!url) throw new PackInstallError('HTTP_FAILED', 'No catalog manifest URL is configured');
-      let response: Response;
-      try {
-        response = await fetch(resolvePackUrl(url), { signal, cache: 'no-store' });
-      } catch (error) {
-        if (signal?.aborted) throw new PackInstallError('CANCELLED', 'Cancelled');
-        throw new PackInstallError('HTTP_FAILED', `Manifest request failed: ${error instanceof Error ? error.message : String(error)}`);
+    fetchManifest: (input, signal) => fetchManifestText({ maxBytes: Math.min(input.maxBytes, MANIFEST_MAX_BYTES) }, signal),
+    async stage(entry: PackEntry & { language: CatalogLanguageCode }, options): Promise<PackStageResult> {
+      const result = await stageCatalogPack(entry, {
+        trustedOrigins: options.trustedOrigins,
+        signal: options.signal,
+        onProgress: (progress) => options.onProgress(progress)
+      });
+      return { language: result.language, version: result.version, sha256: result.sha256, bytes: result.bytes, candidateRef: result.candidateRef, metrics: result.metrics };
+    },
+    async openForValidation(ref): Promise<SqlDriver> {
+      const language = languageOf(ref);
+      const active = await getCatalogStorage().activeRef(language);
+      if (active !== null && active === ref) {
+        // Validating the ACTIVE file: share the cached read-only connection (closing it here would break live readers).
+        const connection = await openCatalogDb(language);
+        return { label: `validate-${ref}`, proxy: createProxyCallback(connection), close: async () => undefined };
       }
-      if (!response.ok) throw new PackInstallError('HTTP_FAILED', `Manifest HTTP ${response.status}`);
-      const text = await response.text();
-      if (text.length > MANIFEST_MAX_BYTES) throw new PackInstallError('PACK_INVALID', 'The catalog manifest is too large');
-      try {
-        return JSON.parse(text) as unknown;
-      } catch {
-        throw new PackInstallError('PACK_INVALID', 'The catalog manifest is not valid JSON');
-      }
+      const handle = await openCatalogRef(ref);
+      return { label: `validate-${ref}`, proxy: createProxyCallback(handle.connection), close: () => handle.close() };
     },
-    async install(entry: PackEntry, options): Promise<PackInstallResult> {
-      const result = await installCatalogPack(entry, { signal: options.signal, onProgress: options.onProgress });
-      if (result.previousRef) pendingPrevious.add(entry.language);
-      return { ...result, metrics: result.metrics };
-    },
-    async finalize(language) {
-      pendingPrevious.delete(language);
-      await finalizeCatalogInstall(language);
-    },
-    async rollback(language) {
-      const restored = await rollbackCatalogInstall(language);
-      if (restored) pendingPrevious.delete(language);
-      return restored;
-    },
-    async hasPrevious(language) {
-      return pendingPrevious.has(language);
-    },
-    remove: (language) => removeCatalog(language),
-    activeRef: (language) => getCatalogStorage().activeRef(language)
+    activate: (language, candidateRef) => getCatalogStorage().activate(language, candidateRef),
+    restorePrevious: (language) => getCatalogStorage().restorePrevious(language),
+    discardPrevious: (language) => getCatalogStorage().discardPrevious(language),
+    discardCandidate: (ref) => getCatalogStorage().discardCandidate(ref),
+    inspect: (language): Promise<PackDiskState> => getCatalogStorage().inspect(language),
+    remove: (language) => removeCatalog(language)
   };
 }

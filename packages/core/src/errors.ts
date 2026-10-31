@@ -61,7 +61,7 @@ export class ImportError extends DomainError {
   }
 }
 export class BackupError extends DomainError {
-  constructor(code: 'BACKUP_INVALID' | 'BACKUP_VERSION_UNSUPPORTED' | 'ALREADY_RESTORED' = 'BACKUP_INVALID', message = 'Invalid backup') {
+  constructor(code: 'BACKUP_INVALID' | 'BACKUP_VERSION_UNSUPPORTED' | 'ALREADY_RESTORED' | 'SIZE_LIMIT' | 'BACKUP_HASH_MISMATCH' | 'BACKUP_COUNT_MISMATCH' | 'BACKUP_UNSAFE_ENTRY' = 'BACKUP_INVALID', message = 'Invalid backup') {
     super(code, message);
   }
 }
@@ -71,7 +71,7 @@ export class SizeLimitError extends DomainError {
   }
 }
 export class StorageError extends DomainError {
-  constructor(code: 'DB_BUSY' | 'STORAGE_FULL' | 'DB_UNAVAILABLE' | 'MIGRATION_FAILED', message: string, details?: unknown) {
+  constructor(code: 'DB_BUSY' | 'STORAGE_FULL' | 'DB_UNAVAILABLE' | 'MIGRATION_FAILED' | 'INSTANCE_LOCK', message: string, details?: unknown) {
     super(code, message, details);
   }
 }
@@ -100,7 +100,7 @@ export class CancelledError extends DomainError {
     super('CANCELLED', message);
   }
 }
-/** Catalog install failures: HTTP_FAILED, PACK_*, APP_UPDATE_REQUIRED, NO_ROLLBACK, CATALOG_NOT_INSTALLED, STALE_READ ... */
+/** Catalog install failures: HTTP_FAILED, PACK_*, MANIFEST_INVALID, MANIFEST_SIGNATURE_INVALID, PAYLOAD_TOO_LARGE, APP_UPDATE_REQUIRED, NO_ROLLBACK, CATALOG_NOT_INSTALLED, STALE_READ ... */
 export class CatalogError extends DomainError {}
 
 export function isDomainError(value: unknown): value is DomainError {

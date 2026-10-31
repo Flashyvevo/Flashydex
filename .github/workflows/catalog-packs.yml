@@ -71,6 +71,13 @@ jobs:
             echo "non-https pack URL in manifest" >&2
             exit 1
           fi
+      - name: Verify built packs (hashes, counts, integrity, live TCGdex spot checks)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tools/catalog-builder
+          npx tsx src/verify-pack.ts dist/catalog-manifest.json > dist/verify-pack-report.json
+          cat dist/verify-pack-report.json
       - name: Upload pack build artifacts and metrics
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,6 +88,7 @@ jobs:
             tools/catalog-builder/dist/catalog-*.db.zst
             tools/catalog-builder/dist/catalog-*.metrics.json
             tools/catalog-builder/dist/set-index-*.json
+            tools/catalog-builder/dist/verify-pack-report.json
           if-no-files-found: warn
       - name: Create draft release, upload complete asset set, publish
         shell: bash
@@ -103,4 +111,32 @@ jobs:
           for ASSET in catalog-en-"${VERSION}".db.zst catalog-ja-"${VERSION}".db.zst catalog-en-"${VERSION}".metrics.json catalog-ja-"${VERSION}".metrics.json set-index-en.json set-index-ja.json catalog-manifest.json; do
             grep -Fqx "$ASSET" <<< "$(tr ' ' '\n' <<< "$ASSETS")"
           done
+          # Read-back: download the draft assets and verify bytes against the local build before publishing.
+          READBACK="$(mktemp -d)"
+          gh release download "$TAG" --dir "$READBACK" --clobber
+          for ASSET in catalog-en-"${VERSION}".db.zst catalog-ja-"${VERSION}".db.zst catalog-en-"${VERSION}".metrics.json catalog-ja-"${VERSION}".metrics.json set-index-en.json set-index-ja.json catalog-manifest.json; do
+            test -f "$READBACK/$ASSET" || { echo "missing downloaded asset $ASSET" >&2; exit 1; }
+            LOCAL_LEN="$(stat -c %s "$ASSET")"; REMOTE_LEN="$(stat -c %s "$READBACK/$ASSET")"
+            LOCAL_SHA="$(sha256sum "$ASSET" | cut -d' ' -f1)"; REMOTE_SHA="$(sha256sum "$READBACK/$ASSET" | cut -d' ' -f1)"
+            if [ "$LOCAL_LEN" != "$REMOTE_LEN" ] || [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+              echo "read-back mismatch for $ASSET: local ${LOCAL_LEN}/${LOCAL_SHA} remote ${REMOTE_LEN}/${REMOTE_SHA}" >&2
+              exit 1
+            fi
+          done
+          # Cross-check downloaded packs against the manifest's compressedBytes/compressedSha256.
+          node -e '
+            const fs = require("fs"), crypto = require("crypto");
+            const dir = process.argv[1], version = process.argv[2];
+            const manifest = JSON.parse(fs.readFileSync(dir + "/catalog-manifest.json", "utf8"));
+            for (const lang of ["en", "ja"]) {
+              const entry = manifest.languages[lang];
+              const buf = fs.readFileSync(dir + "/catalog-" + lang + "-" + version + ".db.zst");
+              const sha = crypto.createHash("sha256").update(buf).digest("hex");
+              if (buf.length !== entry.compressedBytes || sha !== entry.compressedSha256) {
+                console.error("manifest mismatch for " + lang + ": " + buf.length + "/" + sha + " vs " + entry.compressedBytes + "/" + entry.compressedSha256);
+                process.exit(1);
+              }
+            }
+            console.log("release read-back verified");
+          ' "$READBACK" "$VERSION"
           gh release edit "$TAG" --draft=false

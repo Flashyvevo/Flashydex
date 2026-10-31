@@ -6,6 +6,7 @@ import { AddConfirmSheet } from '../../../../components/add-confirm';
 import { CardTile } from '../../../../components/card';
 import { BottomSheet, useToast } from '../../../../components/overlay';
 import { Page } from '../../../../components/page';
+import { RefreshSetRow } from '../../../../components/refresh-set';
 import { SetLogo } from '../../../../components/set-logo';
 import { Banner, Button, EmptyState, ErrorState, SegmentedControl, Skeleton } from '../../../../components/ui';
 import { useSet, useSetCards, useSettings, useUpdateSettings } from '../../../../data';
@@ -187,9 +188,7 @@ function SetDetail() {
         <div className="overflow-hidden rounded-lg bg-surface">
           <Link to="/add" search={{ set: `${language}:${setId}` } as never} className="flex min-h-(--ps-tap-lg) items-center px-4 text-body active:bg-surface-3">Add cards from this set</Link>
           <button type="button" disabled={updateSettings.isPending} onClick={() => void collect()} className="flex min-h-(--ps-tap-lg) w-full items-center border-t border-border px-4 text-left text-body active:bg-surface-3">{following ? 'Stop collecting' : 'Collect this set'}</button>
-          <button type="button" aria-disabled="true" aria-describedby="refresh-set-reason" data-testid="refresh-set" className="flex min-h-(--ps-tap-lg) w-full items-center justify-between border-t border-border px-4 text-left text-body active:bg-surface-3 aria-disabled:opacity-50">
-            Refresh this set<span id="refresh-set-reason" className="text-caption text-fg-muted">Not available yet</span>
-          </button>
+          <RefreshSetRow language={language} setId={setId} className="border-t border-border" onDone={menu.close} />
         </div>
       </BottomSheet>
     </Page>

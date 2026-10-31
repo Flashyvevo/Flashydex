@@ -6,14 +6,14 @@
  * Capacitor plugins are NOT available here; the main thread owns file writes and acknowledges every chunk
  * (at most `maxInFlight` unacknowledged). docs/CATALOG-PACKS.md "Device installer state machine and file protocol".
  */
-import { Decompress } from 'fzstd';
 import { createSHA256 } from 'hash-wasm';
-import type { PackInstallErrorCode } from '@flashydex/core';
+import type { AdapterErrorCode } from './storage-types';
 import type { StartMessage, WorkerIn, WorkerOut } from './worker-protocol';
+import { BoundedDecodeError, BoundedDecoder } from './bounded-decoder';
 import { MAX_WINDOW_BYTES, ZSTD_HEADER_PROBE_BYTES, zstdWindowBytes } from './zstd-header';
 
 class WorkerFailure extends Error {
-  constructor(readonly code: PackInstallErrorCode, message: string) {
+  constructor(readonly code: AdapterErrorCode, message: string) {
     super(message);
   }
 }
@@ -22,6 +22,8 @@ let controller: AbortController | undefined;
 let cancelled = false;
 let acked = 0;
 let ackWaiter: (() => void) | undefined;
+let activeDecoder: BoundedDecoder | undefined;
+const chunkLengths = new Map<number, number>();
 
 function post(message: WorkerOut, transfer: Transferable[] = []): void {
   self.postMessage(message, transfer);
@@ -33,8 +35,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerIn>) => {
     cancelled = true;
     controller?.abort();
     ackWaiter?.();
+    activeDecoder?.wake();
   } else if (message.type === 'ack') {
     acked += 1;
+    const length = chunkLengths.get(message.seq);
+    chunkLengths.delete(message.seq);
+    if (length !== undefined) activeDecoder?.ack(length);
     ackWaiter?.();
   } else if (message.type === 'start') {
     void run(message);
@@ -73,6 +79,8 @@ async function run(start: StartMessage): Promise<void> {
       if (cancelled) throw error;
       throw new WorkerFailure('HTTP_FAILED', `Network error: ${error instanceof Error ? error.message : String(error)}`);
     }
+    const finalOrigin = (() => { try { return new URL(response.url || start.url).origin; } catch { return ''; } })();
+    if (!start.trustedOrigins.includes(finalOrigin)) throw new WorkerFailure('PACK_INVALID', `Pack response came from an untrusted origin (${finalOrigin || 'unknown'})`);
     if (!response.ok || !response.body) throw new WorkerFailure('HTTP_FAILED', `HTTP ${response.status} ${response.statusText}`);
 
     const decodedHasher = await createSHA256();
@@ -81,39 +89,39 @@ async function run(start: StartMessage): Promise<void> {
     compressedHasher.init();
 
     let compressedBytes = 0;
-    let decodedBytes = 0;
     let windowBytes = 0;
     let header = new Uint8Array(0);
     let headerChecked = false;
     let lastProgress = 0;
-    const pending: Uint8Array[] = [];
 
-    const decoder = new Decompress((chunk) => {
-      // fzstd may emit views into internal buffers: copy before the data leaves this call stack.
-      for (let offset = 0; offset < chunk.length; offset += start.chunkBytes) pending.push(chunk.slice(offset, Math.min(chunk.length, offset + start.chunkBytes)));
-    });
-
-    const flush = async (): Promise<void> => {
-      while (pending.length > 0) {
+    const deliver = async (chunk: Uint8Array): Promise<void> => {
+      decodedHasher.update(chunk);
+      while (sent - acked >= start.maxInFlight) {
+        await new Promise<void>((resolve) => { ackWaiter = resolve; });
+        ackWaiter = undefined;
         if (cancelled) throw new DOMException('cancelled', 'AbortError');
-        const chunk = pending.shift()!;
-        decodedBytes += chunk.length;
-        if (decodedBytes > start.expectedUncompressedBytes) throw new WorkerFailure('PACK_SIZE_MISMATCH', `Decoded output exceeds the manifest size ${start.expectedUncompressedBytes}`);
-        decodedHasher.update(chunk);
-        while (sent - acked >= start.maxInFlight) {
-          await new Promise<void>((resolve) => { ackWaiter = resolve; });
-          ackWaiter = undefined;
-          if (cancelled) throw new DOMException('cancelled', 'AbortError');
-        }
-        const seq = sent;
-        sent += 1;
-        maxInFlightObserved = Math.max(maxInFlightObserved, sent - acked);
-        maxChunkBytes = Math.max(maxChunkBytes, chunk.length);
-        if (start.encoding === 'base64') {
-          post({ type: 'chunk', seq, length: chunk.length, base64: await toBase64(chunk) });
-        } else {
-          post({ type: 'chunk', seq, length: chunk.length, bytes: chunk.buffer as ArrayBuffer }, [chunk.buffer as ArrayBuffer]);
-        }
+      }
+      const seq = sent;
+      sent += 1;
+      chunkLengths.set(seq, chunk.length);
+      maxInFlightObserved = Math.max(maxInFlightObserved, sent - acked);
+      maxChunkBytes = Math.max(maxChunkBytes, chunk.length);
+      if (start.encoding === 'base64') {
+        post({ type: 'chunk', seq, length: chunk.length, base64: await toBase64(chunk) });
+      } else {
+        post({ type: 'chunk', seq, length: chunk.length, bytes: chunk.buffer as ArrayBuffer }, [chunk.buffer as ArrayBuffer]);
+      }
+    };
+    const decoder = new BoundedDecoder({
+      expectedUncompressedBytes: start.expectedUncompressedBytes, chunkBytes: start.chunkBytes, deliver, isCancelled: () => cancelled
+    });
+    activeDecoder = decoder;
+    const decode = async (input: Uint8Array, final: boolean): Promise<void> => {
+      try {
+        await decoder.push(input, final);
+      } catch (error) {
+        if (error instanceof BoundedDecodeError) throw new WorkerFailure(error.code, error.message);
+        throw error;
       }
     };
 
@@ -139,28 +147,24 @@ async function run(start: StartMessage): Promise<void> {
         }
       }
       compressedHasher.update(value);
-      try { decoder.push(value, false); } catch (error) { throw new WorkerFailure('PACK_INVALID', `zstd decode failed: ${error instanceof Error ? error.message : String(error)}`); }
-      await flush();
+      await decode(value, false);
       const now = performance.now();
       if (now - lastProgress >= 250) {
         lastProgress = now;
-        post({ type: 'progress', compressedBytes, decodedBytes });
+        post({ type: 'progress', compressedBytes, decodedBytes: decoder.decodedBytes, pendingBytes: decoder.pendingBytes });
       }
     }
     if (compressedBytes !== start.expectedCompressedBytes) throw new WorkerFailure('PACK_SIZE_MISMATCH', `Downloaded ${compressedBytes} bytes, manifest says ${start.expectedCompressedBytes}`);
-    try { decoder.push(new Uint8Array(0), true); } catch (error) { throw new WorkerFailure('PACK_INVALID', `zstd decode failed at end of stream: ${error instanceof Error ? error.message : String(error)}`); }
-    await flush();
+    await decode(new Uint8Array(0), true);
+    const decodedBytes = decoder.decodedBytes;
     if (decodedBytes !== start.expectedUncompressedBytes) throw new WorkerFailure('PACK_SIZE_MISMATCH', `Decoded ${decodedBytes} bytes, manifest says ${start.expectedUncompressedBytes}`);
     const compressedSha256 = compressedHasher.digest('hex');
     if (start.compressedSha256 && start.compressedSha256 !== compressedSha256) throw new WorkerFailure('PACK_HASH_MISMATCH', 'Compressed pack SHA-256 does not match the manifest');
-    while (sent - acked > 0) { // let the writer finish the tail before reporting completion
-      await new Promise<void>((resolve) => { ackWaiter = resolve; });
-      ackWaiter = undefined;
-      if (cancelled) throw new DOMException('cancelled', 'AbortError');
-    }
+    await decoder.settle(); // let the writer finish the tail before reporting completion
     post({
       type: 'done', decodedBytes, compressedBytes, sha256: decodedHasher.digest('hex'), compressedSha256, windowBytes,
-      streamMs: Math.round(performance.now() - started), maxInFlightObserved, maxChunkBytes
+      streamMs: Math.round(performance.now() - started), maxInFlightObserved, maxChunkBytes,
+      pendingBytesMax: decoder.pendingBytesMax
     });
   } catch (error) {
     if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) post({ type: 'cancelled' });
@@ -168,5 +172,7 @@ async function run(start: StartMessage): Promise<void> {
     else post({ type: 'error', code: 'PACK_INVALID', message: error instanceof Error ? error.message : String(error) });
   } finally {
     controller = undefined;
+    activeDecoder = undefined;
+    chunkLengths.clear();
   }
 }

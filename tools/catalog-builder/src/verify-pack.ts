@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import Database from 'better-sqlite3';
 import { DecompressStream } from 'zstd-napi';
+import { failedChecks } from './verify-checks';
 
 interface Entry {
   sha256: string;
@@ -45,3 +46,8 @@ for (const language of ['en', 'ja'] as const) {
   await rm(raw, { force: true });
 }
 process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
+const failed = failedChecks(out as Array<Record<string, unknown>>);
+if (failed.length) {
+  process.stderr.write(`verify-pack FAILED checks: ${failed.join(', ')}\n`);
+  process.exitCode = 1;
+}

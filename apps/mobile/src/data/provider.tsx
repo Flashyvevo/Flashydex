@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AppServicesContext, type StartupState } from './context';
-import { asDomainError, openAppServices } from './bootstrap';
+import { asDomainError, InstanceLockedError, openAppServices } from './bootstrap';
 
 /**
  * Opens the user DB, runs the user migration chain, reconciles installed catalogs / interrupted install jobs, builds the services.
@@ -13,7 +13,11 @@ export function AppServicesProvider({ children }: { children: ReactNode }) {
     let live = true;
     openAppServices().then(
       (services) => { if (live) setState({ status: 'ready', error: null, services }); },
-      (error: unknown) => { if (live) setState({ status: 'error', error: asDomainError(error), services: null }); }
+      (error: unknown) => {
+        if (!live) return;
+        if (error instanceof InstanceLockedError) setState({ status: 'locked', error: null, services: null });
+        else setState({ status: 'error', error: asDomainError(error), services: null });
+      }
     );
     return () => { live = false; };
   }, []);

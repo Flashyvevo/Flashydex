@@ -1,6 +1,7 @@
 import { OwnedListQuery, type Currency, type Input, type OwnedDto, type Page } from '@flashydex/schemas';
 import { nameSearch, localIdSort } from '../catalog/tcgdex';
 import { valuationsFor, valueIn } from '../domain/valuation';
+import { chunk } from '../db/sql';
 import { ValidationError } from '../errors';
 import { identityKey, loadQuotes, loadSeries, parse, readSettings, type ServiceContext } from './context';
 import { hydrateOwned } from './owned-read';
@@ -46,7 +47,12 @@ const newestFirst = (a: Light, b: Light): number => (a.createdAt === b.createdAt
 const CONDITION_ORDER: Array<Condition | null> = ['NM', 'LP', 'MP', 'HP', 'DMG', null];
 
 /** Filters in SQL on the copy table; grouping/value/Pocket/priced logic in TS over lightweight rows; only the page is hydrated. */
-export async function listOwned(ctx: ServiceContext, rawInput: Input<typeof OwnedListQuery>): Promise<Page<CollectionCardGroup> | Page<OwnedDto>> {
+export function listOwned(ctx: ServiceContext, rawInput: Input<typeof OwnedListQuery>): Promise<Page<CollectionCardGroup> | Page<OwnedDto>> {
+  // R10: a user+catalog read captures collection revision + catalog epochs, retries once on movement, then STALE_READ.
+  return ctx.databases.consistentRead(['en', 'ja'], () => listOwnedOnce(ctx, rawInput));
+}
+
+async function listOwnedOnce(ctx: ServiceContext, rawInput: Input<typeof OwnedListQuery>): Promise<Page<CollectionCardGroup> | Page<OwnedDto>> {
   const input = parse(OwnedListQuery, rawInput);
   if (input.groupBy === 'copy' && input.sort === 'count_desc') {
     throw new ValidationError('count_desc sorts grouped rows only', [{ path: 'sort', code: 'custom', message: "count_desc requires groupBy 'card'" }]);
@@ -165,13 +171,25 @@ export async function listOwned(ctx: ServiceContext, rawInput: Input<typeof Owne
   const slice = list.slice(offset, offset + limit);
   const hydrated = await hydrateOwned(ctx, slice.map((g) => g.rep.id));
   const data: CollectionCardGroup[] = [];
+  // R12: whole-group copy ids for the displayed groups in ONE chunked query (<= 50 groups per page), not one query per group.
+  const wholeGroup = new Map<string, string[]>();
+  for (const part of chunk(slice, 50)) {
+    const clause = part.map(() => '(language = ? AND catalog_card_id IS ? AND custom_card_id IS ? AND variant = ?)').join(' OR ');
+    const found = await ctx.databases.user.rows(
+      `SELECT id, language, catalog_card_id, custom_card_id, variant FROM owned_cards WHERE ${clause} ORDER BY id ASC`,
+      part.flatMap((g) => [g.rep.language, g.rep.catalogCardId, g.rep.customCardId, g.rep.variant])
+    );
+    for (const r of found) {
+      const key = `${r[2] !== null ? 'catalog' : 'custom'}\u0000${String(r[1])}\u0000${String(r[2] ?? r[3])}\u0000${String(r[4])}`;
+      const list = wholeGroup.get(key);
+      if (list) list.push(String(r[0]));
+      else wholeGroup.set(key, [String(r[0])]);
+    }
+  }
   for (const g of slice) {
     const rep = hydrated.get(g.rep.id);
     if (!rep) continue;
-    const all = await ctx.databases.user.rows(
-      `SELECT id FROM owned_cards WHERE language = ? AND catalog_card_id IS ? AND custom_card_id IS ? AND variant = ? ORDER BY id ASC`,
-      [g.rep.language, g.rep.catalogCardId, g.rep.customCardId, g.rep.variant]
-    );
+    const all = (wholeGroup.get(g.key) ?? []).map((id) => [id]);
     const details = new Map<string, number>();
     const conditions = new Map<Condition | null, number>();
     let graded = 0;

@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
+import localforage from 'localforage';
 import { createProxyCallback } from './sqlite-proxy';
 
 /** Logical connection name of the user DB. The plugin turns it into `flashydex-userSQLite.db`. */
@@ -73,11 +74,28 @@ export async function closeLogicalConnection(name: string, readonly = false): Pr
   await sqlite.closeConnection(name, readonly).catch(() => undefined);
 }
 
-/** Web only: flush a database from sql.js memory into the IndexedDB store. */
+/** Same IndexedDB store jeep-sqlite uses (jeep-sqlite 2.8.0 utils-store.js: localforage `jeepSqliteStore`/`databases`, key `<name>SQLite.db`). */
+const jeepStore = localforage.createInstance({ name: 'jeepSqliteStore', storeName: 'databases', driver: [localforage.INDEXEDDB] });
+
+/**
+ * Web only: flush a database from sql.js memory into the IndexedDB store.
+ *
+ * jeep-sqlite's `saveToStore` is `removeItem(key)` THEN `setItem(key, bytes)` (utils-store.js saveDBToStore), which is not atomic: when the
+ * put fails (QuotaExceededError) the persisted database is already DELETED, and the next page load would create an empty one (found by the
+ * injected-quota e2e). So the previously persisted bytes are read first and written back if the save throws, then the original error is rethrown
+ * (core latches `persistence_failed`). A tab kill between jeep's remove and put is still unprotected without bypassing jeep (see report).
+ */
 export async function flushWebStore(name: string): Promise<void> {
   if (!isWeb()) return;
   const sqlite = await getSqlitePlugin();
-  await sqlite.saveToStore(name);
+  const key = `${name}SQLite.db`;
+  const previous = await jeepStore.getItem<Uint8Array>(key);
+  try {
+    await sqlite.saveToStore(name);
+  } catch (error) {
+    if (previous instanceof Uint8Array && previous.length > 0) await jeepStore.setItem(key, previous).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function getSqliteConnection(): Promise<SQLiteDBConnection> {

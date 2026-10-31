@@ -12,13 +12,14 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "db:embed": "node scripts/embed-migrations.mjs",
+    "db:embed": "node scripts/embed-migrations.mjs && node scripts/embed-fingerprint.mjs",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts && node scripts/embed-migrations.mjs",
     "db:generate:catalog": "drizzle-kit generate --config drizzle.catalog.config.ts && node scripts/embed-migrations.mjs"
   },
   "dependencies": {
     "@flashydex/schemas": "*",
     "drizzle-orm": "0.45.4",
+    "fflate": "^0.8.3",
     "zod": "4.6.7"
   },
   "devDependencies": {

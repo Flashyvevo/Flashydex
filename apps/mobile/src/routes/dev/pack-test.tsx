@@ -1,11 +1,22 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CatalogLanguageCode, PackInstallProgress } from '@flashydex/core';
 import {
-  PackInstallError, closeCatalogDb, fetchManifest, finalizeCatalogInstall, installCatalogPack, manifestEntries, manifestUrl, openCatalogDb,
-  removeCatalog, type CatalogPackEntry, type InstallResult
+  PackInstallError, closeCatalogDb, fetchManifestText, getCatalogStorage, manifestUrl, openCatalogDb, removeCatalog, stageCatalogPack,
+  type CatalogLanguageCode, type PackEntryInput, type StageProgress, type StageResult
 } from '../../platform/pack-install';
+import { catalogConfig } from '../../platform/catalog-config';
 import { createProxyCallback } from '../../platform/sqlite-proxy';
+
+type CatalogPackEntry = PackEntryInput;
+type InstallResult = StageResult & { previousRef: string | null };
+
+/** Dev harness: language entries of the dev manifest, in en, ja order (core's semantic validation is NOT applied here). */
+function manifestEntries(manifest: { languages?: Partial<Record<CatalogLanguageCode, Omit<PackEntryInput, 'language'>>> }): CatalogPackEntry[] {
+  return (['en', 'ja'] as const).flatMap((language) => {
+    const entry = manifest.languages?.[language];
+    return entry ? [{ ...entry, language }] : [];
+  });
+}
 
 /**
  * DEV-ONLY pack install harness. Rendered only when `import.meta.env.DEV`; production builds render a not-found.
@@ -19,7 +30,7 @@ type Status = 'idle' | 'loading-manifest' | 'ready' | 'downloading' | 'verifying
 function PackTestPage() {
   const [status, setStatus] = useState<Status>('loading-manifest');
   const [entries, setEntries] = useState<CatalogPackEntry[]>([]);
-  const [progress, setProgress] = useState<PackInstallProgress | null>(null);
+  const [progress, setProgress] = useState<StageProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InstallResult | null>(null);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -29,8 +40,8 @@ function PackTestPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchManifest(manifestUrl(), controller.signal)
-      .then((manifest) => { setEntries(manifestEntries(manifest)); setStatus('ready'); })
+    fetchManifestText({ maxBytes: 256 * 1024 }, controller.signal)
+      .then(({ text }) => { setEntries(manifestEntries(JSON.parse(text))); setStatus('ready'); })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         setError(cause instanceof PackInstallError ? `${cause.code}: ${cause.message}` : String(cause));
@@ -49,15 +60,20 @@ function PackTestPage() {
     setFirstCard(null);
     setStatus('downloading');
     try {
-      const installed = await installCatalogPack(entry, {
+      const staged = await stageCatalogPack(entry, {
+        trustedOrigins: catalogConfig().trustedOrigins,
         signal: controller.signal,
         onProgress: (p) => {
           setProgress(p);
-          setStatus(p.phase === 'installed' ? 'activating' : p.phase);
+          setStatus(p.phase);
         }
       });
-      // The pack is installed and validated; a real caller commits to the user DB here, then finalizes.
-      await finalizeCatalogInstall(entry.language);
+      // Harness only: core would validate the candidate here (validateCatalogCandidate) before activating.
+      setStatus('activating');
+      const storage = getCatalogStorage();
+      const activated = await storage.activate(entry.language, staged.candidateRef);
+      const installed: InstallResult = { ...staged, previousRef: activated.previousRef };
+      await storage.discardPrevious(entry.language);
       const connection = await openCatalogDb(entry.language);
       const proxy = createProxyCallback(connection);
       const read: Record<string, number> = {};

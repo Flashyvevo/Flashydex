@@ -24,6 +24,8 @@ export interface FetcherOptions {
   maxRetries?: number;
   /** Cache entries older than this are refetched. `Infinity` = always reuse (resume). Default 24 h. */
   maxCacheAgeMs?: number;
+  /** Cached entries are only reused when stored with this config hash (language + endpoint). */
+  cacheConfig?: string;
   userAgent?: string;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -33,7 +35,7 @@ export interface FetcherOptions {
   onLog?: (message: string) => void;
 }
 
-interface CacheEnvelope<T> { fetchedAt: number; url: string; data: T }
+interface CacheEnvelope<T> { fetchedAt: number; url: string; config?: string; data: T }
 
 const BACKOFF_MS = [1000, 2000, 4000];
 const MAX_RETRY_AFTER_MS = 60_000;
@@ -49,12 +51,13 @@ export class Fetcher {
   private active = 0;
   private waiters: Array<() => void> = [];
   private successStreak = 0;
-  private readonly opts: Required<Omit<FetcherOptions, 'concurrency' | 'onLog'>> & { onLog: (m: string) => void };
+  private readonly opts: Required<Omit<FetcherOptions, 'concurrency' | 'onLog' | 'cacheConfig'>> & { cacheConfig?: string } & { onLog: (m: string) => void };
 
   constructor(options: FetcherOptions = {}) {
     this.maxConcurrency = options.concurrency ?? 8;
     this.limit = this.maxConcurrency;
     this.opts = {
+      cacheConfig: options.cacheConfig,
       maxRetries: options.maxRetries ?? 3,
       maxCacheAgeMs: options.maxCacheAgeMs ?? 24 * 3600 * 1000,
       userAgent: options.userAgent ?? 'FlashyDex-catalog-builder/0.1 (+https://github.com/Flashyvevo/Flashydex)',
@@ -142,11 +145,11 @@ export class Fetcher {
     }
   }
 
-  async getJson<T>(url: string, cacheFile?: string): Promise<T> {
+  async getJson<T>(url: string, cacheFile?: string, maxAgeMs?: number): Promise<T> {
     if (cacheFile) {
       try {
         const envelope = JSON.parse(await readFile(cacheFile, 'utf8')) as CacheEnvelope<T>;
-        if (this.opts.now() - envelope.fetchedAt <= this.opts.maxCacheAgeMs) {
+        if (envelope.url === url && envelope.config === this.opts.cacheConfig && this.opts.now() - envelope.fetchedAt <= (maxAgeMs ?? this.opts.maxCacheAgeMs)) {
           this.stats.cacheHits += 1;
           return envelope.data;
         }
@@ -159,7 +162,7 @@ export class Fetcher {
     if (cacheFile) {
       await mkdir(dirname(cacheFile), { recursive: true });
       const temp = `${cacheFile}.${process.pid}.tmp`;
-      await writeFile(temp, JSON.stringify({ fetchedAt: this.opts.now(), url, data } satisfies CacheEnvelope<T>));
+      await writeFile(temp, JSON.stringify({ fetchedAt: this.opts.now(), url, config: this.opts.cacheConfig, data } satisfies CacheEnvelope<T>));
       await rename(temp, cacheFile);
     }
     return data;

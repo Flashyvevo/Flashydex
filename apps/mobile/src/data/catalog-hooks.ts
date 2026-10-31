@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query';
 import { SetIndex, type CardDetail, type CardSearchQuery, type CardSummary, type DomainError, type Input, type Language, type Page, type SetCardsQuery, type SetIndexRow, type SetKey, type SetListQuery, type SetSummary } from '@flashydex/core';
-import { resolvePackUrl } from '../platform/pack-install';
+import { fetchManifestText } from '../platform/pack-install';
 import bundledEn from './bootstrap/set-index-en.json';
 import bundledJa from './bootstrap/set-index-ja.json';
 import { useServicesIfReady } from './context';
@@ -86,9 +86,10 @@ export function useSetIndex(language: Language) {
         const check = await s.install.checkManifest({ languages: [language] });
         const url = check.languages.find((l) => l.language === language)?.setIndexUrl;
         if (url) {
-          const response = await fetch(resolvePackUrl(url));
-          if (response.ok) {
-            const parsed = SetIndex.safeParse(await response.json());
+          // Origin trust of setIndexUrl was validated by core; the read here is bounded (R09) and never allocates past the cap.
+          const body = await fetchManifestText({ maxBytes: 8 * 1024 * 1024, url });
+          {
+            const parsed = SetIndex.safeParse(JSON.parse(body.text));
             if (parsed.success && parsed.data.length > 0) return { source: 'manifest', rows: parsed.data };
           }
         }

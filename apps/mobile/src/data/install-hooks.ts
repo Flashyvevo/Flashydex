@@ -8,8 +8,8 @@ import { invalidateAll, keys } from './keys';
  * Install progress lives OUTSIDE React so a download keeps running while screens mount/unmount (CatalogInstallService is app-scoped).
  * UI components only observe; unmounting never cancels.
  */
-type InstallState = { progress: CatalogProgress | null; active: boolean; error: DomainError | null };
-let state: InstallState = { progress: null, active: false, error: null };
+type InstallState = { progress: CatalogProgress | null; active: boolean; error: DomainError | null; errorLanguage: Language | null };
+let state: InstallState = { progress: null, active: false, error: null, errorLanguage: null };
 let controller: AbortController | null = null;
 const listeners = new Set<() => void>();
 const setState = (next: InstallState) => { state = next; listeners.forEach((l) => l()); };
@@ -46,6 +46,8 @@ export type CatalogInstallControls = {
   active: boolean;
   /** Last failure of a `start()` in this session (cleared by the next start). */
   error: DomainError | null;
+  /** Language the `error` belongs to. */
+  errorLanguage: Language | null;
 };
 
 /**
@@ -62,14 +64,14 @@ export function useCatalogInstall(): CatalogInstallControls {
   const start = useCallback(async (language: Language): Promise<InstalledCatalog | null> => {
     if (state.active) return null;
     controller = new AbortController();
-    setState({ progress: null, active: true, error: null });
+    setState({ progress: null, active: true, error: null, errorLanguage: null });
     try {
       const installed = await servicesRef.current.install.install(language, (progress) => setState({ ...state, progress }), controller.signal);
-      setState({ progress: state.progress, active: false, error: null });
+      setState({ progress: state.progress, active: false, error: null, errorLanguage: null });
       await invalidateAll(qc);
       return installed;
     } catch (error) {
-      setState({ progress: state.progress, active: false, error: error as DomainError });
+      setState({ progress: state.progress, active: false, error: error as DomainError, errorLanguage: language });
       await invalidateAll(qc);
       return null;
     } finally {
@@ -78,7 +80,7 @@ export function useCatalogInstall(): CatalogInstallControls {
   }, [qc]);
 
   const cancel = useCallback(() => { controller?.abort(); }, []);
-  return { start, cancel, progress: snapshot.progress, active: snapshot.active, error: snapshot.error };
+  return { start, cancel, progress: snapshot.progress, active: snapshot.active, error: snapshot.error, errorLanguage: snapshot.errorLanguage };
 }
 
 /** `uninstall({language, confirm:true})`: removes only that catalog; owned copies, history and settings stay. */

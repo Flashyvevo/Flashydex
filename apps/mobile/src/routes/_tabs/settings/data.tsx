@@ -16,8 +16,11 @@ import {
   usePreviewRestore,
   useRestore,
   useShareExport,
+  type BackupPreviewDto,
+  type BackupProgressEvent,
   type FileRef,
-  type ImportReport
+  type ImportReport,
+  type RestoreResultDto
 } from '../../../data';
 import { describeError, errorCode, isCancelled } from '../../../lib/errors';
 import { formatDate, formatInt, plural } from '../../../lib/format';
@@ -115,10 +118,10 @@ function DataPage() {
   const doBackup = async () => {
     setBacking(true);
     try {
-      const out = (await createBackup.mutateAsync({ includeUserImages: false, includeCatalogs: false })) as unknown as { file: FileRef };
+      const out = await createBackup.mutateAsync({ input: { includeUserImages: false, includeCatalogs: false } });
       const shared = await share.mutateAsync({ files: [out.file], title: 'FlashyDex backup' });
       if (shared.outcome !== 'cancelled') {
-        writeLastBackup({ at: new Date().toISOString(), totalCards: dash.data?.totalCards ?? 0 });
+        writeLastBackup({ at: new Date().toISOString(), totalCards: out.counts.ownedCards });
         toast.show({ message: shared.outcome === 'downloaded' ? `Downloaded ${out.file.name}` : 'Backup ready' });
       }
     } catch (e) {
@@ -190,7 +193,7 @@ function DataPage() {
           description="Saves your collection, settings and custom cards in one file. Card catalogs aren’t included — they download again after a restore. Save it to Files or iCloud Drive."
           loading={backing}
           disabled={!capsReady || !canCreate}
-          disabledNote={capsReady && !canCreate ? 'Later build' : undefined}
+          disabledNote={capsReady && !canCreate ? 'Unavailable' : undefined}
           describedBy={capsReady && !canCreate ? 'backup-reason' : undefined}
           onClick={() => void doBackup()}
           testId="backup-create"
@@ -201,7 +204,7 @@ function DataPage() {
           label="Restore from backup…"
           description="Replaces your collection with the contents of a backup file."
           disabled={!capsReady || !canRestore}
-          disabledNote={capsReady && !canRestore ? 'Later build' : undefined}
+          disabledNote={capsReady && !canRestore ? 'Unavailable' : undefined}
           describedBy={capsReady && !canRestore ? 'backup-reason' : undefined}
           onClick={() => sheets.open('restore')}
           testId="restore-file"
@@ -291,23 +294,41 @@ function ImportPreview({ open, report, file, policy, busy, error, onPolicy, comm
   );
 }
 
+const PHASE_COPY: Record<BackupProgressEvent['phase'], string> = {
+  snapshot: 'Saving a safety copy of your current data…',
+  compressing: 'Packing your data…',
+  verifying: 'Checking the backup…',
+  staging: 'Preparing the restore…',
+  activating: 'Restoring your backup…',
+  complete: 'Finishing up…'
+};
+
 function RestoreSheet({ open, onClose, canRestore, reason, currentCards }: { open: boolean; onClose: () => void; canRestore: boolean; reason: string | null; currentCards: number }) {
   const pick = usePickFile();
   const preview = usePreviewRestore();
   const restore = useRestore();
+  const share = useShareExport();
   const toast = useToast();
   const [typed, setTyped] = useState('');
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [working, setWorking] = useState(false);
-  const p = preview.data as unknown as { id: string; backupHash: string; userStateToken: string; totalCards: number } | undefined;
+  const [phase, setPhase] = useState<BackupProgressEvent['phase'] | null>(null);
+  const [done, setDone] = useState<RestoreResultDto | null>(null);
+  const [p, setPreview] = useState<BackupPreviewDto | null>(null);
 
+  const reset = () => {
+    setConfirm(false);
+    setTyped('');
+    setPreview(null);
+  };
   const choose = async () => {
     setError(null);
+    setDone(null);
     try {
       const f = await pick.mutateAsync({ kind: 'backup', maxBytes: 512 * MB });
       if (!f) return;
-      await preview.mutateAsync({ file: f });
+      setPreview(await preview.mutateAsync({ input: { file: f } }));
       setConfirm(true);
     } catch (e) {
       if (!isCancelled(e)) setError(e);
@@ -316,56 +337,113 @@ function RestoreSheet({ open, onClose, canRestore, reason, currentCards }: { ope
   const doRestore = async () => {
     if (!p) return;
     setWorking(true);
+    setPhase(null);
     try {
-      await restore.mutateAsync({ id: p.id, backupHash: p.backupHash, userStateToken: p.userStateToken, confirm: 'RESTORE' });
+      const out = await restore.mutateAsync({
+        input: { id: p.id, backupHash: p.backupHash, userStateToken: p.userStateToken, confirm: 'RESTORE' },
+        onProgress: (progress) => setPhase(progress.phase)
+      });
       haptic('added');
-      toast.show({ message: `Backup restored — ${plural(p.totalCards, 'card')}` });
-      setConfirm(false);
-      setTyped('');
-      onClose();
+      toast.show({ message: `Backup restored — ${plural(out.totalCards, 'card')}` });
+      reset();
+      setDone(out);
     } catch (e) {
-      setConfirm(false);
+      reset();
       setError(e);
       haptic('error');
     } finally {
       setWorking(false);
+      setPhase(null);
     }
   };
+  const shareSafety = async () => {
+    if (!done) return;
+    try {
+      await share.mutateAsync({ files: [done.safetyBackup], title: 'FlashyDex safety copy' });
+    } catch (e) {
+      if (!isCancelled(e)) toast.show({ message: describeError(e).body, tone: 'negative' });
+    }
+  };
+  const close = () => {
+    setDone(null);
+    setError(null);
+    onClose();
+  };
+  const counts = p?.counts;
 
   return (
     <>
-      <BottomSheet open={open} title="Restore from backup" leading="Close" onClose={onClose} testId="restore-sheet">
+      <BottomSheet open={open} title="Restore from backup" leading="Close" onClose={close} testId="restore-sheet">
         <div className="flex flex-col gap-3 pt-2">
-          <p className="text-body text-fg-muted">Restoring replaces your collection, settings and custom cards. A safety copy of your current data is kept.</p>
-          <Button variant="danger-outline" full softDisabled={!canRestore} loading={pick.isPending || preview.isPending} onClick={() => void choose()} data-testid="restore-choose">
-            Choose backup file
-          </Button>
-          {!canRestore && <p className="text-caption text-fg-muted" data-testid="restore-unsupported">{reason ?? 'Restore isn’t available on this device yet.'} This backup can be merged with Import instead.</p>}
-          {error != null && <Banner tone="negative">{errorCode(error) === 'UNSUPPORTED_CAPABILITY' ? `${describeError(error).body} This backup can be merged with Import instead.` : `${describeError(error).title}. ${describeError(error).body}`}</Banner>}
+          {done ? (
+            <div className="flex flex-col gap-3" data-testid="restore-done">
+              <Banner tone="positive">Backup restored — {plural(done.totalCards, 'card')}.</Banner>
+              <p className="text-body text-fg-muted">
+                A safety copy of what was here before is saved as <span className="selectable font-medium text-fg" data-testid="safety-backup-name">{done.safetyBackup.name}</span>. Keep it until you’ve checked your collection.
+              </p>
+              <Button variant="secondary" full onClick={() => void shareSafety()} data-testid="safety-backup-share">Save the safety copy</Button>
+              <Button variant="primary" full onClick={close}>Done</Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-body text-fg-muted">Restoring replaces your collection, settings and custom cards. A safety copy of your current data is kept.</p>
+              <Button variant="danger-outline" full softDisabled={!canRestore} loading={pick.isPending || preview.isPending} onClick={() => void choose()} data-testid="restore-choose">
+                Choose backup file
+              </Button>
+              {!canRestore && <p className="text-caption text-fg-muted" data-testid="restore-unsupported">{reason ?? 'Restore isn’t available on this device yet.'} This backup can be merged with Import instead.</p>}
+              {error != null && (
+                <Banner tone="negative" testId="restore-error">
+                  {errorCode(error) === 'UNSUPPORTED_CAPABILITY' ? `${describeError(error).body} This backup can be merged with Import instead.` : `${describeError(error).title}. ${describeError(error).body}`}
+                </Banner>
+              )}
+            </>
+          )}
         </div>
       </BottomSheet>
       <Dialog
         open={confirm && !!p}
         title="Restore this backup?"
-        onDismiss={working ? undefined : () => setConfirm(false)}
+        onDismiss={working ? undefined : reset}
         testId="restore-dialog"
         actions={
           <>
             <Button variant="danger" disabled={typed !== 'RESTORE'} loading={working} onClick={() => void doRestore()} data-testid="restore-confirm">Restore backup</Button>
-            <Button onClick={() => setConfirm(false)} disabled={working}>Cancel</Button>
+            <Button onClick={reset} disabled={working}>Cancel</Button>
           </>
         }
       >
-        <p>Backup: {plural(p?.totalCards ?? 0, 'card')}</p>
-        <p>Now: {plural(currentCards, 'card')}</p>
-        <p className="mt-2 text-small">Restoring replaces your collection, settings and custom cards. A safety copy of your current data is kept.</p>
-        <label className="mt-3 block text-caption text-fg-muted" htmlFor="restore-type">Type RESTORE to confirm</label>
-        <TextInput id="restore-type" autoCapitalize="characters" value={typed} onChange={(e) => setTyped(e.target.value)} />
+        <div className="max-h-[50dvh] overflow-y-auto" data-testid="restore-preview">
+          <p className="font-semibold text-negative" data-testid="restore-warning">{p?.warning ?? 'Replaces all personal data'}</p>
+          <p className="mt-2">Backup: {plural(p?.totalCards ?? 0, 'card')}{p && p.customCards > 0 ? ` · ${plural(p.customCards, 'custom card')}` : ''}</p>
+          <p>Now: {plural(currentCards, 'card')}</p>
+          {counts && (
+            <ul className="mt-2 list-inside list-disc text-small text-fg-muted" data-testid="restore-counts">
+              <li>{formatInt(counts.ownedCards)} owned {counts.ownedCards === 1 ? 'copy' : 'copies'}</li>
+              <li>{plural(counts.storageLocations, 'location')} · {plural(counts.collectionGroups, 'group')}</li>
+              <li>{plural(counts.acquisitions, 'purchase record')} · {plural(counts.grades, 'grade')}</li>
+              <li>{plural(counts.priceSnapshots, 'saved price')}</li>
+            </ul>
+          )}
+          {p && (
+            <p className="mt-2 text-small" data-testid="restore-catalog">
+              Catalog: {formatInt(p.matchedCatalogIdentities)} cards match your installed catalog
+              {p.missingCatalogIdentities > 0 ? `, ${formatInt(p.missingCatalogIdentities)} aren’t installed yet — they keep their saved details and link up when the catalog downloads.` : '.'}
+            </p>
+          )}
+          {p && p.warnings.length > 0 && (
+            <ul className="mt-2 list-inside list-disc text-small text-warning" data-testid="restore-warnings">
+              {p.warnings.map((w) => <li key={w}>{w}</li>)}
+            </ul>
+          )}
+          <p className="mt-2 text-small">Restoring replaces your collection, settings and custom cards. A safety copy of your current data is kept.</p>
+          <label className="mt-3 block text-caption text-fg-muted" htmlFor="restore-type">Type RESTORE to confirm</label>
+          <TextInput id="restore-type" autoCapitalize="characters" value={typed} onChange={(e) => setTyped(e.target.value)} />
+        </div>
       </Dialog>
       {working && (
         <div role="alert" aria-busy className="fixed inset-0 flex flex-col items-center justify-center gap-3 bg-bg" style={{ zIndex: 'var(--ps-z-blocking)' }} data-testid="blocking-overlay">
           <div className="fd-spin size-8 rounded-full border-4 border-surface-3 border-t-accent" aria-hidden />
-          <p className="text-body">Restoring your backup… Keep FlashyDex open.</p>
+          <p className="text-body">{phase ? PHASE_COPY[phase] : 'Restoring your backup…'} Keep FlashyDex open.</p>
         </div>
       )}
     </>

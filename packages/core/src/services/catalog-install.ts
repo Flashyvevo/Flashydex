@@ -1,26 +1,17 @@
 import {
-  CheckManifestInput, UninstallInput, createCatalogManifestSchema, type CatalogManifest, type CatalogManifestEntryV1, type CatalogPhase, type CatalogProgress,
+  CheckManifestInput, UninstallInput, type CatalogManifest, type CatalogManifestEntryV1, type CatalogPhase, type CatalogProgress,
   type CatalogStatus, type CatalogUpdateCheck, type InstalledCatalog, type Input
 } from '@flashydex/schemas';
 import { CATALOG_SCHEMA_VERSION } from '../db/catalog-schema';
-import { ActiveWorkError, CancelledError, CatalogError, DomainError, toDomainError } from '../errors';
+import type { WorkLease } from '../db/coordinator';
+import type { SqlDriver } from '../db/sql';
+import { CancelledError, CatalogError, DomainError, PersistenceError, toDomainError } from '../errors';
+import { validateActiveCatalog, validateCatalogCandidate } from './candidate-validation';
 import { parse, parseJson, readSettings, type ServiceContext } from './context';
+import { MANIFEST_MAX_BYTES, parseManifestText, validateManifestSemantics } from './manifest-validation';
 
 type Language = 'en' | 'ja';
 export type PackEntry = CatalogManifestEntryV1 & { language: Language };
-
-/** Result of the device pack installer (apps/mobile/src/platform/pack-install `installCatalogPack`). */
-export interface PackInstallResult {
-  language: Language;
-  version: string;
-  sha256: string;
-  bytes: number;
-  /** Opaque active-file reference; never shown or exported. */
-  ref: string;
-  previousRef: string | null;
-  counts: { sets: number; cards: number; variants: number; prices: number; unpublishedSets: number };
-  metrics: unknown;
-}
 
 export interface PackInstallProgress {
   phase: 'downloading' | 'verifying' | 'validating' | 'activating' | 'installed';
@@ -28,43 +19,97 @@ export interface PackInstallProgress {
   compressedBytesTotal: number;
   decompressedBytesDone: number;
   decompressedBytesTotal: number;
+  /** Decoded bytes queued behind the writer (R05 backpressure evidence). */
+  pendingBytes?: number;
 }
 
-/** Platform port: the only way core touches pack files. Core stays free of Capacitor/DOM/Node. */
+/** What the adapter hands back after download + bounded zstd decode + SHA-256 + staged write. Nothing is active yet. */
+export interface PackStageResult {
+  language: Language;
+  version: string;
+  /** SHA-256 of the decompressed bytes, already verified == entry.sha256 by the adapter (core re-checks). */
+  sha256: string;
+  /** Decompressed byte count, verified == entry.uncompressedBytes by the adapter (core re-checks). */
+  bytes: number;
+  /** Opaque staged candidate (NOT active yet). */
+  candidateRef: string;
+  metrics: unknown;
+}
+
+/** What is actually on disk for one language: boot recovery reads this instead of trusting memory (R06). */
+export interface PackDiskState {
+  activeRef: string | null;
+  previousRef: string | null;
+  candidateRefs: string[];
+}
+
+/** Platform port v2 (Stage D contract §1): the only way core touches pack files. Core stays free of Capacitor/DOM/Node. */
 export interface CatalogInstallPort {
   readonly allowDevUrls: boolean;
-  capabilities(): { fullInstall: boolean; atomicActivation: boolean; attachReads: boolean; reason: string | null };
-  /** Raw manifest JSON from the configured manifest URL. Bounded + fetched by the adapter. */
-  fetchManifest(signal?: AbortSignal): Promise<unknown>;
-  install(entry: PackEntry, options: { onProgress: (p: PackInstallProgress) => void; signal?: AbortSignal }): Promise<PackInstallResult>;
-  /** Discard the retained previous copy (after the durable commit). */
-  finalize(language: Language): Promise<void>;
-  /** Put the previous copy back as active. False when there is none. */
-  rollback(language: Language): Promise<boolean>;
-  hasPrevious(language: Language): Promise<boolean>;
-  /** Delete the active catalog, previous copy and staging leftovers. */
+  capabilities(): { fullInstall: boolean; atomicActivation: boolean; attachReads: boolean; catalogWrites: boolean; reason: string | null };
+  /** Bounded streaming read of the configured manifest; the adapter stops at maxBytes and throws PAYLOAD_TOO_LARGE. */
+  fetchManifest(input: { maxBytes: number }, signal?: AbortSignal): Promise<{ text: string; finalUrl: string; requestedUrl: string }>;
+  /** Download + zstd decode (bounded) + SHA-256 + staged write. No activation. */
+  stage(entry: PackEntry, options: { trustedOrigins: string[]; onProgress: (p: PackInstallProgress) => void; signal?: AbortSignal }): Promise<PackStageResult>;
+  /** Read-only SqlDriver over a staged candidate OR the active file. Core runs ALL validation SQL. */
+  openForValidation(ref: string): Promise<SqlDriver>;
+  /** candidate -> active; existing active -> previous. */
+  activate(language: Language, candidateRef: string): Promise<{ activeRef: string; previousRef: string | null }>;
+  /** previous -> active. False when there is none. */
+  restorePrevious(language: Language): Promise<boolean>;
+  discardPrevious(language: Language): Promise<void>;
+  discardCandidate(ref: string): Promise<void>;
+  /** Disk truth for boot recovery. */
+  inspect(language: Language): Promise<PackDiskState>;
+  /** Delete active, previous and staging leftovers. */
   remove(language: Language): Promise<void>;
-  /** Opaque ref of the active file or null. */
-  activeRef(language: Language): Promise<string | null>;
 }
+
+export interface CatalogConfig {
+  /** `null` = no catalog source configured (install/check report CATALOG_NOT_CONFIGURED). */
+  manifestUrl?: string | null;
+  trustedOrigins: string[];
+}
+
+type Receipt = InstalledCatalog & { activeRef: string | null };
+type Journal = {
+  version: 2;
+  phase: 'staging' | 'prepared' | 'committed' | 'rolling_back' | 'rolled_back' | 'aborted';
+  language: Language;
+  oldReceipt: Receipt | null;
+  candidateRef: string | null;
+  targetSha256: string;
+  targetVersion: string;
+  previousRef: string | null;
+  commitAt: string | null;
+};
 
 const TERMINAL = new Set(['installed', 'cancelled', 'failed', 'interrupted', 'committed']);
 const MAP_PHASE: Record<PackInstallProgress['phase'], CatalogPhase> = {
   downloading: 'downloading', verifying: 'verifying', validating: 'validating', activating: 'activating', installed: 'installed'
 };
+const OPEN_STATES = "('prepared','activating','validating_active','rolling_back')";
 
 const absent = (language: Language, generation = 0): InstalledCatalog => ({ language, version: null, sha256: null, installedAt: null, schemaVersion: null, generation, status: 'absent' });
+const ABSENT_SQL = `UPDATE installed_catalogs SET status = 'absent', version = NULL, sha256 = NULL, installed_at = NULL, schema_version = NULL, active_ref = NULL, generation = generation + 1 WHERE language = ?`;
 
 export class CatalogInstallService {
   private active: { language: Language; controller: AbortController; progress: CatalogProgress } | null = null;
+  private readonly config: CatalogConfig;
 
-  constructor(private readonly ctx: ServiceContext, private readonly port: CatalogInstallPort) {}
+  constructor(private readonly ctx: ServiceContext, private readonly port: CatalogInstallPort, config?: CatalogConfig) {
+    this.config = config ?? { trustedOrigins: [] };
+  }
 
   private get user() {
     return this.ctx.databases.user;
   }
 
-  async installed(language: Language): Promise<InstalledCatalog & { activeRef: string | null }> {
+  private get coordinator() {
+    return this.ctx.databases.coordinator;
+  }
+
+  async installed(language: Language): Promise<Receipt> {
     const rows = await this.user.rows('SELECT version, sha256, installed_at, status, schema_version, generation, active_ref FROM installed_catalogs WHERE language = ?', [language]);
     const r = rows[0];
     if (!r) return { ...absent(language), activeRef: null };
@@ -82,17 +127,20 @@ export class CatalogInstallService {
 
   /* ------------------------------------------------------------------------------------------ manifest */
   private async manifest(signal?: AbortSignal): Promise<CatalogManifest> {
-    let raw: unknown;
+    if (this.config.manifestUrl === null) throw new CatalogError('CATALOG_NOT_CONFIGURED', 'No catalog source is configured in this build');
+    let fetched: { text: string; finalUrl: string; requestedUrl: string };
     try {
-      raw = await this.port.fetchManifest(signal);
+      fetched = await this.port.fetchManifest({ maxBytes: MANIFEST_MAX_BYTES }, signal);
     } catch (error) {
       if (signal?.aborted) throw new CancelledError();
       const e = toDomainError(error);
       throw new CatalogError(e.code === 'INTERNAL_ERROR' ? 'HTTP_FAILED' : e.code, e.code === 'INTERNAL_ERROR' ? 'The catalog manifest could not be downloaded' : e.message);
     }
-    const parsed = createCatalogManifestSchema({ allowDevUrls: this.port.allowDevUrls }).safeParse(raw);
-    if (!parsed.success) throw new CatalogError('MANIFEST_INVALID', 'The catalog manifest is not valid');
-    return parsed.data;
+    const raw = parseManifestText(fetched.text);
+    const installed = [await this.installed('en'), await this.installed('ja')];
+    return validateManifestSemantics(raw, {
+      requestedUrl: fetched.requestedUrl, finalUrl: fetched.finalUrl, trustedOrigins: this.config.trustedOrigins, allowDevUrls: this.port.allowDevUrls, installed
+    });
   }
 
   async checkManifest(input?: Input<typeof CheckManifestInput>, signal?: AbortSignal): Promise<CatalogUpdateCheck> {
@@ -141,7 +189,9 @@ export class CatalogInstallService {
       }
     }
     if (this.active?.language === language) progress = this.active.progress;
-    return { installed, job: progress, lastError, rollbackAvailable: await this.port.hasPrevious(language).catch(() => false), capabilities: this.port.capabilities() };
+    // R06: rollback availability is DISK truth (a retained previous copy), never an in-memory set.
+    const rollbackAvailable = await this.port.inspect(language).then((d) => d.previousRef !== null, () => false);
+    return { installed, job: progress, lastError, rollbackAvailable, capabilities: this.port.capabilities() };
   }
 
   /** Cancel the running install, if any. Before activation this leaves the installed state unchanged. */
@@ -155,11 +205,16 @@ export class CatalogInstallService {
 
   /* ------------------------------------------------------------------------------------------ install */
   async install(language: Language, onProgress: (progress: CatalogProgress) => void, signal: AbortSignal): Promise<InstalledCatalog> {
-    if (this.active) throw new ActiveWorkError('ACTIVE_WORK', 'A catalog download is already running');
-    const settings = await this.user.read((q) => readSettings(q));
-    if (!settings.languages.includes(language)) throw new CatalogError('CATALOG_NOT_SELECTED', `The ${language} catalog is not selected in settings`);
-
     const operationId = this.ctx.env.ids.uuid();
+    const lease = await this.coordinator.admit('install', { languages: [language], token: this.ctx.env.ids.uuid(), now: this.ctx.env.clock.now() });
+    try {
+      return await this.installAdmitted(lease, operationId, language, onProgress, signal);
+    } finally {
+      await lease.release();
+    }
+  }
+
+  private async installAdmitted(lease: WorkLease, operationId: string, language: Language, onProgress: (progress: CatalogProgress) => void, signal: AbortSignal): Promise<InstalledCatalog> {
     const controller = new AbortController();
     const forward = () => controller.abort();
     if (signal.aborted) controller.abort();
@@ -175,8 +230,11 @@ export class CatalogInstallService {
       try { onProgress({ ...progress }); } catch { /* observer errors never leave the lock held */ }
     };
     let jobCreated = false;
+    let candidateRef: string | null = null;
     try {
       emit({});
+      const settings = await this.user.read((q) => readSettings(q));
+      if (!settings.languages.includes(language)) throw new CatalogError('CATALOG_NOT_SELECTED', `The ${language} catalog is not selected in settings`);
       const manifest = await this.manifest(controller.signal);
       const entry = manifest.languages[language];
       if (!entry) throw new CatalogError('CATALOG_NOT_SELECTED', `The manifest has no ${language} catalog`);
@@ -188,68 +246,99 @@ export class CatalogInstallService {
       }
 
       const now = this.ctx.env.clock.now();
-      const journal = { version: 1, oldInstalled: before.status === 'installed' ? before : null, oldClosedSha256: null, compressedRef: null, candidateRef: null, previousRef: null, targetSha256: entry.sha256, targetBytes: entry.uncompressedBytes, preparedAt: null, commitAt: null };
-      try {
-        await this.user.transaction(async (tx) => {
-          await tx.run(
-            `INSERT INTO catalog_install_jobs (id, language, state, lock_key, token, manifest_entry_json, compressed_bytes_done, decompressed_bytes_done, progress_json, journal_json, created_at, updated_at)
-             VALUES (?, ?, 'downloading', 'catalog-install', ?, ?, 0, 0, ?, ?, ?, ?)`,
-            [operationId, language, this.ctx.env.ids.uuid(), JSON.stringify(entry), JSON.stringify(progress), JSON.stringify(journal), now, now]
-          );
-        });
-      } catch {
-        throw new ActiveWorkError('ACTIVE_WORK', 'A catalog download is already running');
-      }
+      const journal: Journal = {
+        version: 2, phase: 'staging', language, oldReceipt: before.status === 'installed' ? before : null, candidateRef: null,
+        targetSha256: entry.sha256, targetVersion: entry.targetVersion, previousRef: null, commitAt: null
+      };
+      await this.user.transaction(async (tx) => {
+        await tx.run(
+          `INSERT INTO catalog_install_jobs (id, language, state, lock_key, token, manifest_entry_json, compressed_bytes_done, decompressed_bytes_done, progress_json, journal_json, created_at, updated_at)
+           VALUES (?, ?, 'downloading', 'catalog-install', ?, ?, 0, 0, ?, ?, ?, ?)`,
+          [operationId, language, lease.token, JSON.stringify(entry), JSON.stringify(progress), JSON.stringify(journal), now, now]
+        );
+      });
       jobCreated = true;
       emit({ phase: 'downloading', compressedBytesTotal: entry.compressedBytes, uncompressedBytesTotal: entry.uncompressedBytes });
 
-      await this.ctx.databases.invalidateCatalog(language); // release core's read handle before the file swap
       let lastPersist = 0;
-      let result: PackInstallResult;
-      try {
-        result = await this.port.install({ ...entry, language }, {
-          signal: controller.signal,
-          onProgress: (p) => {
-            const phase = MAP_PHASE[p.phase];
-            const phaseChanged = phase !== progress.phase;
-            emit({ phase: phase === 'installed' ? 'activating' : phase, compressedBytesDone: p.compressedBytesDone, compressedBytesTotal: p.compressedBytesTotal, uncompressedBytesDone: p.decompressedBytesDone, uncompressedBytesTotal: p.decompressedBytesTotal, cancellable: phase === 'downloading' || phase === 'verifying' || phase === 'validating' });
-            if (phaseChanged || Date.now() - lastPersist > 500) {
-              lastPersist = Date.now();
-              void this.saveJob(operationId, progress.phase === 'checking' ? 'downloading' : (progress.phase as string), progress).catch(() => undefined);
-            }
+      const staged = await this.port.stage({ ...entry, language }, {
+        trustedOrigins: this.config.trustedOrigins,
+        signal: controller.signal,
+        onProgress: (p) => {
+          const phase = MAP_PHASE[p.phase];
+          const phaseChanged = phase !== progress.phase;
+          emit({ phase: phase === 'installed' ? 'activating' : phase, compressedBytesDone: p.compressedBytesDone, compressedBytesTotal: p.compressedBytesTotal, uncompressedBytesDone: p.decompressedBytesDone, uncompressedBytesTotal: p.decompressedBytesTotal, cancellable: phase === 'downloading' || phase === 'verifying' || phase === 'validating' });
+          if (phaseChanged || Date.now() - lastPersist > 500) {
+            lastPersist = Date.now();
+            void this.saveJob(operationId, progress.phase === 'checking' ? 'downloading' : (progress.phase as string), progress).catch(() => undefined);
           }
-        });
-      } catch (error) {
-        await this.ctx.databases.invalidateCatalog(language).catch(() => undefined);
-        throw error;
-      }
+        }
+      });
+      candidateRef = staged.candidateRef;
 
-      // Activation succeeded on disk. The durable receipt is the commit point; failure restores the previous catalog.
-      emit({ phase: 'validating_active', cancellable: false });
-      const commitAt = this.ctx.env.clock.now();
+      // Core re-checks what the adapter claims (R09).
+      if (staged.language !== language || staged.version !== entry.targetVersion) throw new CatalogError('PACK_INVALID', 'The staged catalog is not the one that was requested');
+      if (staged.bytes !== entry.uncompressedBytes) throw new CatalogError('PACK_SIZE_MISMATCH', 'The decompressed size does not match the manifest');
+      if (staged.sha256 !== entry.sha256) throw new CatalogError('PACK_HASH_MISMATCH', 'The decompressed SHA-256 does not match the manifest');
+
+      emit({ phase: 'validating', cancellable: true });
+      let driver: SqlDriver | null = null;
       try {
-        await this.user.transaction(async (tx) => {
-          await tx.run(
-            `UPDATE installed_catalogs SET status = 'installed', version = ?, sha256 = ?, installed_at = ?, schema_version = ?, generation = generation + 1, active_ref = ? WHERE language = ?`,
-            [result.version, result.sha256, commitAt, entry.schemaVersion, result.ref, language]
-          );
-          await tx.run(
-            `UPDATE catalog_install_jobs SET state = 'committed', journal_json = ?, progress_json = ?, updated_at = ? WHERE id = ?`,
-            [JSON.stringify({ ...journal, previousRef: result.previousRef, commitAt }), JSON.stringify(progress), commitAt, operationId]
-          );
-        });
-      } catch (error) {
-        await this.port.rollback(language).catch(() => undefined);
-        throw error;
+        driver = await this.port.openForValidation(staged.candidateRef);
+        await validateCatalogCandidate(driver, { language, targetVersion: entry.targetVersion, counts: entry.counts });
+      } finally {
+        await driver?.close().catch(() => undefined);
       }
-      await this.ctx.databases.invalidateCatalog(language);
-      await this.port.finalize(language).catch(() => undefined); // cleanup failure never turns a committed install into a failure
-      await this.recordMetrics(language, result, operationId, commitAt);
+      if (controller.signal.aborted) throw new CancelledError();
+
+      // R06: durable PREPARED journal, committed BEFORE any rename. Everything needed to undo the swap is in it.
+      const prepared: Journal = { ...journal, phase: 'prepared', candidateRef: staged.candidateRef };
+      emit({ phase: 'activating', cancellable: false });
+      await this.user.transaction(async (tx) => {
+        await tx.run('UPDATE catalog_install_jobs SET state = ?, journal_json = ?, progress_json = ?, updated_at = ? WHERE id = ?', ['prepared', JSON.stringify(prepared), JSON.stringify(progress), this.ctx.env.clock.now(), operationId]);
+      });
+
+      let committedPrevious: string | null = null;
+      await lease.withBarrier([language], async () => {
+        await this.ctx.databases.invalidateCatalog(language); // release core's read handle right before the swap
+        let activated: { activeRef: string; previousRef: string | null };
+        try {
+          activated = await this.port.activate(language, staged.candidateRef);
+        } catch (error) {
+          await this.undoSwap(language, prepared);
+          throw error;
+        }
+        emit({ phase: 'validating_active', cancellable: false });
+        const commitAt = this.ctx.env.clock.now();
+        try {
+          await this.user.transaction(async (tx) => {
+            await tx.run(
+              `UPDATE installed_catalogs SET status = 'installed', version = ?, sha256 = ?, installed_at = ?, schema_version = ?, generation = generation + 1, active_ref = ? WHERE language = ?`,
+              [staged.version, staged.sha256, commitAt, entry.schemaVersion, activated.activeRef, language]
+            );
+            await tx.run('UPDATE catalog_install_jobs SET state = ?, journal_json = ?, progress_json = ?, updated_at = ? WHERE id = ?', [
+              'committed', JSON.stringify({ ...prepared, phase: 'committed', previousRef: activated.previousRef, commitAt } satisfies Journal), JSON.stringify(progress), commitAt, operationId
+            ]);
+          });
+        } catch (error) {
+          // PERSISTENCE_FAILED: COMMIT happened and durability is unknown. Leave the files alone: boot recovery reconciles either outcome from journal + disk.
+          if (!(error instanceof PersistenceError)) await this.undoSwap(language, prepared);
+          throw error;
+        }
+        committedPrevious = activated.previousRef;
+        this.ctx.databases.bumpEpoch(language);
+        await this.ctx.databases.invalidateCatalog(language);
+      });
+      candidateRef = null; // consumed
+      void committedPrevious;
+      await this.port.discardPrevious(language).catch(() => undefined); // cleanup failure never turns a committed install into a failure
+      await this.recordMetrics(language, staged, operationId, this.ctx.env.clock.now());
       emit({ phase: 'installed', compressedBytesDone: entry.compressedBytes, uncompressedBytesDone: entry.uncompressedBytes, cancellable: false });
       await this.finishJob(operationId, 'installed', progress, null);
       return await this.publicInstalled(language);
     } catch (error) {
       const domain = controller.signal.aborted && !(error instanceof CatalogError && error.code !== 'CANCELLED') ? new CancelledError() : this.asCatalogError(error);
+      if (candidateRef) await this.port.discardCandidate(candidateRef).catch(() => undefined);
       if (jobCreated) {
         const state = domain.code === 'CANCELLED' ? 'cancelled' : 'failed';
         emit({ phase: state, cancellable: false });
@@ -264,6 +353,28 @@ export class CatalogInstallService {
     }
   }
 
+  /**
+   * Put the disk back to the pre-swap state using disk truth + the prepared journal. Used after an activate/commit failure and by boot recovery.
+   * Never throws: whatever it cannot fix is reconciled again at the next boot.
+   */
+  private async undoSwap(language: Language, journal: Journal): Promise<void> {
+    try {
+      const disk = await this.port.inspect(language);
+      const candidatePresent = journal.candidateRef !== null && disk.candidateRefs.includes(journal.candidateRef);
+      if (candidatePresent) {
+        // Activation did not complete. Between the two renames the old active may sit in `previous` with no active file.
+        if (disk.activeRef === null && disk.previousRef !== null) await this.port.restorePrevious(language);
+        await this.port.discardCandidate(journal.candidateRef as string);
+      } else if (journal.oldReceipt) {
+        if (disk.previousRef !== null) await this.port.restorePrevious(language);
+      } else {
+        await this.port.remove(language); // first install: nothing to go back to
+      }
+    } catch {
+      /* boot recovery will retry from the journal */
+    }
+  }
+
   private asCatalogError(error: unknown): DomainError {
     if (error instanceof DomainError) return error;
     const e = error as { code?: unknown; message?: unknown } | null;
@@ -275,9 +386,9 @@ export class CatalogInstallService {
   }
 
   private async saveJob(id: string, state: string, progress: CatalogProgress): Promise<void> {
-    const valid = ['checking', 'downloading', 'downloaded', 'size_checked', 'decompressing', 'verifying', 'validating', 'prepared', 'activating', 'validating_active'];
+    const valid = ['checking', 'downloading', 'downloaded', 'size_checked', 'decompressing', 'verifying', 'validating'];
     if (!valid.includes(state)) return;
-    await this.user.run('UPDATE catalog_install_jobs SET state = ?, compressed_bytes_done = ?, decompressed_bytes_done = ?, progress_json = ?, updated_at = ? WHERE id = ? AND lock_key IS NOT NULL', [
+    await this.user.run("UPDATE catalog_install_jobs SET state = ?, compressed_bytes_done = ?, decompressed_bytes_done = ?, progress_json = ?, updated_at = ? WHERE id = ? AND lock_key IS NOT NULL AND state NOT IN ('prepared','committed')", [
       state, progress.compressedBytesDone, progress.uncompressedBytesDone, JSON.stringify(progress), this.ctx.env.clock.now(), id
     ]);
   }
@@ -290,7 +401,7 @@ export class CatalogInstallService {
     });
   }
 
-  private async recordMetrics(language: Language, result: PackInstallResult, operationId: string, at: string): Promise<void> {
+  private async recordMetrics(language: Language, result: PackStageResult, operationId: string, at: string): Promise<void> {
     try {
       await this.user.transaction(async (tx) => {
         await tx.run('INSERT INTO pack_metrics (id, language, version, operation_id, metrics_json, recorded_at) VALUES (?, ?, ?, ?, ?, ?)', [
@@ -303,54 +414,91 @@ export class CatalogInstallService {
     }
   }
 
-  /* ------------------------------------------------------------------------------------------ rollback / uninstall / recovery */
+  /* ------------------------------------------------------------------------------------------ rollback / uninstall */
   async rollback(language: Language): Promise<InstalledCatalog> {
-    if (this.active) throw new ActiveWorkError('ACTIVE_WORK', 'A catalog download is running');
-    if (!(await this.port.hasPrevious(language))) throw new CatalogError('NO_ROLLBACK', 'There is no previous catalog to restore');
-    const jobs = await this.user.rows("SELECT journal_json FROM catalog_install_jobs WHERE language = ? AND state IN ('committed','installed') ORDER BY created_at DESC, id DESC LIMIT 1", [language]);
-    const journal = parseJson<{ oldInstalled: (InstalledCatalog & { activeRef: string | null }) | null; previousRef: string | null } | null>(jobs[0]?.[0] as string | undefined, null);
-    await this.ctx.databases.invalidateCatalog(language);
-    if (!(await this.port.rollback(language))) throw new CatalogError('NO_ROLLBACK', 'There is no previous catalog to restore');
+    const lease = await this.coordinator.admit('rollback', { languages: [language], token: this.ctx.env.ids.uuid(), now: this.ctx.env.clock.now() });
+    try {
+      const disk = await this.port.inspect(language);
+      if (disk.previousRef === null) throw new CatalogError('NO_ROLLBACK', 'There is no previous catalog to restore');
+      const jobs = await this.user.rows("SELECT id, journal_json FROM catalog_install_jobs WHERE language = ? AND state IN ('committed','installed') ORDER BY created_at DESC, id DESC LIMIT 1", [language]);
+      const jobId = jobs[0]?.[0] as string | undefined;
+      const journal = parseJson<Journal | null>(jobs[0]?.[1] as string | undefined, null);
+      if (!jobId || !journal || !journal.oldReceipt) throw new CatalogError('NO_ROLLBACK', 'There is no previous catalog to restore');
+      const old = journal.oldReceipt;
+      await this.user.transaction(async (tx) => {
+        await tx.run("UPDATE catalog_install_jobs SET state = 'rolling_back', journal_json = ?, updated_at = ? WHERE id = ?", [JSON.stringify({ ...journal, phase: 'rolling_back' }), this.ctx.env.clock.now(), jobId]);
+      });
+      await lease.withBarrier([language], async () => {
+        await this.ctx.databases.invalidateCatalog(language);
+        if (!(await this.port.restorePrevious(language))) throw new CatalogError('NO_ROLLBACK', 'There is no previous catalog to restore');
+        await this.writeReceipt(language, old, jobId, journal);
+        this.ctx.databases.bumpEpoch(language);
+        await this.ctx.databases.invalidateCatalog(language);
+      });
+      return await this.publicInstalled(language);
+    } finally {
+      await lease.release();
+    }
+  }
+
+  private async writeReceipt(language: Language, old: Receipt, jobId: string, journal: Journal): Promise<void> {
     const now = this.ctx.env.clock.now();
-    const old = journal?.oldInstalled ?? null;
     await this.user.transaction(async (tx) => {
-      if (old && old.version && old.sha256 && old.schemaVersion) {
-        await tx.run(`UPDATE installed_catalogs SET status = 'installed', version = ?, sha256 = ?, installed_at = ?, schema_version = ?, generation = generation + 1, active_ref = ? WHERE language = ?`, [
-          old.version, old.sha256, old.installedAt ?? now, old.schemaVersion, journal?.previousRef ?? old.activeRef ?? 'restored', language
-        ]);
-      } else {
-        await tx.run(`UPDATE installed_catalogs SET status = 'absent', version = NULL, sha256 = NULL, installed_at = NULL, schema_version = NULL, active_ref = NULL, generation = generation + 1 WHERE language = ?`, [language]);
-      }
+      await tx.run(`UPDATE installed_catalogs SET status = 'installed', version = ?, sha256 = ?, installed_at = ?, schema_version = ?, generation = generation + 1, active_ref = ? WHERE language = ?`, [
+        old.version, old.sha256, old.installedAt ?? now, old.schemaVersion, old.activeRef ?? 'restored', language
+      ]);
+      await tx.run("UPDATE catalog_install_jobs SET state = 'committed', journal_json = ?, updated_at = ? WHERE id = ?", [JSON.stringify({ ...journal, phase: 'rolled_back' }), now, jobId]);
     });
-    await this.ctx.databases.invalidateCatalog(language);
-    return this.publicInstalled(language);
   }
 
   async uninstall(input: Input<typeof UninstallInput>): Promise<InstalledCatalog> {
     const { language } = parse(UninstallInput, input);
-    if (this.active) throw new ActiveWorkError('ACTIVE_WORK', 'A catalog download is running');
-    const current = await this.installed(language);
-    if (current.status === 'absent' && (await this.port.activeRef(language)) === null) return this.publicInstalled(language);
-    await this.ctx.databases.invalidateCatalog(language);
+    const lease = await this.coordinator.admit('uninstall', { languages: [language], token: this.ctx.env.ids.uuid(), now: this.ctx.env.clock.now() });
     try {
-      await this.port.remove(language);
-    } catch (error) {
-      const e = toDomainError(error);
-      throw new CatalogError('FILE_IO', e.code === 'INTERNAL_ERROR' ? 'The catalog files could not be removed' : e.message); // row untouched: prior state kept
+      const current = await this.installed(language);
+      const disk = await this.port.inspect(language).catch(() => ({ activeRef: null, previousRef: null, candidateRefs: [] }) as PackDiskState);
+      if (current.status === 'absent' && disk.activeRef === null && disk.previousRef === null && disk.candidateRefs.length === 0) return this.publicInstalled(language);
+      await lease.withBarrier([language], async () => {
+        await this.ctx.databases.invalidateCatalog(language);
+        try {
+          await this.port.remove(language);
+        } catch (error) {
+          const e = toDomainError(error);
+          throw new CatalogError('FILE_IO', e.code === 'INTERNAL_ERROR' ? 'The catalog files could not be removed' : e.message); // row untouched: prior state kept
+        }
+        await this.user.transaction(async (tx) => { await tx.run(ABSENT_SQL, [language]); }); // personal rows, history, annotations and settings are never touched
+        this.ctx.databases.bumpEpoch(language);
+        await this.ctx.databases.invalidateCatalog(language);
+      });
+      return await this.publicInstalled(language);
+    } finally {
+      await lease.release();
     }
-    await this.user.transaction(async (tx) => {
-      await tx.run(`UPDATE installed_catalogs SET status = 'absent', version = NULL, sha256 = NULL, installed_at = NULL, schema_version = NULL, active_ref = NULL, generation = generation + 1 WHERE language = ?`, [language]);
-    }); // personal rows, history, annotations and settings are never touched
-    return this.publicInstalled(language);
   }
 
+  /* ------------------------------------------------------------------------------------------ boot recovery (R06) */
   /**
-   * Boot recovery (app start, before any catalog open): interrupted jobs are marked, and the installed receipt is reconciled with
-   * what is actually on disk. Never creates an empty catalog.
+   * Boot recovery (app start, before any catalog open). Reconciles the committed receipt + journals with what is actually on disk
+   * (`port.inspect`), validates the active file cheaply (schema + catalog_meta vs receipt; no full rehash) and cleans stray files.
+   * Never creates an empty catalog and never trusts in-memory state.
    */
-  async recover(): Promise<{ interruptedJobs: number; reconciled: Language[] }> {
+  async recover(): Promise<{ interruptedJobs: number; reconciled: Language[]; actions: string[] }> {
+    const actions: string[] = [];
+    await this.coordinator.reconcile().catch(() => false);
+    const reconciled: Language[] = [];
+    const touched = new Set<Language>();
+
+    for (const language of ['en', 'ja'] as const) {
+      try {
+        const changed = await this.recoverLanguage(language, actions);
+        if (changed) { reconciled.push(language); touched.add(language); }
+      } catch {
+        actions.push(`${language}:recovery-error`); // retried next boot; startup is never blocked by one bad language
+      }
+    }
+
     const now = this.ctx.env.clock.now();
-    const stuck = await this.user.rows("SELECT id FROM catalog_install_jobs WHERE state NOT IN ('installed','cancelled','failed','interrupted','committed') OR lock_key IS NOT NULL");
+    const stuck = await this.user.rows(`SELECT id FROM catalog_install_jobs WHERE state NOT IN ('installed','cancelled','failed','interrupted','committed') OR lock_key IS NOT NULL`);
     for (const row of stuck) {
       await this.user.transaction(async (tx) => {
         await tx.run(
@@ -360,20 +508,95 @@ export class CatalogInstallService {
         );
       });
     }
-    const reconciled: Language[] = [];
-    for (const language of ['en', 'ja'] as const) {
-      const row = await this.installed(language);
-      const activeRef = await this.port.activeRef(language).catch(() => null);
-      if (row.status === 'installed' && activeRef === null) {
-        await this.user.transaction(async (tx) => {
-          await tx.run(`UPDATE installed_catalogs SET status = 'absent', version = NULL, sha256 = NULL, installed_at = NULL, schema_version = NULL, active_ref = NULL, generation = generation + 1 WHERE language = ?`, [language]);
-        });
-        reconciled.push(language);
-      } else if (row.status === 'absent' && activeRef !== null) {
-        await this.port.remove(language).catch(() => undefined); // uncommitted candidate left behind by an interrupted activation
-        reconciled.push(language);
-      }
+    for (const language of touched) {
+      this.ctx.databases.bumpEpoch(language);
+      await this.ctx.databases.invalidateCatalog(language).catch(() => undefined);
     }
-    return { interruptedJobs: stuck.length, reconciled };
+    return { interruptedJobs: stuck.length, reconciled, actions };
+  }
+
+  private async latestJob(language: Language, whereStates: string): Promise<{ id: string; state: string; journal: Journal | null } | null> {
+    const rows = await this.user.rows(`SELECT id, state, journal_json FROM catalog_install_jobs WHERE language = ? AND state IN ${whereStates} ORDER BY created_at DESC, id DESC LIMIT 1`, [language]);
+    const r = rows[0];
+    if (!r) return null;
+    const journal = parseJson<Journal | null>(String(r[2]), null);
+    return { id: String(r[0]), state: String(r[1]), journal: journal && journal.version === 2 ? journal : null };
+  }
+
+  /** Returns true when the receipt or the files were changed. */
+  private async recoverLanguage(language: Language, actions: string[]): Promise<boolean> {
+    let changed = false;
+    let disk = await this.port.inspect(language);
+    const act = (what: string) => { actions.push(`${language}:${what}`); changed = true; };
+
+    // 1. A swap that was prepared (journal committed) but whose receipt never committed, or a rollback that was in flight.
+    const open = await this.latestJob(language, OPEN_STATES);
+    if (open?.journal) {
+      const j = open.journal;
+      if (open.state === 'rolling_back') {
+        if (disk.previousRef === null && j.oldReceipt) {
+          await this.writeReceipt(language, j.oldReceipt, open.id, j); // the swap finished, only the receipt is missing
+          act('rollback-completed');
+        } else {
+          act('rollback-abandoned');
+        }
+      } else if (j.phase === 'prepared' || open.state === 'prepared' || open.state === 'activating' || open.state === 'validating_active') {
+        await this.undoSwap(language, j);
+        act(j.oldReceipt ? 'restored-previous' : 'removed-uncommitted-first-install');
+      }
+      disk = await this.port.inspect(language);
+    }
+
+    // 2. Committed receipt + a previous copy still on disk: the commit is durable, finish the cleanup.
+    const receipt = await this.installed(language);
+    if (receipt.status === 'installed' && disk.activeRef !== null && disk.previousRef !== null) {
+      await this.port.discardPrevious(language);
+      act('discarded-previous');
+    }
+    // 3. Stray staging candidates (no install is running at boot).
+    for (const ref of disk.candidateRefs) {
+      await this.port.discardCandidate(ref);
+      act('discarded-candidate');
+    }
+    disk = await this.port.inspect(language);
+
+    // 4. Receipt vs disk.
+    if (receipt.status === 'installed') {
+      if (disk.activeRef === null) {
+        if (disk.previousRef !== null && (await this.port.restorePrevious(language))) {
+          act('restored-previous-as-active');
+          disk = await this.port.inspect(language);
+        } else {
+          await this.user.transaction(async (tx) => { await tx.run(ABSENT_SQL, [language]); });
+          act('receipt-cleared-no-file');
+          return changed;
+        }
+      }
+      if (!(await this.activeMatchesReceipt(language, receipt, disk))) {
+        await this.user.transaction(async (tx) => { await tx.run("UPDATE installed_catalogs SET status = 'failed', generation = generation + 1 WHERE language = ?", [language]); });
+        act('receipt-marked-failed');
+      }
+    } else if (receipt.status === 'absent' && disk.activeRef !== null) {
+      await this.port.remove(language).catch(() => undefined); // uncommitted file left behind
+      act('removed-unreceipted-active');
+    }
+    return changed;
+  }
+
+  /** Cheap check (R06): schema + catalog_meta vs receipt, and the receipt's sha vs the sha the committed install job recorded. */
+  private async activeMatchesReceipt(language: Language, receipt: Receipt, disk: PackDiskState): Promise<boolean> {
+    if (disk.activeRef === null || !receipt.version) return false;
+    let driver: SqlDriver | null = null;
+    try {
+      driver = await this.port.openForValidation(disk.activeRef);
+      await validateActiveCatalog(driver, { language, version: receipt.version });
+    } catch {
+      return false;
+    } finally {
+      await driver?.close().catch(() => undefined);
+    }
+    const job = await this.latestJob(language, "('committed','installed')");
+    if (job?.journal && job.journal.targetVersion === receipt.version && job.journal.phase === 'committed' && receipt.sha256 !== null && job.journal.targetSha256 !== receipt.sha256) return false;
+    return true;
   }
 }

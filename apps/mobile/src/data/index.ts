@@ -5,7 +5,7 @@
  * `UNSUPPORTED_CAPABILITY` ("Not implemented yet").
  */
 export { AppServicesProvider } from './provider';
-export { useAppStartup, useServices } from './context';
+export { useAppStartup, useServices, useStorageStatus } from './context';
 
 export { useSettings, useUpdateSettings, useDashboard } from './settings-hooks';
 
@@ -29,6 +29,7 @@ export {
   useExportFile, useShareExport, usePickFile, useImportDryRun, useImport, useImportCommit,
   useBackupCapabilities, useCreateBackup, usePreviewRestore, useRestore
 } from './transfer-sync-hooks';
+export type { BackupPreviewDto, BackupProgressEvent, BackupResultDto, RestoreResultDto } from './transfer-sync-hooks';
 
 export { cardImageUrl, collectorNumber } from './images';
 export { keys as dataQueryKeys } from './keys';

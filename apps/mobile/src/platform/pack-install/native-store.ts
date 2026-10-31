@@ -1,8 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
-import type { CatalogLanguageCode, CatalogReadOnlyHandle, CatalogStagingFile, PlatformCatalogStorage } from '@flashydex/core';
 import { getSqlitePlugin } from '../sqlite';
-import type { CatalogHandle } from './catalog-handle';
+import type { CatalogHandle, CatalogLanguageCode, CatalogStagingFile, CatalogStorage, DiskState } from './storage-types';
 
 /**
  * Native catalog storage (iOS / Android). NOT executed anywhere yet: verified only by type-check and by reading the plugin sources;
@@ -17,7 +16,25 @@ import type { CatalogHandle } from './catalog-handle';
  *
  * Files (same directory => same volume => rename is atomic): `catalog-<lang>.db` (active), `catalog-<lang>.previous.db`,
  * `catalog-<lang>-<version>.db.part` (staging/candidate). Opened READ-ONLY with createNCConnection(absolute path).
+ *
+ * `inspect` (R06) is pure disk truth (Filesystem.stat / readdir) - no in-memory Set survives a restart, none is used.
+ *
+ * ── Native writable catalog design (R04 / D44; NOT enabled) ────────────────────────────────────────────────────────────
+ * Source-proven problem: `createNCConnection` builds `SQLiteDBConnection(..., readonly = true, ...)`; the plugin rejects execute/run on it,
+ * so the NC handle can never be the writer. Chosen design (needs a Mac run to prove, hence `NATIVE_CATALOG_WRITES = false`):
+ *   1. WRITE COPY: copy the active file `catalog-<lang>.db` into the plugin's writable databases directory as the logical
+ *      database `catalog-<lang>-rw` (iOS: `Library/CapacitorDatabase/catalog-<lang>-rwSQLite.db`; Android: the app `databases/`
+ *      directory, which @capacitor/filesystem cannot reach - an Android copy needs a plugin path/copy API, so Android stays disabled).
+ *   2. OPEN: `createConnection('catalog-<lang>-rw', false, 'no-encryption', 1, false)` + `open()` = a conformed read-write connection.
+ *   3. COMMIT BACK: after the sync run commits, close the connection (plugin checkpoints the WAL), copy the rw file to a staging
+ *      `catalog-<lang>-<writeback>.db.part` in the catalog directory and `activate()` it like any candidate (previous retained),
+ *      so the backup-excluded active file is replaced by same-volume rename and the old bytes stay recoverable.
+ *   4. CLEAN UP: delete the rw copy (it sits in the BACKED-UP plugin directory, so it must not linger) after step 3 or on boot.
+ * NC stays read-only and is the only handle used for candidate/read validation. Until steps 1-4 are proven on iOS and Android,
+ * the port reports `catalogWrites:false` and `CatalogSource.writable=false`, so prices_only/refresh/incremental show disabled.
  */
+export const NATIVE_CATALOG_WRITES = false; // TODO(R04-mac): flip only after scripts/ios-notes.md "Native writable catalog (R04)" passes.
+
 const ROOT = 'flashydex/catalogs';
 
 function directory(): Directory {
@@ -26,6 +43,7 @@ function directory(): Directory {
 const activePath = (language: CatalogLanguageCode) => `${ROOT}/catalog-${language}.db`;
 const previousPath = (language: CatalogLanguageCode) => `${ROOT}/catalog-${language}.previous.db`;
 const partPath = (language: CatalogLanguageCode, version: string) => `${ROOT}/catalog-${language}-${version}.db.part`;
+const isPartRef = (ref: string) => /^flashydex\/catalogs\/catalog-(en|ja)-[^/]+\.db\.part$/.test(ref);
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -38,6 +56,13 @@ async function exists(path: string): Promise<boolean> {
 
 async function removeIfExists(path: string): Promise<void> {
   if (await exists(path)) await Filesystem.deleteFile({ path, directory: directory() });
+}
+
+async function partsFor(language: CatalogLanguageCode): Promise<string[]> {
+  const listing = await Filesystem.readdir({ path: ROOT, directory: directory() }).catch(() => ({ files: [] }));
+  return listing.files
+    .filter((file) => file.name.startsWith(`catalog-${language}-`) && file.name.endsWith('.db.part'))
+    .map((file) => `${ROOT}/${file.name}`);
 }
 
 async function absolutePath(path: string): Promise<string> {
@@ -87,7 +112,7 @@ async function openReadOnlyNc(path: string): Promise<CatalogHandle> {
   };
 }
 
-export function createNativeCatalogStorage(closeActiveHandle: (language: CatalogLanguageCode) => Promise<void>): PlatformCatalogStorage {
+export function createNativeCatalogStorage(closeActiveHandle: (language: CatalogLanguageCode) => Promise<void>): CatalogStorage {
   return {
     kind: 'native-file',
     capabilities: { atomicRename: true, readOnlyOpen: true, backupExcluded: true, streamingWrite: true },
@@ -99,21 +124,18 @@ export function createNativeCatalogStorage(closeActiveHandle: (language: Catalog
 
     async beginStaging({ language, version }) {
       await Filesystem.mkdir({ path: ROOT, directory: directory(), recursive: true }).catch(() => undefined);
-      const listing = await Filesystem.readdir({ path: ROOT, directory: directory() }).catch(() => ({ files: [] }));
-      for (const file of listing.files) {
-        if (file.name.startsWith(`catalog-${language}-`) && file.name.endsWith('.db.part')) await removeIfExists(`${ROOT}/${file.name}`);
-      }
+      for (const part of await partsFor(language)) await removeIfExists(part);
       const ref = partPath(language, version);
-      await removeIfExists(ref);
       await Filesystem.writeFile({ path: ref, directory: directory(), data: '', encoding: Encoding.UTF8 });
       return new NativeStagingFile(ref);
     },
 
-    openReadOnly(ref): Promise<CatalogReadOnlyHandle> {
+    openReadOnly(ref) {
       return openReadOnlyNc(ref);
     },
 
     async activate(language, candidateRef) {
+      if (!isPartRef(candidateRef) || !(await exists(candidateRef))) throw new Error('Candidate catalog is missing');
       await closeActiveHandle(language);
       const dir = directory();
       const hadActive = await exists(activePath(language));
@@ -132,6 +154,11 @@ export function createNativeCatalogStorage(closeActiveHandle: (language: Catalog
       await removeIfExists(previousPath(language));
     },
 
+    async discardCandidate(ref) {
+      if (!isPartRef(ref)) throw new Error('Refusing to discard a non-candidate ref');
+      await removeIfExists(ref);
+    },
+
     async restorePrevious(language) {
       if (!(await exists(previousPath(language)))) return false;
       await closeActiveHandle(language);
@@ -145,23 +172,28 @@ export function createNativeCatalogStorage(closeActiveHandle: (language: Catalog
       return (await exists(activePath(language))) ? activePath(language) : null;
     },
 
+    async inspect(language): Promise<DiskState> {
+      return {
+        activeRef: (await exists(activePath(language))) ? activePath(language) : null,
+        previousRef: (await exists(previousPath(language))) ? previousPath(language) : null,
+        candidateRefs: await partsFor(language)
+      };
+    },
+
     async remove(language) {
       await closeActiveHandle(language);
       await removeIfExists(activePath(language));
       await removeIfExists(previousPath(language));
-      const listing = await Filesystem.readdir({ path: ROOT, directory: directory() }).catch(() => ({ files: [] }));
-      for (const file of listing.files) {
-        if (file.name.startsWith(`catalog-${language}-`) && file.name.endsWith('.db.part')) await removeIfExists(`${ROOT}/${file.name}`);
-      }
+      for (const part of await partsFor(language)) await removeIfExists(part);
     }
   };
 }
 
 /**
- * Writable connection to the active catalog file (price refresh only). NOTE: the native write path is not exercised by the web
- * test-suite; it uses the same non-conformed connection API as the read-only open, without the existence-creating risk.
+ * Writable catalog on native: design above, deliberately NOT wired. Throws UNSUPPORTED_CAPABILITY-shaped error so nothing can
+ * silently fall back to the read-only NC handle (the R04 defect).
  */
-export async function openWritableNative(path: string): Promise<{ connection: CatalogHandle['connection']; flush(): Promise<void>; close(): Promise<void> }> {
-  const handle = await openReadOnlyNc(path); // existence-checked NC connection; NC connections are read-write at the driver level
-  return { connection: handle.connection, flush: async () => undefined, close: () => handle.close() };
+export async function openWritableNative(_language: CatalogLanguageCode): Promise<{ connection: CatalogHandle['connection']; flush(): Promise<void>; close(): Promise<void> }> {
+  void _language;
+  throw Object.assign(new Error('Native catalog writes are not enabled yet (needs on-device proof, R04)'), { code: 'UNSUPPORTED_CAPABILITY' });
 }

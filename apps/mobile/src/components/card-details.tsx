@@ -6,6 +6,7 @@ import { ConditionBadge, CardArt, GradeBadge, LangBadge, RarityLabel } from './c
 import { CopyEditor } from './copy-editor';
 import { BottomSheet, ConfirmDialog, useToast } from './overlay';
 import { Page } from './page';
+import { RefreshSetRow } from './refresh-set';
 import { Banner, Button, EmptyState, ErrorState, LinkButton, OfflineChip, SegmentedControl, Skeleton, cx } from './ui';
 import { useCatalogCard, useOwnedCopy, useRemoveCopy, useLocations, useSettings, useUpdateCopy, type OwnedDto, type PriceDto, type Currency } from '../data';
 import { errorCode } from '../lib/errors';
@@ -425,15 +426,7 @@ export function CatalogCardView({
       <BottomSheet open={(search as { menu?: unknown }).menu !== undefined} title="Card actions" leading="Close" onClose={menu.close} testId="card-menu-sheet">
         <div className="overflow-hidden rounded-lg bg-surface">
           <Link to="/sets/$language/$setId" params={{ language, setId: c.setId }} className="flex min-h-(--ps-tap-lg) items-center px-4 text-body active:bg-surface-3">View set</Link>
-          <button
-            type="button"
-            aria-disabled="true"
-            aria-describedby="refresh-card-set-reason"
-            data-testid="refresh-set"
-            className="flex min-h-(--ps-tap-lg) w-full items-center justify-between px-4 text-left text-body active:bg-surface-3 aria-disabled:opacity-50"
-          >
-            Refresh this set<span id="refresh-card-set-reason" className="text-caption text-fg-muted">Not available yet</span>
-          </button>
+          <RefreshSetRow language={language} setId={c.setId} onDone={menu.close} />
           <button
             type="button"
             onClick={() => {

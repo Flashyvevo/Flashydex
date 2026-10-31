@@ -35,3 +35,30 @@ export async function openConfirmFor(page: Page, query: string, name: string): P
   await row.click();
   await expect(page.getByTestId('confirm-sheet')).toBeVisible();
 }
+
+/** Read a Playwright download into a Buffer. */
+export async function downloadBuffer(download: { createReadStream(): Promise<NodeJS.ReadableStream | null> }): Promise<Buffer> {
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream as AsyncIterable<Buffer>) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+function findKey(value: unknown, key: string): unknown {
+  if (value === null || typeof value !== 'object') return undefined;
+  if (key in (value as Record<string, unknown>)) return (value as Record<string, unknown>)[key];
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    const found = findKey(child, key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** Owned copy ids + notes (sorted by id) as seen by the app's own JSON export: the observable truth a restore must reproduce. */
+export async function readOwnedCopies(page: Page): Promise<Array<{ id: string; notes: string | null }>> {
+  await page.goto('/settings/data');
+  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), page.getByTestId('export-json').click()]);
+  const doc = JSON.parse((await downloadBuffer(download)).toString('utf8')) as unknown;
+  const owned = findKey(doc, 'ownedCards') as Array<{ id: string; notes: string | null }>;
+  return owned.map((c) => ({ id: c.id, notes: c.notes ?? null })).sort((a, b) => a.id.localeCompare(b.id));
+}

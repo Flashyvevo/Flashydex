@@ -64,3 +64,35 @@ Catalogs live in `filesDir/flashydex/catalogs` and `flashydex/packs` (`Directory
 - [ ] Release build: R8/ProGuard does not strip the SQLite plugin.
 
 Do not expect an iOS build on Windows; `ios/` and `android/` are committed for source control and Mac handoff only.
+
+## 6. Native writable catalog (R04) — required before `catalogWrites` can be true
+
+Source-proven defect (Stage D review R04): `createNCConnection` returns a read-only `SQLiteDBConnection`, so price refresh could never write through it.
+The chosen design (documented in `apps/mobile/src/platform/pack-install/native-store.ts`, flag `NATIVE_CATALOG_WRITES = false`,
+`// TODO(R04-mac)` also in `platform/app-database.ts`) copies the active catalog into the plugin's writable databases directory, opens it with
+`createConnection`, and writes the result back over the active file by same-volume rename. NOTHING of this runs until these steps pass on a Mac and an Android device:
+
+1. [ ] iOS: confirm the plugin writable DB directory (`Library/CapacitorDatabase`). `Filesystem.copy` an installed `catalog-en.db` to
+       `Library/CapacitorDatabase/catalog-en-rwSQLite.db` (Directory.Library + `CapacitorDatabase/...`).
+2. [ ] `createConnection('catalog-en-rw', false, 'no-encryption', 1, false)` then `open()`; `SELECT COUNT(*) FROM catalog_cards` equals the manifest count.
+3. [ ] `execute` an `UPDATE catalog_latest_prices ...` inside `BEGIN IMMEDIATE`/`COMMIT` through the sqlite-proxy callback (the same code path `SyncService` uses) and read it back.
+4. [ ] `closeConnection`, then confirm the WAL/journal is checkpointed (no `-wal` file or its content is merged) and the file reopens with the update present.
+5. [ ] Copy the rw file to `Library/NoCloud/flashydex/catalogs/catalog-en-<writeback>.db.part` and run `activate` (previous kept). Reopen with `createNCConnection`; the update is visible.
+6. [ ] Kill the app between 3 and 5: on relaunch the ACTIVE catalog is either entirely old or entirely new (never a mix), and the rw copy is deleted on boot.
+7. [ ] Backup exclusion: the rw copy in `Library/CapacitorDatabase` IS backed up by default; confirm it is deleted after step 5 (and on boot), or flag it excluded with `isExcludedFromBackup`.
+8. [ ] Android: the plugin `databases/` directory is not reachable through `@capacitor/filesystem`. Decide: a plugin-provided copy API/custom native method, or keep native writes
+       disabled on Android. Repeat steps 2-6 with whichever path is chosen.
+9. [ ] Only then set `NATIVE_CATALOG_WRITES = true`, rebuild, and check prices_only/refresh/incremental enable (`sync.capabilities()` true) and a real price update persists after force-quit.
+
+## 7. Privacy manifest (R13) — needs archive audit on Mac
+
+`apps/mobile/ios/App/App/PrivacyInfo.xcprivacy` is app-owned and declares only what the app source verifiably uses:
+file timestamps via `Filesystem.stat` on files inside the app container (reason `C617.1`). Not declared because not used in app code: UserDefaults (no
+`@capacitor/preferences`; Capacitor core's own manifest covers its use), disk-space APIs (free-space preflight is not implemented on native), system boot time.
+
+- [ ] Add `PrivacyInfo.xcprivacy` to the **App target** in Xcode (File -> Add Files, tick the App target; the project file was not hand-edited on Windows).
+- [ ] Product -> Archive, then Organizer -> Distribute -> Generate Privacy Report. Compare the merged report with this manifest and with each pod's own manifest
+      (Capacitor, CapacitorCommunitySqlite/SQLCipher, Filesystem, Share, Haptics, etc.); add any required-reason API the report lists (and remove any we do not use).
+- [ ] Do NOT change `ITSAppUsesNonExemptEncryption` here: that is the owner's export-compliance review (section 2).
+- [ ] Native metadata HTTP still uses `fetch` rather than an explicit CapacitorHttp path (R13 remaining item); manifest/pack streaming over `fetch` works in WKWebView but the
+      CapacitorHttp injection test (offline, redirect, TLS failure, large body) has not been written.

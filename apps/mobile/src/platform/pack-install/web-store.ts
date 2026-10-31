@@ -1,7 +1,6 @@
 import localforage from 'localforage';
-import type { CatalogLanguageCode, CatalogReadOnlyHandle, CatalogStagingFile, PlatformCatalogStorage } from '@flashydex/core';
 import { closeLogicalConnection, getSqlitePlugin, openLogicalConnection } from '../sqlite';
-import type { CatalogHandle } from './catalog-handle';
+import type { CatalogHandle, CatalogLanguageCode, CatalogStagingFile, CatalogStorage, DiskState } from './storage-types';
 
 /**
  * Web catalog storage (development / limited mode, Director D24).
@@ -13,6 +12,10 @@ import type { CatalogHandle } from './catalog-handle';
  * opens the candidate through the normal plugin path; activation copies candidate -> active key and keeps the old
  * active as `previous`. This is NOT atomic across keys (`capabilities.atomicRename = false`) and the whole DB lives in
  * memory (`streamingWrite = false`). Production catalogs belong on native.
+ *
+ * `inspect` (R06) reads the store KEYS, never memory: boot recovery sees exactly what survived a crash. Activation order
+ * (previous written first, then active, then the candidate key removed) means every crash point leaves a state that
+ * `inspect` + core's journal can reconcile: a leftover candidate, or previous == active bytes.
  */
 const STORE_CONFIG = { name: 'jeepSqliteStore', storeName: 'databases', driver: [localforage.INDEXEDDB] };
 const MAX_WEB_BYTES = 512 * 1024 * 1024; // CATALOG-PACKS phase-1 cap per uncompressed catalog
@@ -23,10 +26,12 @@ function store(): LocalForage {
   return storeInstance;
 }
 
-const storeKey = (logicalName: string) => `${logicalName}SQLite.db`;
+const SUFFIX = 'SQLite.db';
+const storeKey = (logicalName: string) => `${logicalName}${SUFFIX}`;
 const activeName = (language: CatalogLanguageCode) => `catalog-${language}`;
 const previousName = (language: CatalogLanguageCode) => `catalog-${language}-previous`;
-const candidateName = (language: CatalogLanguageCode, version: string) => `catalog-${language}-candidate-${version.replaceAll('.', '-')}`;
+const candidatePrefix = (language: CatalogLanguageCode) => `catalog-${language}-candidate-`;
+const candidateName = (language: CatalogLanguageCode, version: string) => `${candidatePrefix(language)}${version.replaceAll('.', '-')}`;
 
 async function readBytes(logicalName: string): Promise<Uint8Array | null> {
   const value = await store().getItem<Uint8Array>(storeKey(logicalName));
@@ -66,7 +71,9 @@ async function openHandle(ref: string): Promise<CatalogHandle> {
   };
 }
 
-export function createWebCatalogStorage(closeActiveHandle: (language: CatalogLanguageCode) => Promise<void>): PlatformCatalogStorage {
+const isCandidateRef = (ref: string) => /^catalog-(en|ja)-candidate-/.test(ref);
+
+export function createWebCatalogStorage(closeActiveHandle: (language: CatalogLanguageCode) => Promise<void>): CatalogStorage {
   return {
     kind: 'web-store',
     capabilities: { atomicRename: false, readOnlyOpen: true, backupExcluded: false, streamingWrite: false },
@@ -77,17 +84,21 @@ export function createWebCatalogStorage(closeActiveHandle: (language: CatalogLan
     },
 
     async beginStaging({ language, version, expectedBytes }) {
+      for (const key of await store().keys()) {
+        if (key.startsWith(candidatePrefix(language)) && key.endsWith(SUFFIX)) await store().removeItem(key);
+      }
       return new WebStagingFile(candidateName(language, version), expectedBytes);
     },
 
-    openReadOnly(ref): Promise<CatalogReadOnlyHandle> {
+    openReadOnly(ref) {
       return openHandle(ref);
     },
 
     async activate(language, candidateRef) {
-      await closeActiveHandle(language);
+      if (!isCandidateRef(candidateRef)) throw new Error('Not a staged candidate');
       const candidate = await readBytes(candidateRef);
       if (!candidate) throw new Error('Candidate catalog is missing from the web store');
+      await closeActiveHandle(language);
       const current = await readBytes(activeName(language));
       let previousRef: string | null = null;
       if (current) {
@@ -103,6 +114,11 @@ export function createWebCatalogStorage(closeActiveHandle: (language: CatalogLan
       await store().removeItem(storeKey(previousName(language)));
     },
 
+    async discardCandidate(ref) {
+      if (!isCandidateRef(ref)) throw new Error('Refusing to discard a non-candidate ref');
+      await store().removeItem(storeKey(ref));
+    },
+
     async restorePrevious(language) {
       const previous = await readBytes(previousName(language));
       if (!previous) return false;
@@ -116,6 +132,16 @@ export function createWebCatalogStorage(closeActiveHandle: (language: CatalogLan
       return (await readBytes(activeName(language))) ? activeName(language) : null;
     },
 
+    async inspect(language): Promise<DiskState> {
+      const keys = await store().keys();
+      const has = (name: string) => keys.includes(storeKey(name));
+      return {
+        activeRef: has(activeName(language)) ? activeName(language) : null,
+        previousRef: has(previousName(language)) ? previousName(language) : null,
+        candidateRefs: keys.filter((key) => key.startsWith(candidatePrefix(language)) && key.endsWith(SUFFIX)).map((key) => key.slice(0, -SUFFIX.length))
+      };
+    },
+
     async remove(language) {
       await closeActiveHandle(language);
       for (const key of await store().keys()) {
@@ -125,7 +151,7 @@ export function createWebCatalogStorage(closeActiveHandle: (language: CatalogLan
   };
 }
 
-/** Writable connection to the active catalog (price refresh only). The caller flushes through `flush()` after each commit. */
+/** Writable connection to the active catalog (price refresh etc.). The caller flushes through `flush()` after each commit. */
 export async function openWritableWeb(ref: string): Promise<{ connection: SQLiteDBConnectionLike; flush(): Promise<void>; close(): Promise<void> }> {
   const connection = await openLogicalConnection(ref, false);
   return {

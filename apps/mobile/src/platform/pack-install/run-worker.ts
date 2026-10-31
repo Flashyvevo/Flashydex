@@ -1,8 +1,8 @@
-import type { CatalogStagingFile, PackInstallErrorCode } from '@flashydex/core';
+import type { AdapterErrorCode, CatalogStagingFile } from './storage-types';
 import type { StartMessage, WorkerIn, WorkerOut } from './worker-protocol';
 
 export class PackInstallError extends Error {
-  constructor(readonly code: PackInstallErrorCode, message: string, options?: { cause?: unknown }) {
+  constructor(readonly code: AdapterErrorCode, message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = 'PackInstallError';
   }
@@ -12,12 +12,13 @@ export type WorkerDone = Extract<WorkerOut, { type: 'done' }>;
 
 export interface RunPackWorkerOptions {
   url: string;
+  trustedOrigins: string[];
   expectedCompressedBytes: number;
   expectedUncompressedBytes: number;
   compressedSha256?: string;
   staging: CatalogStagingFile;
   signal?: AbortSignal;
-  onProgress?: (compressedBytes: number, decodedBytes: number) => void;
+  onProgress?: (compressedBytes: number, decodedBytes: number, pendingBytes: number) => void;
   /** CATALOG-PACKS provisional bounds; tunable only with measured peaks. */
   chunkBytes?: number;
   maxInFlight?: number;
@@ -58,7 +59,7 @@ export function runPackWorker(options: RunPackWorkerOptions): Promise<WorkerDone
       const message = event.data;
       switch (message.type) {
         case 'progress':
-          options.onProgress?.(message.compressedBytes, message.decodedBytes);
+          options.onProgress?.(message.compressedBytes, message.decodedBytes, message.pendingBytes);
           break;
         case 'chunk': {
           const payload = message.base64 ?? (message.bytes ? new Uint8Array(message.bytes) : null);
@@ -92,6 +93,7 @@ export function runPackWorker(options: RunPackWorkerOptions): Promise<WorkerDone
     const start: StartMessage = {
       type: 'start',
       url: options.url,
+      trustedOrigins: options.trustedOrigins,
       encoding: options.staging.chunkEncoding,
       expectedCompressedBytes: options.expectedCompressedBytes,
       expectedUncompressedBytes: options.expectedUncompressedBytes,

@@ -1,71 +1,24 @@
 import { existsSync, rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { CatalogInstallService, type CatalogInstallPort, type PackEntry, type PackInstallResult } from '../src/services/catalog-install';
+import { CatalogInstallService } from '../src/services/catalog-install';
 import { CancelledError, ValidationError } from '../src/errors';
-import { createCatalogFile } from '../src/testing/node-driver';
-import { seedCatalog } from '../src/testing/catalog-fixture';
-import { copyOf, dumpPersonal, harness, ownedCount, revision, TEST_SET, testCards, type Harness } from './helpers';
+import { FakeDiskPort } from '../src/testing/fake-install-port';
+import { copyOf, dumpPersonal, harness, ownedCount, revision, type Harness } from './helpers';
 
 const HASH = (n: string) => n.repeat(64).slice(0, 64);
-const entryJson = (language: 'en' | 'ja', version = '2026.10.31.001', sha = HASH('a')) => ({
-  currentVersion: null, targetVersion: version, fullPackUrl: `https://example.test/catalog-${language}-${version}.db.zst`, setIndexUrl: `https://example.test/set-index-${language}.json`,
-  compressedBytes: 1000, uncompressedBytes: 5000, sha256: sha, schemaVersion: 1, builtAt: '2026-10-31T01:00:00.000Z',
-  counts: { sets: 1, cards: 5, variants: 0, prices: 0, unpublishedSets: 0 }
-});
-const manifest = (languages: Array<'en' | 'ja'>, version = '2026.10.31.001', sha = HASH('a')) => ({
-  manifestVersion: 1, currentVersion: null, targetVersion: version, builtAt: '2026-10-31T01:00:00.000Z',
-  languages: Object.fromEntries(languages.map((l) => [l, entryJson(l, version, sha)]))
-});
-
-class FakePort implements CatalogInstallPort {
-  allowDevUrls = false;
-  manifestJson: unknown = manifest(['en', 'ja']);
-  manifestError: Error | null = null;
-  installError: (Error & { code?: string }) | null = null;
-  hold: Promise<void> | null = null;
-  previous = new Set<string>();
-  calls: string[] = [];
-  constructor(private readonly h: Harness) {}
-  capabilities() { return { fullInstall: true, atomicActivation: true, attachReads: false, reason: null }; }
-  async fetchManifest() { if (this.manifestError) throw this.manifestError; return this.manifestJson; }
-  async install(entry: PackEntry, options: { onProgress: (p: never) => void; signal?: AbortSignal }): Promise<PackInstallResult> {
-    this.calls.push(`install:${entry.language}:${entry.targetVersion}`);
-    options.onProgress({ phase: 'downloading', compressedBytesDone: 10, compressedBytesTotal: 1000, decompressedBytesDone: 0, decompressedBytesTotal: 5000 } as never);
-    if (this.hold) {
-      await new Promise<void>((resolve, reject) => {
-        options.signal?.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { code: 'CANCELLED' })), { once: true });
-        void this.hold!.then(resolve);
-      });
-    }
-    if (this.installError) throw this.installError; // nothing on disk was touched: the previous catalog stays active
-    const path = this.h.t.catalogPath(entry.language);
-    const hadPrevious = existsSync(path);
-    if (hadPrevious) this.previous.add(entry.language);
-    rmSync(path, { force: true });
-    const writer = await createCatalogFile(path, entry.language, this.h.t.env);
-    await seedCatalog(writer, entry.language, { sets: [TEST_SET], cards: testCards().map((c) => ({ ...c, name: `${entry.targetVersion} ${c.name}` })) });
-    await writer.close();
-    options.onProgress({ phase: 'installed', compressedBytesDone: 1000, compressedBytesTotal: 1000, decompressedBytesDone: 5000, decompressedBytesTotal: 5000 } as never);
-    return {
-      language: entry.language, version: entry.targetVersion, sha256: entry.sha256, bytes: 5000, ref: `ref-${entry.language}-${entry.targetVersion}`, previousRef: hadPrevious ? 'prev' : null,
-      counts: entry.counts, metrics: { metricsVersion: 1, totalMs: 12 }
-    };
-  }
-  async finalize(language: 'en' | 'ja') { this.calls.push(`finalize:${language}`); this.previous.delete(language); }
-  async rollback(language: 'en' | 'ja') { this.calls.push(`rollback:${language}`); return this.previous.delete(language); }
-  async hasPrevious(language: 'en' | 'ja') { return this.previous.has(language); }
-  async remove(language: 'en' | 'ja') { this.calls.push(`remove:${language}`); rmSync(this.h.t.catalogPath(language), { force: true }); }
-  async activeRef(language: 'en' | 'ja') { return existsSync(this.h.t.catalogPath(language)) ? `ref-${language}` : null; }
-}
+const manifest = (languages: Array<'en' | 'ja'>, version = '2026.10.31.001', sha = HASH('a')) => FakeDiskPort.manifest(languages, version, sha);
+const entryJson = (language: 'en' | 'ja', version = '2026.10.31.001', sha = HASH('a')) => (manifest([language], version, sha).languages as Record<string, Record<string, unknown>>)[language] as Record<string, unknown>;
+const TRUSTED = ['https://example.test'];
 
 let h: Harness;
-let port: FakePort;
+let port: FakeDiskPort;
 let install: CatalogInstallService;
 const noop = () => undefined;
 beforeEach(async () => {
   h = await harness();
-  port = new FakePort(h);
-  install = new CatalogInstallService(h.ctx, port);
+  port = new FakeDiskPort(h.t.dir, h.t.env);
+  port.manifestJson = manifest(['en', 'ja']);
+  install = new CatalogInstallService(h.ctx, port, { trustedOrigins: TRUSTED });
 });
 afterEach(() => h.cleanup());
 
@@ -82,7 +35,7 @@ describe('CatalogInstallService (53, 31 manifest, 37)', () => {
     expect(seen.at(-1)).toBe('installed');
     expect(await h.t.user.rows("SELECT state, lock_key FROM catalog_install_jobs")).toEqual([['installed', null]]);
     expect(Number(await h.t.user.scalar('SELECT COUNT(*) FROM pack_metrics'))).toBe(1);
-    expect(port.calls).toEqual(['install:en:2026.10.31.001', 'finalize:en']);
+    expect(port.calls).toEqual(['stage:en:2026.10.31.001', 'activate:en', 'discardPrevious:en']);
     expect((await h.catalog.getCard({ language: 'en', cardId: 'tset-001' })).name).toBe('2026.10.31.001 Alpha Mon');
     expect(await dumpPersonal(h)).toEqual(before); // 37: installing never touches personal rows
     expect(await revision(h)).toBe(rev);
@@ -115,12 +68,12 @@ describe('CatalogInstallService (53, 31 manifest, 37)', () => {
   it('hash mismatch fails with PACK_HASH_MISMATCH and keeps the previous catalog and receipt', async () => {
     await install.install('en', noop, new AbortController().signal);
     port.manifestJson = manifest(['en'], '2026.11.01.001', HASH('c'));
-    port.installError = Object.assign(new Error('Decompressed SHA-256 does not match the manifest'), { code: 'PACK_HASH_MISMATCH' });
+    port.stageError = Object.assign(new Error('Decompressed SHA-256 does not match the manifest'), { code: 'PACK_HASH_MISMATCH' });
     await expect(install.install('en', noop, new AbortController().signal)).rejects.toMatchObject({ code: 'PACK_HASH_MISMATCH' });
     expect(await install.status('en')).toMatchObject({ installed: { version: '2026.10.31.001', generation: 1, status: 'installed' }, lastError: { code: 'PACK_HASH_MISMATCH' } });
     expect((await h.catalog.getCard({ language: 'en', cardId: 'tset-001' })).name).toBe('2026.10.31.001 Alpha Mon'); // still the old catalog
     expect(await h.t.user.rows("SELECT state, lock_key FROM catalog_install_jobs ORDER BY created_at DESC LIMIT 1")).toEqual([['failed', null]]);
-    port.installError = null;
+    port.stageError = null;
     await expect(install.install('en', noop, new AbortController().signal)).resolves.toMatchObject({ version: '2026.11.01.001' }); // lock was released
   });
 
@@ -145,10 +98,10 @@ describe('CatalogInstallService (53, 31 manifest, 37)', () => {
   it('a failed durable commit restores the previous catalog through the port and reports the error', async () => {
     await install.install('en', noop, new AbortController().signal);
     port.manifestJson = manifest(['en'], '2026.11.01.001', HASH('d'));
-    const original = port.install.bind(port);
-    port.install = async (entry, options) => ({ ...(await original(entry, options)), ref: null as unknown as string }); // violates installed_catalogs CHECK
+    const original = port.activate.bind(port);
+    port.activate = async (language, ref) => ({ ...(await original(language, ref)), activeRef: null as unknown as string }); // violates installed_catalogs CHECK
     await expect(install.install('en', noop, new AbortController().signal)).rejects.toBeInstanceOf(Error);
-    expect(port.calls).toContain('rollback:en');
+    expect(port.calls).toContain('restorePrevious:en');
     expect(await install.status('en')).toMatchObject({ installed: { version: '2026.10.31.001', status: 'installed' } });
   });
 
@@ -168,14 +121,19 @@ describe('CatalogInstallService (53, 31 manifest, 37)', () => {
     expect((await h.settings.get()).languages).toEqual(['en', 'ja']); // settings untouched
   });
 
-  it('rollback: NO_ROLLBACK when none; restores the previous receipt when one is retained', async () => {
+  it('rollback: NO_ROLLBACK when none; restores the previous receipt and file when the previous copy is retained (disk truth)', async () => {
     await expect(install.rollback('en')).rejects.toMatchObject({ code: 'NO_ROLLBACK' });
     await install.install('en', noop, new AbortController().signal);
-    port.previous.add('en'); // a retained previous copy (as after a failed-activation recovery window)
+    port.manifestJson = manifest(['en'], '2026.11.01.001', HASH('b'));
+    port.hooks.discardPrevious = () => { throw new Error('cleanup failed'); }; // previous stays on disk
+    await install.install('en', noop, new AbortController().signal);
+    port.hooks = {};
+    expect(await install.status('en')).toMatchObject({ rollbackAvailable: true, installed: { version: '2026.11.01.001' } });
     const restored = await install.rollback('en');
-    expect(port.calls).toContain('rollback:en');
-    expect(restored.status).toBe('absent'); // the journal says the first install had no predecessor
-    expect(restored.generation).toBe(2);
+    expect(port.calls).toContain('restorePrevious:en');
+    expect(restored).toMatchObject({ status: 'installed', version: '2026.10.31.001', sha256: HASH('a') });
+    expect((await h.catalog.getCard({ language: 'en', cardId: 'tset-001' })).name).toBe('2026.10.31.001 Alpha Mon');
+    expect((await install.status('en')).rollbackAvailable).toBe(false);
   });
 
   it('checkManifest: sizes, versions, updateAvailable, incompatible schema, network failure leaves catalogs usable', async () => {
@@ -196,7 +154,7 @@ describe('CatalogInstallService (53, 31 manifest, 37)', () => {
     port.manifestError = null;
     port.manifestJson = { manifestVersion: 2 };
     await expect(install.checkManifest()).rejects.toMatchObject({ code: 'MANIFEST_INVALID' });
-    port.manifestJson = { ...manifest(['en']), languages: { en: { ...entryJson('en'), fullPackUrl: 'http://insecure.test/catalog-en-2026.10.31.001.db.zst' } } };
+    port.manifestJson = { ...manifest(['en']), languages: { en: { ...entryJson('en'), fullPackUrl: 'http://insecure.test/catalog-en-2026.10.31.001.db.zst' } } } as never;
     await expect(install.checkManifest()).rejects.toMatchObject({ code: 'MANIFEST_INVALID' }); // https only outside dev
   });
 
@@ -215,7 +173,7 @@ describe('CatalogInstallService (53, 31 manifest, 37)', () => {
     );
     rmSync(h.t.catalogPath('en')); // crash after file removal but before the receipt commit
     const recovered = await install.recover();
-    expect(recovered).toEqual({ interruptedJobs: 1, reconciled: ['en'] });
+    expect(recovered).toMatchObject({ interruptedJobs: 1, reconciled: ['en'] });
     expect(await h.t.user.rows("SELECT state, lock_key FROM catalog_install_jobs WHERE language = 'ja'")).toEqual([['interrupted', null]]);
     expect(await install.status('ja')).toMatchObject({ lastError: { code: 'INTERRUPTED' }, installed: { status: 'absent' } });
     expect(await install.status('en')).toMatchObject({ installed: { status: 'absent', generation: 2 } });

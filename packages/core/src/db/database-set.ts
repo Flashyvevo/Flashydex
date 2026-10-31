@@ -1,13 +1,19 @@
 import type { Language } from '@flashydex/schemas';
+import { CatalogError, MaintenanceError } from '../errors';
 import { Db, type SqlDriver } from './sql';
+import { WorkCoordinator } from './coordinator';
 import { timed } from '../perf';
 
 /** Opens (read-only) catalog connections. `null` = no catalog installed for that language (a normal state). */
 export interface CatalogSource {
   open(language: Language): Promise<SqlDriver | null>;
   /**
-   * Optional: a READ-WRITE handle to the installed catalog, used only by SyncService (`prices_only`) to refresh
-   * `catalog_latest_prices`. Absent = this platform cannot update catalog prices (the UI shows an honest disabled state).
+   * True when this platform can write catalog files (prices_only / refresh / incremental). D44: function presence no longer counts;
+   * a source that declares `writable:true` MUST implement `openWritable`.
+   */
+  readonly writable: boolean;
+  /**
+   * A READ-WRITE handle to the installed catalog, used only by SyncService to write `catalog_latest_prices` / catalog rows.
    * The read-only handle is retired before this opens and reopened after (see `DatabaseSet.withWritableCatalog`).
    */
   openWritable?(language: Language): Promise<SqlDriver | null>;
@@ -15,22 +21,90 @@ export interface CatalogSource {
   release?(language: Language): Promise<void>;
 }
 
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /**
  * The user DB plus 0..2 catalog DBs. One connection per file, no ATTACH: repositories do app-level joins (CATALOG-PACKS join plans).
- * `generation(language)` increases whenever a catalog handle is replaced, so cached reads can detect a swap.
+ *
+ *  - `generation(language)` increases whenever a catalog handle is replaced (any invalidate).
+ *  - `epoch(language)` increases only when catalog CONTENT identity changes (install/uninstall/rollback commit). Generation fencing
+ *    (sync batches) and consistent multi-domain reads use the epoch, so a sync's own handle swaps never fence itself out.
+ *  - A per-language maintenance barrier: while held, `catalog(language)` waits (bounded) and then throws MAINTENANCE; it never reopens.
  */
 export class DatabaseSet {
   private readonly catalogs = new Map<Language, Promise<Db | null>>();
   private readonly generations: Record<Language, number> = { en: 0, ja: 0 };
+  private readonly epochs: Record<Language, number> = { en: 0, ja: 0 };
+  private readonly barriers = new Map<Language, { done: Promise<void> }>();
+  private readonly barrierTail = new Map<Language, Promise<unknown>>();
+  readonly coordinator: WorkCoordinator;
+  /** How long readers wait for a barrier before MAINTENANCE (ms). */
+  barrierWaitMs = 3000;
 
-  constructor(readonly user: Db, private readonly source: CatalogSource) {}
+  constructor(readonly user: Db, private readonly source: CatalogSource) {
+    this.coordinator = new WorkCoordinator(this);
+  }
 
   generation(language: Language): number {
     return this.generations[language];
   }
 
-  /** Read-only catalog handle, or null when that language is not installed. Never creates a database. */
-  catalog(language: Language): Promise<Db | null> {
+  epoch(language: Language): number {
+    return this.epochs[language];
+  }
+
+  bumpEpoch(language: Language): void {
+    this.epochs[language] += 1;
+  }
+
+  barrierHeld(language: Language): boolean {
+    return this.barriers.has(language);
+  }
+
+  /** Run `fn` with the language barrier(s) held (serialized per language, ordered en<ja so two holders cannot deadlock). */
+  async withBarrier<T>(languages: readonly Language[], fn: () => Promise<T>): Promise<T> {
+    const ordered = [...new Set(languages)].sort() as Language[];
+    const acquire = async (index: number): Promise<T> => {
+      const language = ordered[index];
+      if (language === undefined) return fn();
+      const previous = this.barrierTail.get(language) ?? Promise.resolve();
+      let release!: () => void;
+      const mine = new Promise<void>((resolve) => { release = resolve; });
+      this.barrierTail.set(language, previous.then(() => mine));
+      await previous;
+      let open!: () => void;
+      const done = new Promise<void>((resolve) => { open = resolve; });
+      this.barriers.set(language, { done });
+      try {
+        return await acquire(index + 1);
+      } finally {
+        this.barriers.delete(language);
+        open();
+        release();
+      }
+    };
+    return acquire(0);
+  }
+
+  private async waitBarrier(language: Language): Promise<void> {
+    const barrier = this.barriers.get(language);
+    if (!barrier) return;
+    await Promise.race([barrier.done, wait(this.barrierWaitMs)]);
+    if (this.barriers.has(language)) throw new MaintenanceError();
+  }
+
+  /** Read-only catalog handle, or null when that language is not installed. Never creates a database; never reopens while a barrier is held. */
+  async catalog(language: Language): Promise<Db | null> {
+    await this.waitBarrier(language);
+    return this.openCached(language);
+  }
+
+  /** Open/cached handle without the barrier check: for code that already runs inside the barrier (installer validation). */
+  openInsideBarrier(language: Language): Promise<Db | null> {
+    return this.openCached(language);
+  }
+
+  private openCached(language: Language): Promise<Db | null> {
     let existing = this.catalogs.get(language);
     if (!existing) {
       existing = (async () => {
@@ -49,20 +123,39 @@ export class DatabaseSet {
   }
 
   get canWriteCatalog(): boolean {
-    return typeof this.source.openWritable === 'function';
+    return this.source.writable === true && typeof this.source.openWritable === 'function';
   }
 
-  private writeTail: Promise<unknown> = Promise.resolve();
+  /**
+   * Multi-domain read (user + catalog): captures collection revision + catalog epochs, runs `fn`, and if either moved retries once;
+   * a second movement throws STALE_READ (the UI refetches once silently).
+   */
+  async consistentRead<T>(languages: readonly Language[], fn: () => Promise<T>): Promise<T> {
+    const snapshot = async () => ({
+      revision: Number((await this.user.scalar<number>("SELECT collection_revision FROM app_state WHERE id = 'collection'")) ?? 0),
+      epochs: languages.map((l) => this.epochs[l])
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const before = await snapshot();
+      const result = await fn();
+      const after = await snapshot();
+      if (before.revision === after.revision && before.epochs.every((e, i) => e === after.epochs[i])) return result;
+    }
+    throw new CatalogError('STALE_READ', 'The data changed while it was being read. Try again.');
+  }
 
   /**
    * Run `fn` against a writable handle of the installed catalog (null catalog -> `fn` is not called and null is returned).
-   * Serialized across languages; the read-only handle is closed first and reopened lazily afterwards so readers never keep a
-   * stale copy (web keeps each connection in memory).
+   * Holds the language barrier; the read-only handle is closed first and reopened lazily afterwards so readers never keep a stale copy.
+   * `expectedEpoch` fences the write: a mismatch throws STALE_READ before anything opens (R10 generation fencing).
    */
-  withWritableCatalog<T>(language: Language, fn: (db: Db) => Promise<T>): Promise<T | null> {
-    const run = async (): Promise<T | null> => {
+  withWritableCatalog<T>(language: Language, fn: (db: Db) => Promise<T>, options: { expectedEpoch?: number } = {}): Promise<T | null> {
+    return this.withBarrier([language], async () => {
       const open = this.source.openWritable;
-      if (!open) return null;
+      if (!open || !this.source.writable) return null;
+      if (options.expectedEpoch !== undefined && options.expectedEpoch !== this.epochs[language]) {
+        throw new CatalogError('STALE_READ', 'The catalog was replaced while this update was running');
+      }
       await this.invalidateCatalog(language);
       const driver = await open.call(this.source, language);
       if (!driver) return null;
@@ -74,10 +167,7 @@ export class DatabaseSet {
         await db.close().catch(() => undefined);
         await this.invalidateCatalog(language);
       }
-    };
-    const next = this.writeTail.then(run, run);
-    this.writeTail = next.catch(() => undefined);
-    return next;
+    });
   }
 
   /** Drop the cached handle for a language (after install / uninstall / rollback) and bump its generation. */

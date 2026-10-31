@@ -60,9 +60,10 @@ for (const language of ['en', 'ja'] as const) {
     await expect(page.getByTestId('first-card')).not.toHaveText('');
 
     const deviceMetrics = JSON.parse((await page.getByTestId('pack-metrics').textContent()) ?? '{}') as Record<string, unknown>;
-    expect(deviceMetrics).toMatchObject({ metricsVersion: 1, language, storageKind: 'web-store', peakMemoryBytes: null });
+    expect(deviceMetrics).toMatchObject({ metricsVersion: 2, language, storageKind: 'web-store', peakMemoryBytes: null });
     expect(Number(deviceMetrics.maxInFlightObserved)).toBeLessThanOrEqual(4);
     expect(Number(deviceMetrics.maxChunkBytes)).toBeLessThanOrEqual(256 * 1024);
+    expect(Number(deviceMetrics.pendingBytesMax)).toBeLessThanOrEqual(32 * 1024 * 1024);
     expect(Number(deviceMetrics.zstdWindowBytes)).toBeLessThanOrEqual(2 ** 25);
 
     expect(await jeepKeys(page)).toEqual([`catalog-${language}SQLite.db`]);
