@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import sharp from 'sharp';
 
 const root = resolve('apps/mobile');
-const source = resolve(root, 'src/assets/brand/app-icon.png');
+// app-icon-fill.png = mark cropped to fill the square (no inner rounded-square margin); iOS/maskable apply their own mask.
+const source = resolve(root, 'src/assets/brand/app-icon-fill.png');
 const publicDir = resolve(root, 'public');
 const iconDirectory = resolve(publicDir, 'icons');
 const BG = { r: 10, g: 12, b: 10, alpha: 1 };
@@ -31,7 +32,7 @@ async function square(size, { pad = 0, background = CLEAR, out }) {
 
 for (const size of [192, 512]) {
   await square(size, { out: resolve(iconDirectory, `icon-${size}.png`) });
-  await square(size, { pad: 0.12, background: BG, out: resolve(iconDirectory, `maskable-${size}.png`) });
+  await square(size, { pad: 0.06, background: BG, out: resolve(iconDirectory, `maskable-${size}.png`) });
 }
 await square(180, { background: BG, out: resolve(publicDir, 'apple-touch-icon.png') }); // iOS ignores alpha
 await square(64, { out: resolve(publicDir, 'favicon.png') });

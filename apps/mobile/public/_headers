@@ -1,8 +1,8 @@
 # Netlify reads this file after Vite copies public/ into dist/.
 # Reference: https://docs.netlify.com/manage/routing/headers/
 
-# opfs-sahpool does not require cross-origin isolation. Enable this only if the
-# selected SQLite VFS changes to `opfs`, which requires SharedArrayBuffer:
+# opfs-sahpool does not require cross-origin isolation (no SharedArrayBuffer), so NO COOP/COEP header is sent.
+# Enable this only if the selected SQLite VFS changes to `opfs`, which requires SharedArrayBuffer:
 # /*
 #   Cross-Origin-Opener-Policy: same-origin
 #   Cross-Origin-Embedder-Policy: require-corp
@@ -20,6 +20,9 @@
 
 /*.wasm
   Content-Type: application/wasm
+
+/assets/sqlite3-*.wasm
+  Cache-Control: public, max-age=31536000, immutable
 
 /assets/sql-wasm.wasm
   Content-Type: application/wasm
