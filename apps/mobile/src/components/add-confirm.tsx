@@ -48,12 +48,12 @@ const todayIso = () => {
 };
 
 /** Add-confirm sheet (UX §7.3). Nothing is written until "Add to collection". */
-export function AddConfirmSheet({ target, onClose, onAddAnother }: { target: AddTarget | null; onClose: () => void; onAddAnother?: () => void }) {
+export function AddConfirmSheet({ target, onClose, onAddAnother, variantHints, onScanAnother }: { target: AddTarget | null; onClose: () => void; onAddAnother?: () => void; variantHints?: VariantHints | undefined; onScanAnother?: (() => void) | undefined }) {
   if (!target) return null;
-  return <ConfirmInner key={target.kind === 'catalog' ? `${target.language}:${target.cardId}` : target.id} target={target} onClose={onClose} onAddAnother={onAddAnother} />;
+  return <ConfirmInner key={target.kind === 'catalog' ? `${target.language}:${target.cardId}` : target.id} target={target} onClose={onClose} onAddAnother={onAddAnother} variantHints={variantHints} onScanAnother={onScanAnother} />;
 }
 
-function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; onClose: () => void; onAddAnother?: () => void }) {
+function ConfirmInner({ target, onClose, onAddAnother, variantHints, onScanAnother }: { target: AddTarget; onClose: () => void; onAddAnother?: (() => void) | undefined; variantHints?: VariantHints | undefined; onScanAnother?: (() => void) | undefined }) {
   const navigate = useNavigate();
   const toast = useToast();
   const settings = useSettings();
