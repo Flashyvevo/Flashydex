@@ -38,3 +38,17 @@ While those run, tap/scroll the collection and record input-to-paint latency (`P
 ## Recording
 Write results in a dated report: device model, OS version, build id, pack versions, seed hash, raw sample files, then the p50/p95/max table per query and the long-task table.
 A criterion is closed only when the numbers come from a device run under this procedure.
+
+## Stage F — web storage (2026-10-31)
+
+Release thresholds (WEB-STORAGE §6): aggregate used JS heap across page + SQL worker + decode worker < 134,217,728 B during a real full-EN install; committed WASM separately ≤ 96 MiB; search p95 < 300 ms; `fdx:gate-total` ≤ 1,200 ms on the documented phone.
+
+**Install time + storage.** Use the release build (`npm run build`, then `npx vite preview --host 0.0.0.0 --port 3202 --strictPort`, served over https for a phone, or the Netlify preview). Onboard, install EN, read Settings → Import, export & backup → Diagnostics → "fdx timings": `fdx:pack-download`, `fdx:pack-decode`, `fdx:pack-import`, `fdx:pack-validate`, `fdx:pack-activate` (ms) and "packMetrics" (raw bytes, max chunk ≤ 262,144, pending high-water). Total = wall clock from "Start download" to the "English catalog ready" text; the Playwright spec `e2e/full-install.spec.ts` records it. After install, `navigator.storage.estimate().usage` must be < 1.5 × raw pack bytes (138,002,432 for the current EN pack).
+
+**Heap on desktop Chromium (automated).** `FLASHYDEX_E2E_BASE_URL=https://127.0.0.1:3200 npx playwright test e2e/full-install.spec.ts --project=mobile` samples `performance.memory.usedJSHeapSize` every ≤ 50 ms for the page and attaches CDP (`Target.setAutoAttach` flatten) to every worker target for `Runtime.getHeapUsage`. The report lines print page peak, per-worker peaks and the aggregate. If a worker target cannot be sampled the spec records `null` plus a reason (never an invented number).
+
+**Heap on device.** Safari (iOS 17/18): Settings → Advanced → Web Inspector, connect to a Mac, Develop → device → page; Timelines → Memory + JavaScript Allocations while installing; repeat for each Worker target listed under the page. Android Chrome: `chrome://inspect` → inspect page and each worker, Performance monitor → JS heap size. Report values as measured; unobservable → null + reason (gate stays open). Diagnostics shows `wasmMemoryBytes` for the SQL worker (WebAssembly memory.buffer size) and the main `performance.memory` where Chromium exposes it; do not add them together with the page-cache setting (SQLite's page cache lives inside the WASM memory).
+
+**Search timing.** With the provider/network off (DevTools offline), run 10 warm-ups + 100 samples of exact/prefix/contains/language/set/rarity queries through the UI search service (`window.__flashydexTest.services` in dev builds, or a dev route) and compute p50/p95/max from raw `performance.now()` deltas, as in "Per query" above. Row count: 23,736 EN cards in the current pack.
+
+**Cold start.** 10 cold launches of the installed PWA with USER + EN present and no network: record `fdx:gate-total`, `fdx:storage-prepare`, `fdx:db-open`, `fdx:services` from Diagnostics, and navigation → interactive Dashboard.

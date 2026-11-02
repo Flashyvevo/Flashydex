@@ -1,51 +1,133 @@
-import type { CatalogInstallPort, CatalogSource, PackDiskState, PackEntry, PackStageResult, SqlDriver } from '@flashydex/core';
+import type { CatalogInstallPort, CatalogSource, SqlDriver } from '@flashydex/core';
 import { Capacitor } from '@capacitor/core';
 import { closeLogicalConnection, flushWebStore, openLogicalConnection, USER_DB_NAME } from './sqlite';
 import { createProxyCallback } from './sqlite-proxy';
 import {
-  closeCatalogDb, fetchManifestText, getCatalogStorage, openCatalogDb, openCatalogDbWritable, openCatalogRef, removeCatalog, stageCatalogPack,
+  closeCatalogDb, fetchManifestText, getCatalogStorage, getWebCatalogStorage, openCatalogDb, openCatalogDbWritable, openCatalogRef, removeCatalog, stageCatalogPack,
   type CatalogLanguageCode
 } from './pack-install';
 import { NATIVE_CATALOG_WRITES } from './pack-install/native-store';
+import { createWebInstallPort } from './pack-install/web-port';
+import type { StoragePrepareProgress, StoragePrepareResult } from './web-storage/contract';
+import { setWebRuntime } from './web-storage/runtime';
+
+const isWeb = () => Capacitor.getPlatform() === 'web';
 
 /**
- * The user DB as a core `SqlDriver`: one connection, sqlite-proxy callback, web store flushed after every committed transaction.
- *
- * `reopen` is deliberately NOT implemented (R02). jeep-sqlite 2.8.0 `closeConnection` -> `Database.close()` runs
- * `saveToStore()` first (node_modules/jeep-sqlite/dist/collection/utils/database.js:110-126), i.e. it would WRITE the in-memory snapshot
- * (the very state whose flush just failed) back to IndexedDB before closing, and the plugin offers no discard-without-save. So on web
- * `services.storage.recover()` rejects and the UI offers a real `location.reload()`, which re-reads the persisted bytes. On native the
- * flush is a no-op (SQLite commits are already durable), so a persistence latch cannot occur there.
+ * DEV-ONLY legacy mode (`localStorage['fdx:dev-legacy-jeep'] === '1'`): the old jeep USER database, catalogs disabled. It exists to seed
+ * the legacy-migration e2e. `import.meta.env.DEV` makes it unreachable (and tree-shaken) in production builds.
+ */
+const devLegacy = (): boolean => {
+  if (!import.meta.env.DEV || !isWeb()) return false;
+  try {
+    return localStorage.getItem('fdx:dev-legacy-jeep') === '1';
+  } catch {
+    return false;
+  }
+};
+
+/* ──────────────────────────────────────────────── storage preparation (bootstrap facade) ──────────────────────────────────────────────── */
+const listeners = new Set<(progress: StoragePrepareProgress) => void>();
+let preparing: Promise<StoragePrepareResult> | null = null;
+
+async function runPrepare(): Promise<StoragePrepareResult> {
+  if (!isWeb()) return { kind: 'native' };
+  if (devLegacy()) return { kind: 'legacy-dev' };
+  const emit = (progress: StoragePrepareProgress) => { for (const listener of listeners) listener(progress); };
+  // Dynamic import: native and legacy builds never load the SQL worker client.
+  const [{ getWebSqliteClient, ensureUserDatabase }, { getRoleStore }, { reconcileWebStaging }, { listStagingJobs, removeStagingJob }] = await Promise.all([
+    import('./web-sqlite'), import('./web-storage/role-store'), import('./web-storage/reconcile'), import('./web-storage/opfs-staging')
+  ]);
+  emit({ phase: 'starting-worker' });
+  const client = getWebSqliteClient();
+  const info = await client.init();
+  emit({ phase: 'opening-pool' });
+  const roles = getRoleStore();
+  const user = await ensureUserDatabase({ client, roles, onProgress: emit });
+  setWebRuntime({ client, roles });
+  try {
+    // Interrupted-install cleanup. Role metadata corruption already surfaced above (never reset); anything else must not block boot.
+    await reconcileWebStaging({ client, roles, stagingJobs: { list: listStagingJobs, remove: removeStagingJob } });
+  } catch (error) {
+    if ((error as { code?: string }).code === 'METADATA_CORRUPT') throw error;
+    console.warn('[fdx] staging reconciliation failed; retrying at the next start', error);
+  }
+  return { kind: 'web', user, info };
+}
+
+/**
+ * Bootstrap calls this AFTER the writer lock is granted and BEFORE `createUserDriver()`. Memoized (one run per page; a failed run is not
+ * cached, so a retry re-runs it). `createUserDriver()` and the catalog source await it themselves when bootstrap did not.
+ */
+export function prepareStorage(onProgress?: (progress: StoragePrepareProgress) => void): Promise<StoragePrepareResult> {
+  if (onProgress) listeners.add(onProgress);
+  preparing ??= runPrepare().catch((error: unknown) => {
+    preparing = null;
+    throw error;
+  });
+  return preparing;
+}
+
+/**
+ * The user DB as a core `SqlDriver`.
+ *  - web: A's sahpool client, rw on the USER path the role store points at (no autosave; commit barrier + reopen are the driver's).
+ *  - native: capacitor-sqlite, unchanged.
+ *  - DEV legacy (`fdx:dev-legacy-jeep`): the old jeep path below, no `reopen` (R02: jeep's close would write the failed snapshot back).
  */
 export async function createUserDriver(): Promise<SqlDriver> {
+  const prepared = await prepareStorage();
+  const driver = prepared.kind === 'web' ? await openWebUserDriver(prepared.user.path) : await openLegacyOrNativeUserDriver(prepared.kind === 'legacy-dev');
+  return withDevDelay(driver);
+}
+
+async function openWebUserDriver(path: string): Promise<SqlDriver> {
+  const { getWebSqliteClient } = await import('./web-sqlite');
+  return getWebSqliteClient().driver(path, 'flashydex-user', { mode: 'rw', create: false, role: 'user' });
+}
+
+async function openLegacyOrNativeUserDriver(legacyWeb: boolean): Promise<SqlDriver> {
   const connection = await openLogicalConnection(USER_DB_NAME);
-  const web = Capacitor.getPlatform() === 'web';
   const proxy = createProxyCallback(connection);
   return {
     label: USER_DB_NAME,
-    // DEV-ONLY e2e seam (`window.__flashydexTest.sqlDelayMs`): makes a restore long enough to observe. Compiled out of production builds.
-    proxy: import.meta.env.DEV
-      ? async (sql, params, method) => {
-          const delay = (window as unknown as { __flashydexTest?: { sqlDelayMs?: number } }).__flashydexTest?.sqlDelayMs;
-          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-          return proxy(sql, params, method);
-        }
-      : proxy,
-    afterCommit: web ? () => flushWebStore(USER_DB_NAME) : undefined,
+    proxy,
+    afterCommit: legacyWeb ? () => flushWebStore(USER_DB_NAME) : undefined,
     close: () => closeLogicalConnection(USER_DB_NAME)
   };
 }
 
-const isWeb = () => Capacitor.getPlatform() === 'web';
-/** Web keeps catalog writes (in-memory sql.js + IndexedDB put). Native is OFF until the writable-copy design is proven on a Mac (R04). */
-const catalogWrites = (): boolean => (isWeb() ? true : NATIVE_CATALOG_WRITES); // TODO(R04-mac): native catalogWrites switch
+/** DEV-ONLY e2e seam (`window.__flashydexTest.sqlDelayMs`): makes a restore long enough to observe. Compiled out of production builds. */
+function withDevDelay(driver: SqlDriver): SqlDriver {
+  if (!import.meta.env.DEV) return driver;
+  // Explicit delegation: A's logical driver is a class instance, so it must not be spread.
+  return {
+    label: driver.label,
+    proxy: async (sql, params, method) => {
+      const delay = (window as unknown as { __flashydexTest?: { sqlDelayMs?: number } }).__flashydexTest?.sqlDelayMs;
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      return driver.proxy(sql, params, method);
+    },
+    afterCommit: driver.afterCommit ? () => driver.afterCommit!() : undefined,
+    reopen: driver.reopen ? () => driver.reopen!() : undefined,
+    close: () => driver.close()
+  };
+}
 
-/** Catalog connections are read-only handles owned by the pack installer; an absent catalog is `null`, never created. */
+/* ──────────────────────────────────────────────── catalog source ──────────────────────────────────────────────── */
+/** Web keeps catalog writes (direct TCGdex refresh over the shared physical connection). Native is OFF until the writable-copy design is proven on a Mac (R04). */
+const catalogWrites = (): boolean => (isWeb() ? !devLegacy() : NATIVE_CATALOG_WRITES); // TODO(R04-mac): native catalogWrites switch
+
+/** Catalog connections are SqlDrivers over the sahpool file the role store maps as ACTIVE; an absent catalog is `null`, never created. */
 export const catalogSource: CatalogSource = {
   get writable() {
     return catalogWrites();
   },
   async open(language) {
+    if (isWeb()) {
+      if (devLegacy()) return null;
+      await prepareStorage();
+      return getWebCatalogStorage().openCatalogDriver(language, 'ro');
+    }
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const connection = await openCatalogDb(language);
     return {
@@ -56,41 +138,62 @@ export const catalogSource: CatalogSource = {
   },
   async openWritable(language) {
     if (!catalogWrites()) return null;
+    if (isWeb()) {
+      await prepareStorage();
+      return getWebCatalogStorage().openCatalogDriver(language, 'rw');
+    }
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const handle = await openCatalogDbWritable(language);
     return {
       label: `catalog-${language}-rw`,
       proxy: createProxyCallback(handle.connection),
-      afterCommit: isWeb() ? () => handle.flush() : undefined,
       close: () => handle.close()
     };
   },
-  release: (language) => closeCatalogDb(language)
+  async release(language) {
+    if (isWeb()) {
+      if (!devLegacy()) await getWebCatalogStorage().releaseLanguage(language);
+      return;
+    }
+    await closeCatalogDb(language);
+  }
 } as CatalogSource;
 
+/* ──────────────────────────────────────────────── install port ──────────────────────────────────────────────── */
 const MANIFEST_MAX_BYTES = 256 * 1024;
 const languageOf = (ref: string): CatalogLanguageCode => (/catalog-ja/.test(ref) ? 'ja' : 'en');
 
 /**
- * CatalogInstallPort v2 over apps/mobile/src/platform/pack-install. The adapter only stages bytes and moves files; core validates
- * (`validateCatalogCandidate` over `openForValidation`), journals, and decides rollback from `inspect` (disk truth, never memory).
+ * CatalogInstallPort v2. Web: `createWebInstallPort` (role store + OPFS staging + sahpool import, pointer-switch activation). Native:
+ * the file-rename storage of Stage D. The adapter only stages bytes and moves roles; core validates, journals and decides rollback
+ * from `inspect` (disk truth, never memory).
  */
 export function createInstallPort(): CatalogInstallPort {
+  const fetchManifest: CatalogInstallPort['fetchManifest'] = (input, signal) => fetchManifestText({ maxBytes: Math.min(input.maxBytes, MANIFEST_MAX_BYTES) }, signal);
+  if (isWeb()) {
+    const port = createWebInstallPort(getWebCatalogStorage(), { allowDevUrls: import.meta.env.DEV, fetchManifest, enabled: () => !devLegacy() });
+    // Catalog operations need the prepared runtime; bootstrap prepares first, but never rely on that ordering.
+    const ready = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => { await prepareStorage(); return fn(...args); };
+    return {
+      ...port,
+      stage: ready(port.stage),
+      openForValidation: ready(port.openForValidation),
+      activate: ready(port.activate),
+      restorePrevious: ready(port.restorePrevious),
+      discardPrevious: ready(port.discardPrevious),
+      discardCandidate: ready(port.discardCandidate),
+      inspect: ready(port.inspect),
+      remove: ready(port.remove)
+    };
+  }
   return {
     allowDevUrls: import.meta.env.DEV,
     capabilities() {
       const storage = getCatalogStorage();
-      const native = storage.kind === 'native-file';
-      return {
-        fullInstall: true,
-        atomicActivation: storage.capabilities.atomicRename,
-        attachReads: false,
-        catalogWrites: catalogWrites(),
-        reason: native ? null : 'The web build keeps the catalog in memory: development and limited mode. Install the app for the full catalog.'
-      };
+      return { fullInstall: true, atomicActivation: storage.capabilities.atomicRename, attachReads: false, catalogWrites: catalogWrites(), reason: null };
     },
-    fetchManifest: (input, signal) => fetchManifestText({ maxBytes: Math.min(input.maxBytes, MANIFEST_MAX_BYTES) }, signal),
-    async stage(entry: PackEntry & { language: CatalogLanguageCode }, options): Promise<PackStageResult> {
+    fetchManifest,
+    async stage(entry, options) {
       const result = await stageCatalogPack(entry, {
         trustedOrigins: options.trustedOrigins,
         signal: options.signal,
@@ -113,7 +216,7 @@ export function createInstallPort(): CatalogInstallPort {
     restorePrevious: (language) => getCatalogStorage().restorePrevious(language),
     discardPrevious: (language) => getCatalogStorage().discardPrevious(language),
     discardCandidate: (ref) => getCatalogStorage().discardCandidate(ref),
-    inspect: (language): Promise<PackDiskState> => getCatalogStorage().inspect(language),
+    inspect: (language) => getCatalogStorage().inspect(language),
     remove: (language) => removeCatalog(language)
   };
 }

@@ -3,6 +3,7 @@ import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import type { PlatformFiles } from '@flashydex/core';
 import { createSHA256 } from 'hash-wasm';
 import { PackInstallError, getCatalogStorage } from './pack-install';
+import { imageCache as pwaImageCache } from './pwa/index';
 
 /**
  * Generic file primitives behind core's `PlatformFiles`. The catalog install itself does NOT go through these: it streams
@@ -78,9 +79,10 @@ export const platformFiles: PlatformFiles = {
   },
 
   // Phase 7 implements the bounded LRU image cache; the interface exists so core can depend on it now.
+  // Web: the service worker admits viewed images itself (see platform/pwa/image-cache); get/put stay inert here, clear asks the SW.
   imageCache: {
     async get() { return null; },
-    async put() { /* Phase 7 */ },
-    async clear() { /* Phase 7 */ }
+    async put() { /* the SW admits viewed images; nothing to do from the page */ },
+    async clear() { await pwaImageCache.clear(); }
   }
 };

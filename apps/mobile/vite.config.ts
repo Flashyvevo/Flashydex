@@ -19,7 +19,13 @@ export default defineConfig({
     tailwindcss(),
     excludeDevPacks(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Authored SW (platform/pwa/sw.ts) compiled by vite-plugin-pwa; output /sw.js at scope '/'.
+      strategies: 'injectManifest',
+      srcDir: 'src/platform/pwa',
+      filename: 'sw.ts',
+      // Prompt update: the page decides when to activate a waiting worker (handoff in components/pwa-ui.tsx), never autoUpdate.
+      registerType: 'prompt',
+      injectRegister: false,
       manifest: {
         name: 'FlashyDex',
         short_name: 'FlashyDex',
@@ -34,12 +40,19 @@ export default defineConfig({
           { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
-      workbox: { navigateFallbackDenylist: [/^\/api\//], globIgnores: ['**/dev-packs/**'] }
+      injectManifest: {
+        // wasm + worker chunks are .js/.wasm under assets/, so the glob covers them. Dev packs / catalogs never ship.
+        globPatterns: ['**/*.{js,css,html,wasm,woff2,png,svg,webmanifest}'],
+        globIgnores: ['**/dev-packs/**', '**/*.zst', '**/*.db'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024
+      },
+      devOptions: { enabled: false }
     })
   ],
   envPrefix: ['VITE_', 'FLASHYDEX_'],
   // jeep-sqlite is a lazy-loading Stencil bundle; pre-bundling breaks its chunk resolution.
-  optimizeDeps: { exclude: ['jeep-sqlite'] },
+  // @sqlite.org/sqlite-wasm resolves sqlite3.wasm relative to its own module URL; pre-bundling breaks that (Stage F prerequisite).
+  optimizeDeps: { exclude: ['jeep-sqlite', '@sqlite.org/sqlite-wasm'] },
   worker: { format: 'es' },
   resolve: {
     alias: { '@': resolve(__dirname, './src') }

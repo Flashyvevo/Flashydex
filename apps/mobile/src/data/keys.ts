@@ -1,4 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
+import { maybeShowProtectionPrompt } from '../lib/protection-prompt';
 
 /** Every data query key starts with 'fd'. The second element names the resource; the rest is the exact input. */
 export const keys = {
@@ -29,6 +30,7 @@ const PERSONAL = ['collection', 'dashboard', 'copy', 'acquisitions', 'locations'
 
 /** After a durable personal-data commit: everything derived from the collection refetches. */
 export function invalidatePersonal(qc: QueryClient): Promise<void> {
+  maybeShowProtectionPrompt(); // first successful personal save → one-time "Protect your collection" sheet (no-op afterwards)
   return qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'fd' && PERSONAL.includes(String(q.queryKey[1])) });
 }
 

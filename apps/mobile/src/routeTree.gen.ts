@@ -14,6 +14,7 @@ import { Route as TabsRouteImport } from './routes/_tabs'
 import { Route as ModalAddRouteImport } from './routes/_modal/add'
 import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
 import { Route as DevPackTestRouteImport } from './routes/dev/pack-test'
+import { Route as DevStorageScreensRouteImport } from './routes/dev/storage-screens'
 import { Route as ModalCustomCardsNewRouteImport } from './routes/_modal/custom-cards/new'
 import { Route as ModalWelcomeIndexRouteImport } from './routes/_modal/welcome/index'
 import { Route as ModalWelcomeLanguagesRouteImport } from './routes/_modal/welcome/languages'
@@ -27,6 +28,7 @@ import { Route as TabsSettingsIndexRouteImport } from './routes/_tabs/settings/i
 import { Route as TabsSettingsAboutRouteImport } from './routes/_tabs/settings/about'
 import { Route as TabsSettingsCatalogRouteImport } from './routes/_tabs/settings/catalog'
 import { Route as TabsSettingsDataRouteImport } from './routes/_tabs/settings/data'
+import { Route as TabsSettingsDiagnosticsRouteImport } from './routes/_tabs/settings/diagnostics'
 import { Route as TabsSettingsLicensesRouteImport } from './routes/_tabs/settings/licenses'
 import { Route as TabsSettingsLocationsRouteImport } from './routes/_tabs/settings/locations'
 import { Route as TabsSettingsPrivacyRouteImport } from './routes/_tabs/settings/privacy'
@@ -54,6 +56,11 @@ const TabsIndexRoute = TabsIndexRouteImport.update({
 const DevPackTestRoute = DevPackTestRouteImport.update({
   id: '/dev/pack-test',
   path: '/dev/pack-test',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevStorageScreensRoute = DevStorageScreensRouteImport.update({
+  id: '/dev/storage-screens',
+  path: '/dev/storage-screens',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ModalCustomCardsNewRoute = ModalCustomCardsNewRouteImport.update({
@@ -121,6 +128,11 @@ const TabsSettingsDataRoute = TabsSettingsDataRouteImport.update({
   path: '/settings/data',
   getParentRoute: () => TabsRoute,
 } as any)
+const TabsSettingsDiagnosticsRoute = TabsSettingsDiagnosticsRouteImport.update({
+  id: '/settings/diagnostics',
+  path: '/settings/diagnostics',
+  getParentRoute: () => TabsRoute,
+} as any)
 const TabsSettingsLicensesRoute = TabsSettingsLicensesRouteImport.update({
   id: '/settings/licenses',
   path: '/settings/licenses',
@@ -151,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/': typeof TabsIndexRoute
   '/add': typeof ModalAddRoute
   '/dev/pack-test': typeof DevPackTestRoute
+  '/dev/storage-screens': typeof DevStorageScreensRoute
   '/custom-cards/new': typeof ModalCustomCardsNewRoute
   '/welcome/languages': typeof ModalWelcomeLanguagesRoute
   '/welcome/notice': typeof ModalWelcomeNoticeRoute
@@ -160,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/settings/about': typeof TabsSettingsAboutRoute
   '/settings/catalog': typeof TabsSettingsCatalogRoute
   '/settings/data': typeof TabsSettingsDataRoute
+  '/settings/diagnostics': typeof TabsSettingsDiagnosticsRoute
   '/settings/licenses': typeof TabsSettingsLicensesRoute
   '/settings/locations': typeof TabsSettingsLocationsRoute
   '/settings/privacy': typeof TabsSettingsPrivacyRoute
@@ -174,6 +188,7 @@ export interface FileRoutesByTo {
   '/': typeof TabsIndexRoute
   '/add': typeof ModalAddRoute
   '/dev/pack-test': typeof DevPackTestRoute
+  '/dev/storage-screens': typeof DevStorageScreensRoute
   '/custom-cards/new': typeof ModalCustomCardsNewRoute
   '/welcome/languages': typeof ModalWelcomeLanguagesRoute
   '/welcome/notice': typeof ModalWelcomeNoticeRoute
@@ -183,6 +198,7 @@ export interface FileRoutesByTo {
   '/settings/about': typeof TabsSettingsAboutRoute
   '/settings/catalog': typeof TabsSettingsCatalogRoute
   '/settings/data': typeof TabsSettingsDataRoute
+  '/settings/diagnostics': typeof TabsSettingsDiagnosticsRoute
   '/settings/licenses': typeof TabsSettingsLicensesRoute
   '/settings/locations': typeof TabsSettingsLocationsRoute
   '/settings/privacy': typeof TabsSettingsPrivacyRoute
@@ -199,6 +215,7 @@ export interface FileRoutesById {
   '/_tabs': typeof TabsRouteWithChildren
   '/_modal/add': typeof ModalAddRoute
   '/dev/pack-test': typeof DevPackTestRoute
+  '/dev/storage-screens': typeof DevStorageScreensRoute
   '/_tabs/': typeof TabsIndexRoute
   '/_modal/custom-cards/new': typeof ModalCustomCardsNewRoute
   '/_modal/welcome/languages': typeof ModalWelcomeLanguagesRoute
@@ -209,6 +226,7 @@ export interface FileRoutesById {
   '/_tabs/settings/about': typeof TabsSettingsAboutRoute
   '/_tabs/settings/catalog': typeof TabsSettingsCatalogRoute
   '/_tabs/settings/data': typeof TabsSettingsDataRoute
+  '/_tabs/settings/diagnostics': typeof TabsSettingsDiagnosticsRoute
   '/_tabs/settings/licenses': typeof TabsSettingsLicensesRoute
   '/_tabs/settings/locations': typeof TabsSettingsLocationsRoute
   '/_tabs/settings/privacy': typeof TabsSettingsPrivacyRoute
@@ -225,6 +243,7 @@ export interface FileRouteTypes {
     | '/'
     | '/add'
     | '/dev/pack-test'
+    | '/dev/storage-screens'
     | '/custom-cards/new'
     | '/welcome/languages'
     | '/welcome/notice'
@@ -234,6 +253,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/catalog'
     | '/settings/data'
+    | '/settings/diagnostics'
     | '/settings/licenses'
     | '/settings/locations'
     | '/settings/privacy'
@@ -248,6 +268,7 @@ export interface FileRouteTypes {
     | '/'
     | '/add'
     | '/dev/pack-test'
+    | '/dev/storage-screens'
     | '/custom-cards/new'
     | '/welcome/languages'
     | '/welcome/notice'
@@ -257,6 +278,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/catalog'
     | '/settings/data'
+    | '/settings/diagnostics'
     | '/settings/licenses'
     | '/settings/locations'
     | '/settings/privacy'
@@ -272,6 +294,7 @@ export interface FileRouteTypes {
     | '/_tabs'
     | '/_modal/add'
     | '/dev/pack-test'
+    | '/dev/storage-screens'
     | '/_tabs/'
     | '/_modal/custom-cards/new'
     | '/_modal/welcome/languages'
@@ -282,6 +305,7 @@ export interface FileRouteTypes {
     | '/_tabs/settings/about'
     | '/_tabs/settings/catalog'
     | '/_tabs/settings/data'
+    | '/_tabs/settings/diagnostics'
     | '/_tabs/settings/licenses'
     | '/_tabs/settings/locations'
     | '/_tabs/settings/privacy'
@@ -297,6 +321,7 @@ export interface RootRouteChildren {
   ModalRoute: typeof ModalRouteWithChildren
   TabsRoute: typeof TabsRouteWithChildren
   DevPackTestRoute: typeof DevPackTestRoute
+  DevStorageScreensRoute: typeof DevStorageScreensRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -334,6 +359,13 @@ declare module '@tanstack/react-router' {
       path: '/dev/pack-test'
       fullPath: '/dev/pack-test'
       preLoaderRoute: typeof DevPackTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev/storage-screens': {
+      id: '/dev/storage-screens'
+      path: '/dev/storage-screens'
+      fullPath: '/dev/storage-screens'
+      preLoaderRoute: typeof DevStorageScreensRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_modal/custom-cards/new': {
@@ -427,6 +459,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TabsSettingsDataRouteImport
       parentRoute: typeof TabsRoute
     }
+    '/_tabs/settings/diagnostics': {
+      id: '/_tabs/settings/diagnostics'
+      path: '/settings/diagnostics'
+      fullPath: '/settings/diagnostics'
+      preLoaderRoute: typeof TabsSettingsDiagnosticsRouteImport
+      parentRoute: typeof TabsRoute
+    }
     '/_tabs/settings/licenses': {
       id: '/_tabs/settings/licenses'
       path: '/settings/licenses'
@@ -492,6 +531,7 @@ interface TabsRouteChildren {
   TabsSettingsAboutRoute: typeof TabsSettingsAboutRoute
   TabsSettingsCatalogRoute: typeof TabsSettingsCatalogRoute
   TabsSettingsDataRoute: typeof TabsSettingsDataRoute
+  TabsSettingsDiagnosticsRoute: typeof TabsSettingsDiagnosticsRoute
   TabsSettingsLicensesRoute: typeof TabsSettingsLicensesRoute
   TabsSettingsLocationsRoute: typeof TabsSettingsLocationsRoute
   TabsSettingsPrivacyRoute: typeof TabsSettingsPrivacyRoute
@@ -509,6 +549,7 @@ const TabsRouteChildren: TabsRouteChildren = {
   TabsSettingsAboutRoute: TabsSettingsAboutRoute,
   TabsSettingsCatalogRoute: TabsSettingsCatalogRoute,
   TabsSettingsDataRoute: TabsSettingsDataRoute,
+  TabsSettingsDiagnosticsRoute: TabsSettingsDiagnosticsRoute,
   TabsSettingsLicensesRoute: TabsSettingsLicensesRoute,
   TabsSettingsLocationsRoute: TabsSettingsLocationsRoute,
   TabsSettingsPrivacyRoute: TabsSettingsPrivacyRoute,
@@ -525,6 +566,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModalRoute: ModalRouteWithChildren,
   TabsRoute: TabsRouteWithChildren,
   DevPackTestRoute: DevPackTestRoute,
+  DevStorageScreensRoute: DevStorageScreensRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

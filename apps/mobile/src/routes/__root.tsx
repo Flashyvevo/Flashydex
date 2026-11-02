@@ -1,7 +1,10 @@
 import { Outlet, createRootRoute, useLocation, useNavigate } from '@tanstack/react-router';
 import { Compass } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { AppServicesProvider, useAppStartup, useSettings } from '../data';
+import { AppServicesProvider, useAppStartup, useSettings, useStartupProgress } from '../data';
+import { ProtectionPrompt } from '../components/storage-protection';
+import { UpdateToast } from '../components/pwa-ui';
+import { isMigrating, MigrationBlockedScreen, MigrationProgressScreen, StorageUnavailableScreen } from '../components/storage-screens';
 import { ToastProvider } from '../components/overlay';
 import { Button, EmptyState, ErrorState, LinkButton } from '../components/ui';
 import { hideSplash, installBackButton } from '../lib/native';
@@ -37,6 +40,7 @@ function RootLayout() {
 
 function Gate() {
   const startup = useAppStartup();
+  const progress = useStartupProgress();
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     if (startup.status !== 'opening') return;
@@ -48,6 +52,14 @@ function Gate() {
     hideSplash();
     return <InstanceLockScreen />;
   }
+  if (startup.status === 'unavailable') {
+    hideSplash();
+    return <StorageUnavailableScreen code={startup.storage?.code ?? 'STORAGE_UNAVAILABLE'} />;
+  }
+  if (startup.status === 'migration-blocked') {
+    hideSplash();
+    return <MigrationBlockedScreen code={startup.storage?.code ?? 'MIGRATION_BLOCKED'} message={startup.storage?.message ?? ''} />;
+  }
   if (startup.status === 'error') {
     hideSplash();
     return (
@@ -57,6 +69,10 @@ function Gate() {
     );
   }
   if (startup.status === 'opening') {
+    if (isMigrating(progress)) {
+      hideSplash();
+      return <MigrationProgressScreen />;
+    }
     return slow ? (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-bg text-fg-muted" role="status">
         <div className="size-16 rounded-xl bg-surface-3" aria-hidden />
@@ -68,6 +84,8 @@ function Gate() {
     <>
       <StorageStatusUi />
       <Ready />
+      <ProtectionPrompt />
+      <UpdateToast />
     </>
   );
 }

@@ -1,14 +1,20 @@
 import { createContext, useContext, useRef, useSyncExternalStore } from 'react';
 import { DomainError, type Services } from '@flashydex/core';
 
-export type StartupState = { status: 'opening' | 'ready' | 'error' | 'locked'; error: DomainError | null; services: Services | null };
+export type StartupState = {
+  status: 'opening' | 'ready' | 'error' | 'locked' | 'unavailable' | 'migration-blocked';
+  error: DomainError | null;
+  services: Services | null;
+  /** Sanitized storage failure code + message for the 'unavailable' / 'migration-blocked' screens. */
+  storage: { code: string; message: string } | null;
+};
 
-export const AppServicesContext = createContext<StartupState>({ status: 'opening', error: null, services: null });
+export const AppServicesContext = createContext<StartupState>({ status: 'opening', error: null, services: null, storage: null });
 
 /** Startup state of the data layer: user DB opened + migrated, installed catalogs reconciled, services built. `locked` = another tab owns the writer lock. */
-export function useAppStartup(): { status: StartupState['status']; error: DomainError | null } {
-  const { status, error } = useContext(AppServicesContext);
-  return { status, error };
+export function useAppStartup(): { status: StartupState['status']; error: DomainError | null; storage: StartupState['storage'] } {
+  const { status, error, storage } = useContext(AppServicesContext);
+  return { status, error, storage };
 }
 
 /** Escape hatch: the composed core services. Prefer the hooks. Throws while the app is still opening. */

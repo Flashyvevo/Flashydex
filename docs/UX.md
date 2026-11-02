@@ -1561,3 +1561,16 @@ The full spec, with colours, variants and exclusions, is in DESIGN-TOKENS §10.3
 - **Android:** adaptive (background `#0b0d12` + foreground in the 66 dp safe zone) plus a monochrome layer.
 - **Splash:** the mark alone, centred on `#0b0d12` (iOS LaunchScreen, Android 12 SplashScreen). Hidden with a 200 ms fade after the first route paints. Welcome step 1 shows the same mark at the same place on the same background, so first launch feels like the splash "opening up".
 - **Store screenshots:** no card art and no Pokémon names. Use real UI with custom cards using the app's placeholder art, onboarding, the Sets list with id chips, and settings (DESIGN-TOKENS §10.3; APP-STORE-COMPLIANCE "Screenshots").
+
+## Stage F — web storage screens (2026-10-31)
+
+New web-only surfaces (all plain copy, no claim the browser did not make; 390 × 844 first, 44 px targets, safe-area aware, no horizontal overflow):
+
+- **Storage-unavailable screen** (`data-testid=storage-unavailable`): shown when Web Locks, OPFS or the worker probe is missing/failed. Explains https + supported browsers, offers only Retry (reload). Never writes, never offers a temporary copy.
+- **Migration progress** (`migration-progress`): "Moving your collection to faster storage…", phase + bytes, no cancel, `beforeunload` guard. Original copy is kept.
+- **Migration blocked** (`migration-blocked`): honest recovery text with the sanitized reason and code. No "start fresh" button. (No legacy-export hook is exposed by the adapters yet; the screen tells the user to export from the build that still holds the data.)
+- **Settings → Import, export & backup → "Storage on this device"**: "Storage protection" row (Protected / Not protected (browser decides) / Unavailable / Couldn't check, usage of allowance) opening the protection sheet (Protect my collection = a request, last checked, seven-days-of-Safari-use and Home Screen copy, link to export); "Offline card art" row (used/limit, 150/200/250 MB, Clear with confirm; when the limit is not enforced it says so and shows no numbers).
+- **Protect-your-collection sheet**: appears once per device, after the first successful personal save or before the first catalog download. Dismissible ("Not now"), never a wall.
+- **Install banner** (`install-banner`): in-flow at the top of tab content (never fixed, never over the tab bar). iOS: Share → Add to Home Screen → open from the icon. Android with install event: Install button; otherwise menu steps. Hidden when standalone; dismiss snoozes 14 days (controller).
+- **Update toast** (`update-toast`): "Update ready" + Restart / Later, above the tab bar. Restart refuses during a catalog download/import/restore, asks before discarding a dirty form, then shows a full-screen "Restarting to update…" block (no new writes) while the SQL worker shuts down.
+- **Settings → Diagnostics** (`/settings/diagnostics`, linked from Data and About): adapter/VFS/SQLite version, origin/standalone, lock, persist + quota, pool, catalog refs, last pack metrics, image cache, WASM + heap numbers, all `fdx:*` timings, last error code; Copy diagnostics (JSON). No personal data.

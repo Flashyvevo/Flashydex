@@ -1,0 +1,98 @@
+{
+  "migration": {
+    "legacyBytes": 307200,
+    "sawProgress": true,
+    "migrateMs": 6163,
+    "equal": true,
+    "equalAfterSecondReload": true,
+    "ownedTiles": 2,
+    "customs": 2,
+    "measures": {
+      "fdx:gate-total": 2074,
+      "fdx:storage-prepare": 2040,
+      "fdx:web-migrate-legacy": 429,
+      "fdx:web-commit": 7,
+      "fdx:db-open": 7,
+      "fdx:services": 24,
+      "fdx:migrate-user": 6,
+      "fdx:recover-install": 14,
+      "fdx:recover-sync": 3
+    },
+    "roleState": {
+      "names": [
+        "meta"
+      ],
+      "values": [
+        {
+          "user": {
+            "path": "/user/m-vjxy0611ofmvwsrf6a.db",
+            "origin": "migrated",
+            "createdAt": "2026-10-31T19:31:29.210Z"
+          },
+          "migration": {
+            "version": 1,
+            "state": "completed",
+            "source": "jeep-indexeddb",
+            "userPath": "/user/m-vjxy0611ofmvwsrf6a.db",
+            "at": "2026-10-31T19:31:29.210Z",
+            "legacyBytes": 307200,
+            "legacySha256": "8fd23dbd02b4414c9ba69504f59a70f4ad444d545e070ec79000433fdea7926a",
+            "counts": {
+              "acquisitions": 0,
+              "app_settings": 1,
+              "app_state": 1,
+              "catalog_annotations": 0,
+              "catalog_identities": 0,
+              "collection_group_members": 0,
+              "collection_groups": 1,
+              "custom_cards": 2,
+              "grades": 0,
+              "owned_cards": 3,
+              "price_snapshots": 0,
+              "scan_sessions": 0,
+              "storage_locations": 1
+            },
+            "legacyRetained": true
+          }
+        }
+      ]
+    },
+    "legacyKeyRetainedBytes": 307200
+  },
+  "downloadTotalText": "Total: 11.8 MB · about 2 s–12 s on Wi-Fi",
+  "install": {
+    "installMs": 31500,
+    "status": {
+      "installed": {
+        "version": "2026.10.31.001",
+        "cards": null
+      },
+      "job": null,
+      "lastError": null
+    },
+    "pageHeapPeak": {
+      "peak": 37300000,
+      "n": 630
+    },
+    "workerHeapPeaks": {
+      "__sumPeak": 0
+    },
+    "measures": {
+      "fdx:gate-total": 2931,
+      "fdx:storage-prepare": 2638,
+      "fdx:db-open": 5,
+      "fdx:services": 140,
+      "fdx:migrate-user": 128,
+      "fdx:web-commit": 14,
+      "fdx:recover-install": 7,
+      "fdx:recover-sync": 1,
+      "fdx:catalog-open-en": 1,
+      "fdx:catalog-open-ja": 1,
+      "fdx:pack-download": 628,
+      "fdx:pack-decode": 17021,
+      "fdx:pack-import": 6401,
+      "fdx:pack-validate": 4214,
+      "fdx:pack-activate": 4
+    }
+  }
+}

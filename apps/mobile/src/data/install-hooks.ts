@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CatalogProgress, CatalogStatus, CatalogUpdateCheck, DomainError, InstalledCatalog, Language } from '@flashydex/core';
 import { useServices, useServicesIfReady } from './context';
 import { invalidateAll, keys } from './keys';
+import { maybeShowProtectionPrompt } from '../lib/protection-prompt';
 
 /**
  * Install progress lives OUTSIDE React so a download keeps running while screens mount/unmount (CatalogInstallService is app-scoped).
@@ -14,6 +15,12 @@ let controller: AbortController | null = null;
 const listeners = new Set<() => void>();
 const setState = (next: InstallState) => { state = next; listeners.forEach((l) => l()); };
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
+
+/** Is a catalog download/install running right now (any screen)? Used by the update handoff to refuse a restart mid-install. */
+export const isCatalogInstallActive = (): boolean => state.active;
+export function useCatalogInstallActive(): boolean {
+  return useSyncExternalStore(subscribe, () => state.active, () => false);
+}
 
 /** `GET /manifest` check for the selected (or given) languages: sizes, versions, whether an update exists. Never installs. */
 export function useCatalogManifest(languages?: Language[]) {
@@ -63,6 +70,7 @@ export function useCatalogInstall(): CatalogInstallControls {
 
   const start = useCallback(async (language: Language): Promise<InstalledCatalog | null> => {
     if (state.active) return null;
+    maybeShowProtectionPrompt(); // before the first full catalog download: one-time, dismissible, does not delay the download
     controller = new AbortController();
     setState({ progress: null, active: true, error: null, errorLanguage: null });
     try {

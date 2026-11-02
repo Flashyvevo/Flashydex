@@ -1,0 +1,16 @@
+<!doctype html>
+<!--
+  DEV-ONLY Stage F test harness page (served by the Vite dev server at /harness.html; NOT a build input).
+  It deliberately does NOT boot the app (no writer lock, no storage). Playwright specs do:
+    await page.goto('/harness.html');
+    await page.evaluate(() => import('/src/platform/<area>/harness.ts').then((m) => m.run(...)));
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>FlashyDex harness</title>
+  </head>
+  <body>
+    <div id="harness"></div>
+  </body>
+</html>

@@ -10,7 +10,7 @@
 import { PackInstallError, resolvePackUrl } from './installer';
 
 export {
-  PackInstallError, closeCatalogDb, getCatalogStorage, isCatalogInstalled, openCatalogDb, openCatalogDbWritable, openCatalogRef, removeCatalog,
+  PackInstallError, closeCatalogDb, getCatalogStorage, getWebCatalogStorage, isCatalogInstalled, openCatalogDb, openCatalogDbWritable, openCatalogRef, removeCatalog,
   resolvePackUrl, stageCatalogPack
 } from './installer';
 export type { DeviceInstallMetrics, PackEntryInput, StageOptions, StageProgress, StageResult, WritableCatalog } from './installer';

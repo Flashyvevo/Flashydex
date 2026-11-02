@@ -34,7 +34,8 @@ async function prepareWebStore(sqlite: SQLiteConnection): Promise<void> {
 export function getSqlitePlugin(): Promise<SQLiteConnection> {
   pluginPromise ??= (async () => {
     const sqlite = new SQLiteConnection(CapacitorSQLite);
-    if (isWeb()) await prepareWebStore(sqlite);
+    // jeep-sqlite is DEV-only legacy (migration seeding, `fdx:dev-legacy-jeep`); production web uses the sahpool client and never loads it.
+    if (isWeb() && import.meta.env.DEV) await prepareWebStore(sqlite);
     return sqlite;
   })();
   return pluginPromise;

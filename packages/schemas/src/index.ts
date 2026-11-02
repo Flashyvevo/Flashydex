@@ -4,3 +4,4 @@ export * from './api';
 export * from './manifest';
 export * from './transfer';
 export * from './backup';
+export * from './recognition';

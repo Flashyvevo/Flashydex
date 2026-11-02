@@ -3,7 +3,7 @@ import type { SQLiteDBConnection } from '@capacitor-community/sqlite';
 import type { CatalogHandle, CatalogLanguageCode, CatalogStorage } from './storage-types';
 import { createNativeCatalogStorage, openWritableNative } from './native-store';
 import { PackInstallError, runPackWorker } from './run-worker';
-import { createWebCatalogStorage, openWritableWeb } from './web-store';
+import { createWebCatalogStorage, productionWebStoreDeps, type WebCatalogStorage } from './web-store';
 
 export { PackInstallError } from './run-worker';
 
@@ -53,6 +53,8 @@ export interface DeviceInstallMetrics {
   zstdWindowBytes: number;
   maxInFlightObserved: number;
   maxChunkBytes: number;
+  /** Web only: per-phase wall time (download / bounded decode / pool import). */
+  phases?: { downloadMs: number; decodeMs: number; importMs: number };
   /** High-water mark of decoded bytes queued or posted but unacknowledged inside the worker (R05). */
   pendingBytesMax: number;
   /** Main-thread JS heap after the stage (Chromium only). */
@@ -83,8 +85,15 @@ async function closeCatalogHandle(language: CatalogLanguageCode): Promise<void> 
 }
 
 export function getCatalogStorage(): CatalogStorage {
-  storageInstance ??= Capacitor.getPlatform() === 'web' ? createWebCatalogStorage(closeCatalogHandle) : createNativeCatalogStorage(closeCatalogHandle);
+  storageInstance ??= Capacitor.getPlatform() === 'web' ? createWebCatalogStorage(productionWebStoreDeps) : createNativeCatalogStorage(closeCatalogHandle);
   return storageInstance;
+}
+
+/** The web storage (SqlDriver-based handles, role store); only valid on web. */
+export function getWebCatalogStorage(): WebCatalogStorage {
+  const storage = getCatalogStorage();
+  if (storage.kind !== 'web-store') throw new PackInstallError('UNSUPPORTED_CAPABILITY', 'Not a web build');
+  return storage as WebCatalogStorage;
 }
 
 /** Relative URLs (dev packs) resolve against the page origin. Origin trust is checked on the FINAL response URL by the worker. */
@@ -111,6 +120,8 @@ export async function stageCatalogPack(entry: PackEntryInput, options: StageOpti
   const emit = (phase: StageProgress['phase'], compressed = entry.compressedBytes, decoded = entry.uncompressedBytes, pendingBytes?: number) =>
     options.onProgress?.({ phase, compressedBytesDone: compressed, compressedBytesTotal: entry.compressedBytes, decompressedBytesDone: decoded, decompressedBytesTotal: entry.uncompressedBytes, pendingBytes });
   try {
+    // Web: the whole pipeline (preflight, intent, OPFS stage worker, pool import, candidate registration) lives in web-store.ts.
+    if (storage.kind === 'web-store') return await (storage as WebCatalogStorage).stage(entry, options);
     const available = await storage.availableBytes();
     const required = entry.uncompressedBytes + Math.max(32 * 1024 * 1024, Math.ceil(entry.uncompressedBytes * 0.1));
     if (available !== null && available < required) throw new PackInstallError('STORAGE_FULL', `Needs about ${required} free bytes, ${available} available`);
@@ -156,6 +167,7 @@ export async function stageCatalogPack(entry: PackEntryInput, options: StageOpti
 
 /** Read-only driver connection to the ACTIVE catalog for `language` (cached). Throws PACK_INVALID when nothing is installed. */
 export async function openCatalogDb(language: CatalogLanguageCode): Promise<SQLiteDBConnection> {
+  if (getCatalogStorage().kind === 'web-store') throw new PackInstallError('UNSUPPORTED_CAPABILITY', 'Web catalogs open as SqlDrivers through catalogSource');
   const cached = handles.get(language);
   if (cached) return cached.connection;
   const storage = getCatalogStorage();
@@ -186,7 +198,8 @@ export async function openCatalogDbWritable(language: CatalogLanguageCode): Prom
   const storage = getCatalogStorage();
   const ref = await storage.activeRef(language);
   if (!ref) throw new PackInstallError('PACK_INVALID', `No ${language} catalog is installed`);
-  return storage.kind === 'web-store' ? openWritableWeb(ref) : openWritableNative(language);
+  if (storage.kind === 'web-store') throw new PackInstallError('UNSUPPORTED_CAPABILITY', 'Web catalogs open as SqlDrivers through catalogSource');
+  return openWritableNative(language);
 }
 
 /** Open a read-only handle over any ref (candidate or active) for core validation. The caller closes it. */

@@ -3,11 +3,16 @@ import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformClass } from './platform/platform';
+import { installController, updateController } from './lib/pwa-bridge';
 import { TRANSIENT_READ_RETRY_DELAY_MS, retryTransientRead } from './lib/query-retry';
 import { routeTree } from './routeTree.gen';
 import './styles/globals.css';
 
 applyPlatformClass();
+// PWA controllers (web only; both are no-ops on native and in dev/test). start() attaches install listeners early so
+// `beforeinstallprompt` is never missed; register() only runs in production/preview builds.
+installController.start();
+updateController.register();
 
 const router = createRouter({ routeTree, defaultPreload: 'intent', scrollRestoration: true });
 const queryClient = new QueryClient({

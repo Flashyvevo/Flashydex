@@ -1,11 +1,7 @@
 import { manifestUrl } from './pack-install';
 
-/** Default trusted origins for catalog manifests and packs (D46 / CATALOG-PACKS). Core does all semantic URL validation. */
-export const DEFAULT_TRUSTED_ORIGINS = [
-  'https://github.com',
-  'https://objects.githubusercontent.com',
-  'https://release-assets.githubusercontent.com'
-] as const;
+/** Default trusted origins for catalog manifests and packs (D46 / CATALOG-PACKS). Core does all semantic URL validation. GitHub Releases are archive only. */
+export const DEFAULT_TRUSTED_ORIGINS = ['https://flashydex-catalog-packs.netlify.app'] as const;
 
 function normalizeOrigin(value: string): string | null {
   try {

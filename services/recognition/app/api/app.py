@@ -1,4 +1,4 @@
-"""FastAPI app: CORS allowlist, shared bearer token, 8 MB cap, 60/min/IP rate limit."""
+"""FastAPI app: Origin gate (M2-D3), optional admin bearer token, 8 MB cap, rate limits."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.formparsers import MultiPartParser
 
 from app.api.schemas import IdentifyResponse
 from app.core import constants
@@ -21,6 +22,9 @@ from app.recognize.pipeline import IndexNotReadyError, Recognizer
 
 logger = logging.getLogger("flashydex.recognition.api")
 SERVICE_VERSION = "0.1.0"
+# Uploads up to MAX_UPLOAD_BYTES (+ multipart overhead) stay in an in-memory SpooledTemporaryFile;
+# Starlette's default (1 MB) would spill larger photos to a temp file on disk.
+MultiPartParser.spool_max_size = constants.MAX_UPLOAD_BYTES + 256 * 1024
 _PROXY_HEADERS = ("cf-connecting-ip", "x-forwarded-for", "cf-ray", "forwarded")
 
 
@@ -58,18 +62,26 @@ class BodyLimitMiddleware:
         if declared and declared.isdigit() and int(declared) > self.limit + 64 * 1024:
             return await reject()
         received = 0
+        exceeded = False
 
         async def limited_receive():  # noqa: ANN202
-            nonlocal received
+            nonlocal received, exceeded
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > self.limit + 64 * 1024:
+                    exceeded = True
                     raise BodyTooLargeError
             return message
 
         async def tracking_send(message) -> None:  # noqa: ANN001
             nonlocal started
+            if exceeded:
+                # FastAPI turns a failed body read into a generic 400; replace it with the 413.
+                if message["type"] == "http.response.start" and not started:
+                    started = True
+                    await reject()
+                return
             if message["type"] == "http.response.start":
                 started = True
             await send(message)
@@ -78,6 +90,7 @@ class BodyLimitMiddleware:
             await self.app(scope, limited_receive, tracking_send)
         except BodyTooLargeError:
             if not started:
+                started = True
                 await reject()
 
 
@@ -97,40 +110,72 @@ def sniff_image(data: bytes) -> str:
 
 
 class RateLimiter:
-    def __init__(self, per_minute: int) -> None:
+    """Sliding windows. Per-client (minute + day) and one global (hour) budget.
+
+    ``check`` is two-phase: nothing is recorded unless *every* window has room.
+    """
+
+    def __init__(self, per_minute: int, per_day: int = 10**9, global_per_hour: int = 10**9) -> None:
         self.per_minute = per_minute
+        self.per_day = per_day
+        self.global_per_hour = global_per_hour
         self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._global: deque[float] = deque()
         self._lock = threading.Lock()
 
+    @staticmethod
+    def _wait(hits: deque[float], now: float, window: float, limit: int) -> float | None:
+        while hits and now - hits[0] >= window:
+            hits.popleft()
+        if len(hits) >= limit:
+            return window - (now - hits[0])
+        return None
+
     def check(self, key: str, now: float | None = None) -> float | None:
-        """None when allowed, else seconds until the next slot frees up."""
+        """None when allowed (and recorded), else seconds until a slot frees up."""
         now = time.monotonic() if now is None else now
         with self._lock:
             hits = self._hits[key]
-            while hits and now - hits[0] >= 60.0:
-                hits.popleft()
-            if len(hits) >= self.per_minute:
-                return 60.0 - (now - hits[0])
+            waits = [
+                self._wait(hits, now, 86400.0, self.per_day),
+                self._wait(self._global, now, 3600.0, self.global_per_hour),
+            ]
+            # per-minute window is judged on the last 60 s of the (daily) deque
+            recent = [t for t in hits if now - t < 60.0]
+            if len(recent) >= self.per_minute:
+                waits.append(60.0 - (now - recent[0]))
+            blocked = [w for w in waits if w is not None]
+            if blocked:
+                return max(blocked)
             hits.append(now)
+            self._global.append(now)
             if len(self._hits) > 4096:  # bound memory: drop idle keys
-                for k in [k for k, v in self._hits.items() if not v or now - v[-1] >= 60.0]:
+                for k in [k for k, v in self._hits.items() if not v or now - v[-1] >= 86400.0]:
                     del self._hits[k]
             return None
 
 
+def is_loopback_peer(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
 def client_key(request: Request) -> str:
-    fwd = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """CF-Connecting-IP only counts when the TCP peer is loopback (our own tunnel); else the peer IP."""
+    peer = request.client.host if request.client else "unknown"
+    if is_loopback_peer(request):
+        cf = request.headers.get("cf-connecting-ip", "").strip()
+        if cf:
+            return cf
+    return peer
 
 
 def create_app(settings: Settings | None = None, recognizer: Recognizer | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     if not settings.token and not settings.is_loopback:
         raise RuntimeError("FLASHYDEX_RECOG_TOKEN is required when binding a non-loopback host")
-    limiter = RateLimiter(constants.RATE_LIMIT_PER_MIN)
-    slots = threading.BoundedSemaphore(constants.MAX_CONCURRENT_IDENTIFY)
+    limiter = RateLimiter(settings.rate_per_min, settings.rate_per_day, settings.rate_global_per_hour)
+    slots = threading.BoundedSemaphore(settings.max_concurrent)
     state: dict[str, object] = {"recognizer": recognizer, "error": None}
 
     @asynccontextmanager
@@ -151,17 +196,25 @@ def create_app(settings: Settings | None = None, recognizer: Recognizer | None =
         return JSONResponse({"error": detail}, status_code=exc.status_code, headers=exc.headers)
 
     def auth(request: Request) -> None:
-        if settings.token:
-            header = request.headers.get("authorization", "")
+        """Gate for /v1/*: valid bearer (admin) OR allowlisted Origin OR direct loopback without proxy headers."""
+        header = request.headers.get("authorization", "")
+        if settings.token and header:
             supplied = header[7:] if header.lower().startswith("bearer ") else ""
-            if not hmac.compare_digest(supplied.encode(), settings.token.encode()):
-                raise ApiError(401, "UNAUTHORIZED", "missing or invalid bearer token",
-                               {"WWW-Authenticate": "Bearer"})
-        elif not settings.is_loopback or any(h in request.headers for h in _PROXY_HEADERS):
-            # No token configured: only direct loopback callers are allowed. A tunnel / reverse
-            # proxy also arrives from 127.0.0.1, so proxy headers count as "remote".
-            raise ApiError(401, "UNAUTHORIZED", "service requires FLASHYDEX_RECOG_TOKEN for remote callers",
-                           {"WWW-Authenticate": "Bearer"})
+            if hmac.compare_digest(supplied.encode(), settings.token.encode()):
+                return
+            raise ApiError(401, "UNAUTHORIZED", "missing or invalid bearer token", {"WWW-Authenticate": "Bearer"})
+        origin = request.headers.get("origin", "")
+        if origin:
+            if not settings.origin_allowed(origin):
+                raise ApiError(403, "ORIGIN_NOT_ALLOWED", "this origin may not use the recognition service")
+        else:
+            proxied = any(h in request.headers for h in _PROXY_HEADERS)
+            if proxied or not is_loopback_peer(request):
+                raise ApiError(403, "ORIGIN_NOT_ALLOWED", "requests must come from an allowed web origin")
+        # Browsers always send Sec-Fetch-*; a typed URL / link navigation is not a fetch from our app.
+        if request.headers.get("sec-fetch-mode", "").lower() == "navigate" or (
+                request.method == "POST" and request.headers.get("sec-fetch-site", "").lower() == "none"):
+            raise ApiError(403, "ORIGIN_NOT_ALLOWED", "navigation requests are not accepted")
 
     def rate_limit(request: Request) -> None:
         wait = limiter.check(client_key(request))
@@ -184,6 +237,12 @@ def create_app(settings: Settings | None = None, recognizer: Recognizer | None =
                   if index is not None else {})
         return {
             "status": "ok" if index is not None else "degraded",
+            "indexVersion": index.version if index is not None else None,
+            "thresholds": {"match": constants.CONFIDENT_THRESHOLD, "margin": constants.CONFIDENT_MARGIN,
+                           "candidates": constants.UNCERTAIN_THRESHOLD},
+            "limits": {"perMinute": settings.rate_per_min, "perDay": settings.rate_per_day,
+                       "globalPerHour": settings.rate_global_per_hour, "concurrent": settings.max_concurrent,
+                       "maxUploadBytes": constants.MAX_UPLOAD_BYTES},
             "service": "flashydex-recognition",
             "version": SERVICE_VERSION,
             "model": constants.EMBED_MODEL_NAME,
@@ -245,8 +304,10 @@ def create_app(settings: Settings | None = None, recognizer: Recognizer | None =
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
+        allow_origin_regex=settings.allowed_origin_regex or None,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["Retry-After"],
         max_age=600,
     )
     return app

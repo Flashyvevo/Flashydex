@@ -12,8 +12,16 @@ export function trackErrors(page: Page): string[] {
   return errors;
 }
 
+/** The one-time "Protect your collection" sheet is covered by its own spec; everywhere else it would sit over the flow under test. */
+export async function skipProtectionPrompt(page: Page): Promise<void> {
+  await page.context().addInitScript(() => {
+    try { localStorage.setItem('fdx:protection-seen', '1'); } catch { /* opaque origin */ }
+  });
+}
+
 /** Fresh profile → /welcome → notice → languages (English) → sets → "Start download" → waits for the dev pack to finish. */
 export async function onboardAndInstall(page: Page): Promise<void> {
+  await skipProtectionPrompt(page);
   await page.goto('/');
   await expect(page).toHaveURL(/\/welcome$/, { timeout: 30_000 });
   await page.getByTestId('welcome-start').click();

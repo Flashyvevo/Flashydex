@@ -25,6 +25,11 @@ export interface BoundedDecoderOptions {
   hardCapBytes?: number;
   /** Receives each decoded chunk (a private copy). May await writer back-pressure. The owner later calls `ack(length)`. */
   deliver: (chunk: Uint8Array) => Promise<void> | void;
+  /**
+   * Optional synchronous sink: when set, every decoded slice (<= chunkBytes, a VIEW that must not be retained) is handed to it from inside
+   * the decoder's output callback and `deliver` is never used. Errors thrown by the sink abort the decode.
+   */
+  syncSink?: (chunk: Uint8Array) => void;
   isCancelled?: () => boolean;
 }
 
@@ -42,6 +47,7 @@ export class BoundedDecoder {
   private readonly ackCap: number;
   private readonly hardCap: number;
   private waiter: (() => void) | undefined;
+  private sinkFailure: unknown;
 
   constructor(private readonly options: BoundedDecoderOptions) {
     this.slice = options.sliceBytes ?? DEFAULT_SLICE_BYTES;
@@ -55,6 +61,22 @@ export class BoundedDecoder {
     this.decodedBytes += chunk.length;
     if (this.decodedBytes > this.options.expectedUncompressedBytes) {
       throw new BoundedDecodeError('PACK_SIZE_MISMATCH', `Decoded output exceeds the manifest size ${this.options.expectedUncompressedBytes}`);
+    }
+    const sink = this.options.syncSink;
+    if (sink) {
+      // Direct path (web OPFS): the writer is synchronous (sync access handle), so each slice is consumed before this callback returns and
+      // nothing is ever queued: pending output is bounded by ONE slice (<= chunkBytes). No copy either (the slice is not retained).
+      for (let offset = 0; offset < chunk.length; offset += this.options.chunkBytes) {
+        const slice = chunk.subarray(offset, Math.min(chunk.length, offset + this.options.chunkBytes));
+        this.pendingBytesMax = Math.max(this.pendingBytesMax, slice.length);
+        try {
+          sink(slice);
+        } catch (error) {
+          this.sinkFailure = error;
+          throw error;
+        }
+      }
+      return;
     }
     if (this.pendingBytes + chunk.length > this.hardCap) {
       throw new BoundedDecodeError('PACK_INVALID', `Decoded output expanded beyond ${this.hardCap} pending bytes from a small input (decompression bomb)`);
@@ -106,6 +128,7 @@ export class BoundedDecoder {
     try {
       this.decoder.push(slice, final);
     } catch (error) {
+      if (this.sinkFailure !== undefined) throw this.sinkFailure; // writer errors keep their identity (quota, short write)
       if (error instanceof BoundedDecodeError) throw error;
       throw new BoundedDecodeError('PACK_INVALID', `zstd decode failed: ${error instanceof Error ? error.message : String(error)}`);
     }

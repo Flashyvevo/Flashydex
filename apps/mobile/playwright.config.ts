@@ -4,7 +4,8 @@ import { defineConfig } from '@playwright/test';
 // E2E therefore owns a plain-http Vite on :3201 (127.0.0.1 is a secure context, so Web Locks work).
 // `FLASHYDEX_E2E_BASE_URL` points the suite at an already-running server instead (no webServer, TLS errors ignored).
 const externalBase = process.env.FLASHYDEX_E2E_BASE_URL;
-const E2E_PORT = 3201;
+// FLASHYDEX_E2E_PORT lets two suites run side by side (e.g. scanner specs on 3203 while storage specs use 3201).
+const E2E_PORT = Number(process.env.FLASHYDEX_E2E_PORT ?? 3201);
 const baseURL = externalBase ?? `http://127.0.0.1:${E2E_PORT}`;
 
 // Strip the HTTPS switch so an exported FLASHYDEX_DEV_HTTPS=1 can't turn the managed server into TLS.

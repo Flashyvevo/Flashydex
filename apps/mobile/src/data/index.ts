@@ -6,6 +6,8 @@
  */
 export { AppServicesProvider } from './provider';
 export { useAppStartup, useServices, useStorageStatus } from './context';
+export { useStartupProgress } from './startup-progress';
+export { fdxMeasures } from './bootstrap';
 
 export { useSettings, useUpdateSettings, useDashboard } from './settings-hooks';
 
@@ -21,7 +23,7 @@ export type { CollectionQuery, AddCopiesInput } from './collection-hooks';
 export { useCardSearch, useCatalogCard, useSets, useSet, useSetCards, useSetIndex } from './catalog-hooks';
 export type { SetIndexResult } from './catalog-hooks';
 
-export { useCatalogManifest, useCatalogStatus, useCatalogInstall, useUninstallCatalog, useRollbackCatalog } from './install-hooks';
+export { useCatalogManifest, useCatalogStatus, useCatalogInstall, useUninstallCatalog, useRollbackCatalog, isCatalogInstallActive, useCatalogInstallActive } from './install-hooks';
 export type { CatalogInstallControls } from './install-hooks';
 
 export {

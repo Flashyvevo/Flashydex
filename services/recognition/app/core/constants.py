@@ -98,5 +98,7 @@ EMBED_BATCH_CARDS = 16  # cards per ORT run (x2 images: full + artwork crop)
 
 # --- API limits ---------------------------------------------------------------
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
-RATE_LIMIT_PER_MIN = 60
+RATE_LIMIT_PER_MIN = 30
+RATE_LIMIT_PER_DAY = 300
+RATE_LIMIT_GLOBAL_PER_HOUR = 600
 MAX_CONCURRENT_IDENTIFY = 2

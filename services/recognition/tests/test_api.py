@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api import app as api_app
 from app.api.app import RateLimiter, create_app
 from app.core import constants
 from app.core.config import Settings
@@ -47,9 +46,10 @@ class FakeRecognizer:
         }
 
 
-def client(token: str = "", host: str = "127.0.0.1", rec: FakeRecognizer | None = None) -> TestClient:
-    settings = Settings(host=host, token=token, allowed_origins=(ORIGIN,))
-    return TestClient(create_app(settings, rec or FakeRecognizer()))
+def client(token: str = "", host: str = "127.0.0.1", rec: FakeRecognizer | None = None,
+           peer: str = "127.0.0.1", **settings_kw) -> TestClient:
+    settings = Settings(host=host, token=token, allowed_origins=(ORIGIN,), **settings_kw)
+    return TestClient(create_app(settings, rec or FakeRecognizer()), client=(peer, 50000))
 
 
 def post(c: TestClient, data: bytes, headers: dict | None = None, **form):
@@ -89,21 +89,15 @@ def test_size_cap_8mb():
     assert r.status_code == 413 and r.json()["error"]["code"] == "IMAGE_TOO_LARGE"
 
 
-def test_token_required_when_set():
+def test_token_is_admin_alternative_to_origin():
     c = client(token="s3cret")
-    assert post(c, JPG).status_code == 401
-    assert post(c, JPG, {"Authorization": "Bearer nope"}).status_code == 401
-    assert post(c, JPG, {"Authorization": "Bearer s3cret"}).status_code == 200
-    assert c.get("/v1/health").status_code == 401
-    assert c.get("/v1/health", headers={"Authorization": "Bearer s3cret"}).status_code == 200
-    assert c.get("/health").status_code == 200  # liveness stays open
-
-
-def test_no_token_only_for_direct_loopback():
-    c = client(token="")
-    assert post(c, JPG).status_code == 200
-    # a tunnel/reverse proxy also connects from 127.0.0.1: proxy headers => treated as remote
-    assert post(c, JPG, {"CF-Connecting-IP": "203.0.113.9"}).status_code == 401
+    proxied = {"CF-Connecting-IP": "203.0.113.9"}
+    assert post(c, JPG, {**proxied, "Authorization": "Bearer nope"}).status_code == 401
+    assert post(c, JPG, {**proxied}).status_code == 403
+    assert post(c, JPG, {**proxied, "Authorization": "Bearer s3cret"}).status_code == 200
+    assert c.get("/v1/health", headers=proxied).status_code == 403
+    assert c.get("/v1/health", headers={**proxied, "Authorization": "Bearer s3cret"}).status_code == 200
+    assert c.get("/health", headers=proxied).status_code == 200  # liveness stays open
 
 
 def test_refuses_public_bind_without_token():
@@ -123,15 +117,15 @@ def test_cors_allowlist():
     assert r.headers.get("access-control-allow-origin") == ORIGIN
 
 
-def test_rate_limit_60_per_minute():
-    limiter = RateLimiter(60)
-    assert all(limiter.check("ip", now=float(i) * 0.1) is None for i in range(60))
-    assert limiter.check("ip", now=6.5) is not None
+def test_rate_limit_per_minute():
+    limiter = RateLimiter(30, 300, 600)
+    assert all(limiter.check("ip", now=float(i) * 0.1) is None for i in range(30))
+    assert limiter.check("ip", now=3.5) is not None
     assert limiter.check("ip", now=61.0) is None  # window slid
-    assert limiter.check("other", now=6.5) is None
+    assert limiter.check("other", now=3.5) is None
     c = client()
-    codes = [post(c, JPG).status_code for _ in range(62)]
-    assert codes.count(200) == 60 and codes[-1] == 429
+    codes = [post(c, JPG).status_code for _ in range(32)]
+    assert codes.count(200) == 30 and codes[-1] == 429
 
 
 def test_index_not_ready_and_health():
@@ -145,7 +139,6 @@ def test_index_not_ready_and_health():
     assert client().get("/v1/index/manifest").json()["indexVersion"] == "en:v1"
 
 
-def test_busy_when_slots_exhausted(monkeypatch):
-    monkeypatch.setattr(api_app.constants, "MAX_CONCURRENT_IDENTIFY", 0)
-    r = post(client(), JPG)
+def test_busy_when_slots_exhausted():
+    r = post(client(max_concurrent=0), JPG)
     assert r.status_code == 503 and r.json()["error"]["code"] == "BUSY"

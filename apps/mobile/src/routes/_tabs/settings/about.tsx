@@ -47,6 +47,7 @@ function AboutPage() {
         <Group>
           <NavRow to="/settings/privacy" label="Privacy policy" />
           <NavRow to="/settings/licenses" label="Licenses" />
+          <NavRow to="/settings/diagnostics" label="Diagnostics" testId="about-diagnostics" />
         </Group>
       </div>
     </Page>

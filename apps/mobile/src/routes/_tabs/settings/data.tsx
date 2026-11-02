@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { z } from 'zod';
 import { BottomSheet, ConfirmDialog, Dialog, useToast } from '../../../components/overlay';
 import { Page } from '../../../components/page';
-import { ActionRow, Banner, Button, ChipGroup, Group, LinkButton, SectionCaption, TextInput } from '../../../components/ui';
+import { ActionRow, Banner, Button, ChipGroup, Group, LinkButton, NavRow, SectionCaption, TextInput } from '../../../components/ui';
+import { StorageSection } from '../../../components/storage-protection';
+import { useReportBusy } from '../../../lib/handoff';
 import { ArchiveRestore, FileJson, FileSpreadsheet, HardDriveDownload, Share2 } from 'lucide-react';
 import {
   useBackupCapabilities,
@@ -135,6 +137,8 @@ function DataPage() {
   };
 
   const capsReady = caps.isSuccess;
+  useReportBusy(commit.isPending, 'Finish the import first.');
+  useReportBusy(backing || exporting !== null, 'Finish the export first.');
   const canCreate = !!caps.data?.fdxCreate;
   const canRestore = !!caps.data?.fdxRestore;
   const reason = caps.data?.reason ?? null;
@@ -222,6 +226,13 @@ function DataPage() {
       <p className="px-1 pt-3 text-caption text-fg-muted">
         <Link to="/settings/about" className="hidden">format</Link>
       </p>
+
+      <StorageSection />
+      <div className="mt-3">
+        <Group>
+          <NavRow to="/settings/diagnostics" label="Diagnostics" description="Storage, memory and timing details for troubleshooting" testId="row-diagnostics" />
+        </Group>
+      </div>
 
       <ImportPreview
         open={sheet === 'import' && !!report}

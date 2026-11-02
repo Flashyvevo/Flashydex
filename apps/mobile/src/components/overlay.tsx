@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useIsWide } from '../lib/hooks';
+import { useReportDirty } from '../lib/handoff';
 import { Button, cx } from './ui';
 
 /* ───────── Inert background + focus management ───────── */
@@ -173,6 +174,7 @@ function SheetInner({ title, onClose, leading = 'Cancel', trailing, footer, chil
   const drag = useRef<{ startY: number; t: number; active: boolean; crossed: boolean } | null>(null);
   const [dragging, setDragging] = useState(false);
   useOverlayLifecycle(true, titleRef);
+  useReportDirty(!!dirty); // update handoff asks before discarding an open dirty form (W13)
   useEffect(() => {
     askDiscardOverride.current = false;
     return () => {
