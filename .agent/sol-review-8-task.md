@@ -1,0 +1,36 @@
+# sol-review-8 — RE-VERIFY sol-review-7 findings after fix round k
+
+Unattended run. Never ask questions. Read-only review: you write ONLY `.agent/reports/sol-review-8.md`. Repo `C:/Projects/flashydex` (start every shell with `cd C:/Projects/flashydex`). Do not commit, push, stash, or edit any other file. Do not start/kill servers; the owner's dev server is at `https://127.0.0.1:3200` if you need a browser check (text/DOM only; no screenshots).
+
+## What to review
+Stage F replaced the in-memory jeep-sqlite web path with sqlite-wasm opfs-sahpool in a worker + OPFS pack staging + IndexedDB role store + atomic activation. Your prior reviews are `.agent/reports/sol-review.md` … `sol-review-4.md`; your design is `docs/WEB-STORAGE.md`; the director's seams are `.agent/stage-f-contract.md` (+ `apps/mobile/src/platform/web-storage/contract.ts`). Builder reports: `.agent/reports/sonnet-web-sqlite-report.md`, `sonnet-web-install-report.md` (read "Run 2"), `sonnet-pwa-report.md`, `sonnet-shell-f-report.md`. Two Sonnet fix children are running concurrently on `e2e/web-install.spec.ts`, `e2e/persistence-failed.spec.ts`, `e2e/pack-install.spec.ts`, `routes/dev/**` — ignore those files' state; review the product code.
+
+Director findings since those reports (verified by the director in Chromium):
+- Full EN install through the real onboarding UI passes: 16.5 s total (download 0.4 / decode 7.9 / import 3.2 / validate 4.0), aggregate JS heap peak 35 MB, storage 121.7 MB, search + reload OK (`e2e/full-install.spec.ts`).
+- The validate phase was 37–120 s with 4 KiB pages because each page is one synchronous OPFS read (~0.3 ms). **ADR-055** (`docs/DECISIONS.md`, `tools/catalog-builder/src/build-db.ts` `CATALOG_PAGE_SIZE = 65536`) moves packs to 64 KiB pages. Review this decision for correctness and risk (sahpool `importDb` with 64 KiB pages, header checks at bytes 16–19, B's decoder ≤256 KiB chunks, A's `cacheKiB` meaning, native Capacitor SQLite, future delta packs, older 4 KiB packs still installable).
+
+## Required scope (binding per BRIEF: pack integrity, manifest trust, atomic activation, data-loss risk)
+1. **Core unchanged**: `git diff --stat HEAD -- packages/core` must be empty; confirm and state it.
+2. **Atomic activation & rollback on web** (`web-storage/role-store.ts`, `role-state.ts`, `reconcile.ts`, `pack-install/web-store.ts`, `web-port.ts`, `app-database.ts`): walk every WEB-STORAGE §4 crash row and the §5 recovery table against the code. Specifically: can any path unlink `/user`, the active ref, or the previous ref before the pointer transaction commits? Can `reconcileWebStaging` or stale-candidate cleanup remove a promoted generation? Is `WEB_ATOMIC_ACTIVATION_PROVEN = true` justified by the evidence in B's report, or must it be false until the v2/kill browser specs pass?
+3. **Import integrity** (`web-sqlite/worker-core.ts`, `client.ts`, `opfs-stage.worker.ts`): SHA-256 verified over the exact bytes fed to `importDb`; header bytes 18/19 forced to 1 before hashing (or hashed after?) — is the verified digest the digest of the file that ends up in the pool? Pre-associated slot reservation vs concurrent USER journal allocation (your "admission barrier" item). Short write / quota / kill behaviours.
+4. **USER migration** (`legacy-migration.ts`): one-time jeep→sahpool migration must never lose or duplicate personal rows; blocked cases fail closed; legacy key untouched. Check the "role without marker + legacy key present → existing" deviation A reported (§5 says block).
+5. **Durability**: synchronous=FULL + journal DELETE through sahpool; COMMIT/barrier failure → latch, `reopen()` no replay; worker death detection (A notes no heartbeat — is a hung promise a data-loss or just a hang?).
+6. **Trust**: `catalog-config.ts` default trusted origin is only `https://flashydex-catalog-packs.netlify.app`; manifests/packs must be network-only in the SW (`pwa/routes.ts`), never cached; any present signature still rejected.
+7. **Memory**: ADR-054 budgets vs the measured numbers above; anything that could still allocate catalog-sized buffers on the main thread.
+8. Run the gates yourself and record real output: `npm run typecheck`, `npm run lint`, `npm test --workspace=@flashydex/core`, `npm test --workspace=@flashydex/mobile`.
+
+## Report shape (`.agent/reports/sol-review-8.md`)
+- Verdict: ship-ready for the web/PWA production path? (yes / yes-after-P1s / no), one paragraph.
+- Findings table: id, severity P0/P1/P2, file:line, what, why it matters, concrete fix.
+- ADR-055 assessment (accept / accept-with-conditions / reject) with reasons.
+- W01–W14 status table (closed / partial / open) with the evidence you actually inspected.
+- `[needs owner input]` list (physical Safari/iOS evidence etc.).
+Cap at ~400 lines. No fabricated measurements: if you did not run it, say so.
+
+## RE-VERIFICATION MODE (overrides the report shape above)
+This is round 8. Your round-7 report is `.agent/reports/sol-review-7.md`. Two Sonnet fix children have since landed: read `.agent/reports/sonnet-fix-k-report.md` (S7-01 retirement fence, S7-02 tokenizer, S7-03 per-request deadlines; single builder). Note the core diff is now NON-empty by design: review the narrow change for safety instead of requiring it empty.
+Report `.agent/reports/sol-review-8.md`: (1) re-verification table — S7-01…S7-03 and the still-partial S5-03/S5-04/S5-09 → fixed / partly / not fixed / regressed, with the evidence you actually inspected or ran (file:line, test names, your own command output); (2) regressions introduced by the fix round; (3) new findings (P0/P1/P2, same columns as round 5); (4) updated W01–W14 table; (5) verdict: ship-ready for web/PWA production? If no P1 remains, say so plainly — the owner's device/Safari evidence is a separate `[needs owner input]` list, not a reason for "no".
+
+## Director flag for round 8 (assess as a finding)
+`web-sqlite/client.ts` liveness (S5-06 fix): a visible page with no worker message for `livenessTimeoutMs` (30 s) is treated as worker death. The SQL worker is single-threaded, so a long synchronous statement (core's `PRAGMA integrity_check` during candidate validation: 3.5 s on a desktop with 64 KiB pages, 22 s with legacy 4 KiB packs, unknown on a mid-range phone) cannot answer pings. Evaluate whether this can falsely latch/abort a legitimate install on slow devices and what the safe design is (e.g. suspend liveness while a validation/import op is in flight, or a worker-side progress heartbeat from within long ops, or a much larger bound for the validation role).
+Also known from the storage child's report (treat as open, director will fix after your review): `e2e/pwa-image-cache.spec.ts:8` fails on a stale "every image admitted" assumption after S5-07; and the sahpool boot retry (10 × 300 ms in `web-sqlite/pool-boot-retry.ts`) is insufficient — a kill-group `--repeat-each=10` run still failed 7/40 at "storage pool could not be opened" without the spec's outer retry, and the app's `prepareStorage` boot path has no outer retry. Assess the right bound/strategy (how long can a killed page's SAH handles linger in Chromium/Safari?).
