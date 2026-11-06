@@ -189,13 +189,18 @@ async function openCore(page: Page, manifest = SMALL): Promise<void> {
   // After a killed page the browser can keep the sahpool access handles for several seconds. The SQL worker retries 10 x 300 ms
   // (web-sqlite/pool-boot-retry.ts); that budget is NOT enough for the kill group (7 of 40 boots exhausted it in --repeat-each=10), so
   // the spec keeps a bounded outer retry for exactly that cause (and one dev-server context reset). Everything else fails at once.
+  // `window.__fdxNoOuterBootRetry = true` (addInitScript, see describe "no outer boot retry") turns the sahpool retry OFF so the boot
+  // has to succeed exactly as production would (Sol S5-03). Context resets (dev server) are still retried: they are not a storage failure.
   for (let attempt = 0; ; attempt += 1) {
     try {
       await page.goto('/harness.html');
       await page.evaluate(([path, url]) => import(/* @vite-ignore */ path as string).then((m) => m.bootCore(url as string)), [HARNESS, manifest] as const);
       return;
     } catch (error) {
-      if (attempt >= 15 || !/context was destroyed|navigation|Execution context|storage pool could not be opened/i.test(String(error))) throw error;
+      const text = String(error);
+      const noOuterRetry = await page.evaluate(() => Boolean((window as unknown as { __fdxNoOuterBootRetry?: boolean }).__fdxNoOuterBootRetry)).catch(() => false);
+      const retryable = /context was destroyed|navigation|Execution context/i.test(text) || (!noOuterRetry && /storage pool could not be opened/i.test(text));
+      if (attempt >= 15 || !retryable) throw error;
       await page.waitForTimeout(500);
     }
   }
@@ -480,7 +485,15 @@ test.describe('receipt COMMIT of unknown outcome (real worker, real IDB + sahpoo
   });
 });
 
-test.describe('kill tests: page closed mid-install, boot reconcile in a NEW page of the same context', () => {
+/**
+ * Kill group, run twice: with the spec's outer boot retry (default) and with it OFF (production-equivalent boot, Sol S5-03). The OFF variant
+ * was fixme until the web-sqlite boot fix (S6-02) landed; it passed 40/40 (--repeat-each=10) with it off and is now always on.
+ */
+for (const noRetry of [false, true]) {
+test.describe(noRetry ? 'no outer boot retry: kill tests' : 'kill tests: page closed mid-install, boot reconcile in a NEW page of the same context', () => {
+  test.beforeEach(async ({ context }) => {
+    if (noRetry) await context.addInitScript(() => { (window as unknown as { __fdxNoOuterBootRetry: boolean }).__fdxNoOuterBootRetry = true; });
+  });
   async function killWhen(page: Page, ready: string, manifest: string, fault: Record<string, unknown> | null): Promise<void> {
     if (fault) await page.evaluate((f) => { (window as unknown as { __flashydexTest: unknown }).__flashydexTest = { webInstallFault: f }; }, fault);
     await page.evaluate(([path, url]) => { void import(/* @vite-ignore */ path as string).then((m) => m.startInstall({ manifestUrl: url as string })); }, [HARNESS, manifest] as const);
@@ -538,5 +551,98 @@ test.describe('kill tests: page closed mid-install, boot reconcile in a NEW page
       expect(userFiles(state.files)).toEqual(userFiles(before.files));
       expect((await search(next, '')).total).toBe(total);
     });
+  }
+});
+}
+
+/**
+ * Boundary matrix (Sol S5-03): the REAL worker, IDB and sahpool, the page killed at four deterministic points of an install/update.
+ *  prepared:       the COMMIT of the durable PREPARED journal row is swallowed (postMessage trap) -> nothing about it is durable
+ *  before-pointer: stalled right before the role-store pointer transaction (web-store.ts DEV seam webActivationHook)
+ *  after-pointer:  stalled right after the pointer transaction committed, before the receipt / cleanup
+ *  cleanup:        stalled inside discardPrevious after the previous pointer was cleared, before the file is unlinked (update only)
+ * After boot reconcile in a NEW page: a catalog is active and searchable (previous or new, or absent only for a first install),
+ * no orphan generation / candidate / staging, and the personal tables are byte-equal to the canonical dump taken before the fault.
+ */
+test.describe('boundary matrix', () => {
+  test.beforeEach(async ({ context }) => {
+    await context.addInitScript(() => {
+      const w = window as unknown as { __fdxPreparedStall?: boolean; __fdxAtPoint?: string };
+      const original = Worker.prototype.postMessage;
+      let sawPrepared = false;
+      const isCommit = (sql?: string) => typeof sql === 'string' && /^\s*(COMMIT|END)\b/i.test(sql);
+      Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+        const m = args[0] as { op?: string; payload?: { sql?: string; statements?: { sql?: string }[] } } | null;
+        if (w.__fdxPreparedStall && m && (m.op === 'exec' || m.op === 'batch')) {
+          const text = JSON.stringify(m.payload ?? {});
+          if (text.includes('catalog_install_jobs') && text.includes('"prepared"')) sawPrepared = true;
+          const commits = isCommit(m.payload?.sql) || (m.payload?.statements ?? []).some((s) => isCommit(s.sql));
+          if (sawPrepared && commits) { w.__fdxAtPoint = 'prepared'; return; } // swallowed: the PREPARED journal never becomes durable
+        }
+        return (original as (...a: unknown[]) => void).apply(this, args);
+      } as typeof Worker.prototype.postMessage;
+    });
+  });
+
+  const POINTS = ['prepared', 'before-pointer', 'after-pointer', 'cleanup'] as const;
+  for (const point of POINTS) {
+    for (const mode of ['first', 'update'] as const) {
+      if (point === 'cleanup' && mode === 'first') continue; // a first install has no previous generation to discard
+      test(`${mode} install killed at ${point}: a catalog stays searchable, no orphan generation, USER rows byte-equal`, async ({ context }) => {
+        test.setTimeout(300_000);
+        const page = await context.newPage();
+        await openCore(page, SMALL);
+        expect(await h<number>(page, 'seedUserRows')).toBe(3);
+        let before: PoolState | null = null;
+        let total = 0;
+        if (mode === 'update') {
+          expect((await install(page)).ok).toBe(true);
+          before = await pool(page);
+          total = (await search(page, '')).total;
+        }
+        const canon = await h<string>(page, 'userCanon');
+        expect(canon).toContain('matrix-seed-2');
+        await page.evaluate((target) => {
+          const w = window as unknown as { __fdxPreparedStall?: boolean; __flashydexTest?: unknown; __fdxAtPoint?: string };
+          if (target === 'prepared') w.__fdxPreparedStall = true;
+          else w.__flashydexTest = { webActivationHook: (p: string) => { if (p === target) { w.__fdxAtPoint = p; return new Promise<void>(() => undefined); } return undefined; } };
+        }, point);
+        await page.evaluate(([path, url]) => { void import(/* @vite-ignore */ path as string).then((m) => m.startInstall({ manifestUrl: url as string })); }, [HARNESS, mode === 'update' ? V2S : SMALL] as const);
+        const deadline = Date.now() + 120_000;
+        while ((await page.evaluate(() => (window as unknown as { __fdxAtPoint?: string }).__fdxAtPoint ?? null)) !== point) {
+          if (Date.now() > deadline) throw new Error(`boundary ${point} never reached`);
+          await page.waitForTimeout(15);
+        }
+        await page.close({ runBeforeUnload: false });
+
+        const next = await context.newPage();
+        await openCore(next, SMALL);
+        const state = await pool(next);
+        const active = state.roles.en!.activeRef;
+        const gens = enGenerations(state.files);
+        const referenced = [active, state.roles.en!.previousRef].filter((r): r is string => r !== null);
+        console.log(`MATRIX ${mode}/${point}: ${JSON.stringify({ active, previous: state.roles.en!.previousRef, oldActive: before?.roles.en!.activeRef ?? null, gens })}`);
+        expect(await h<string>(next, 'userCanon')).toBe(canon); // personal rows byte-equal to the pre-fault export
+        expect(state.staging).toEqual([]);
+        expect(state.roles.en!.candidates).toEqual([]);
+        for (const g of gens) expect(referenced, `orphan generation ${g}`).toContain(g);
+        if (mode === 'update') {
+          expect(active, 'a catalog is always active after an update was killed').not.toBeNull();
+          expect((await search(next, '')).total).toBe(total);
+          if (point === 'prepared' || point === 'before-pointer') expect(active).toBe(before!.roles.en!.activeRef);
+          if (point === 'cleanup') { expect(active).not.toBe(before!.roles.en!.activeRef); expect(gens).toEqual([active]); }
+        } else if (active === null) {
+          expect(gens).toEqual([]);
+          expect((await h<{ status: string }>(next, 'coreReceipt')).status).not.toBe('installed');
+        } else {
+          expect((await search(next, '')).total).toBeGreaterThan(0);
+        }
+        if (mode === 'first' && (point === 'prepared' || point === 'before-pointer')) expect(active).toBeNull();
+        if (mode === 'first' && active === null) {
+          expect((await install(next)).ok).toBe(true); // the next install works from whatever state boot left behind
+          expect(await h<string>(next, 'userCanon')).toBe(canon);
+        }
+      });
+    }
   }
 });

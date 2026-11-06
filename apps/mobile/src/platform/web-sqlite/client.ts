@@ -8,9 +8,9 @@ import {
   type ImportFromStagingInput, type ImportFromStagingResult, type OpenDriverOptions, type PoolPath, type WebSqliteClient, type WebSqliteInitInfo,
   type WebSqliteStats, type WebStorageErrorCode
 } from '../web-storage/contract';
-import { sqlVerb } from './executor';
+import { classifySql, isMutationKind } from './sql-class';
 import {
-  fromWire, PROTOCOL, type BatchPayload, type BatchResult, type FaultSpec, type ImportResult, type InitResult, type OpenResult, type ProxyMethod,
+  fromWire, POOL_BOOT_BUDGET_MS, PROTOCOL, type BatchPayload, type BatchResult, type FaultSpec, type ImportResult, type InitResult, type OpenResult, type ProxyMethod,
   type RequestEnvelope, type StatsResult, type WireError, type WorkerMessage
 } from './protocol';
 
@@ -67,7 +67,6 @@ export function defaultWorkerFactory(): WorkerLike {
 }
 
 const DEFAULT_CACHE_KIB = { user: 2048, catalog: 4096, validation: 32768 } as const;
-const WRITE_VERBS = new Set(['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'CREATE', 'DROP', 'ALTER', 'BEGIN', 'COMMIT', 'END', 'VACUUM', 'REINDEX', 'ANALYZE']);
 
 class RemoteError extends WebStorageError {
   constructor(wire: WireError) {
@@ -158,13 +157,13 @@ class LogicalDriver implements SqlDriver {
 
   readonly proxy = async (sql: string, params: unknown[], method: ProxyMethod): Promise<{ rows: unknown[] }> => {
     if (this.invalid || this.closed) throw new WebStorageError('STALE_SESSION', 'This storage handle was closed', { commitState: 'not_started' });
-    const verb = sqlVerb(sql);
-    const write = WRITE_VERBS.has(verb);
+    const kind = classifySql(sql).kind;
+    const write = isMutationKind(kind);
     if (write && this.mode === 'ro') throw new WebStorageError('SQLITE', 'This handle is read-only', { commitState: 'not_started' });
     if (write && this.latched) {
       throw new WebStorageError(this.latched.code, 'Writes are latched after a storage failure; reopen the database', { commitState: 'not_started' });
     }
-    if (verb === 'COMMIT' || verb === 'END') {
+    if (kind === 'commit') {
       this.commitStartedAt = performance.now();
       // a COMMIT that never produced a durable-barrier candidate (rejected/failed) must not look "awaiting barrier" forever
       const pending = this.client.enqueueExec(this.physical, this, { sql, params, method });
@@ -236,7 +235,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     }
     const workerReadyMs = performance.now() - this.workerStartedAt;
     mark('fdx:web-worker-ready');
-    const result = (await this.send('init', { protocol: PROTOCOL, ...(import.meta.env.DEV && this.options.fault ? { fault: this.options.fault } : {}) }, { deadlineMs: this.requestDeadlineMs }).promise) as InitResult;
+    const result = (await this.send('init', { protocol: PROTOCOL, ...(import.meta.env.DEV && this.options.fault ? { fault: this.options.fault } : {}) }, { deadlineMs: this.initDeadlineMs }).promise) as InitResult;
     mark('fdx:web-pool-ready');
     return {
       packageVersion: SQLITE_WASM_PACKAGE_VERSION,
@@ -267,6 +266,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   private onMessage(source: WorkerLike, message: WorkerMessage): void {
     if (source !== this.worker) return; // a message from a worker we already discarded
     this.lastHeardAt = performance.now();
+    this.touchDeadlines(); // ANY message (reply, ping reply, progress, heartbeat) is proof of life: silence, not elapsed time, is what a deadline measures
     this.msgStats.messages += 1;
     this.msgStats.maxBufferBytes = Math.max(this.msgStats.maxBufferBytes, maxBufferBytes(message));
     if (message.kind === 'ready') {
@@ -274,6 +274,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
       this.readyResolve = null;
       return;
     }
+    if (message.kind === 'heartbeat') return;
     if (message.sessionId !== this.sessionId) return;
     const pending = this.pending.get(message.requestId);
     if (!pending) return;
@@ -324,13 +325,10 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     this.msgStats.messages += 1;
     this.msgStats.maxBufferBytes = Math.max(this.msgStats.maxBufferBytes, maxBufferBytes(envelope));
     const promise = new Promise<unknown>((resolve, reject) => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const settle = <T>(fn: (value: T) => void) => (value: T) => { clearTimeout(timer); fn(value); };
+      const settle = <T>(fn: (value: T) => void) => (value: T) => { this.clearDeadline(id); fn(value); };
       this.pending.set(id, { op, resolve: settle(resolve), reject: settle(reject), onProgress: options.onProgress });
-      if (options.deadlineMs !== undefined) {
-        // S5-06: a worker that never answers init/open must not leave the caller (and its queue) pending forever.
-        timer = setTimeout(() => this.onDeadline(worker, id, op), options.deadlineMs);
-      }
+      // S5-06: a worker that never answers init/open must not leave the caller (and its queue) pending forever.
+      if (options.deadlineMs !== undefined) this.armDeadline(worker, id, op, options.deadlineMs);
     });
     if (op !== 'ping') this.startMonitor();
     try {
@@ -350,8 +348,57 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     return this.options.requestTimeoutMs ?? 30_000;
   }
 
+  /** The worker is silent while the pool boot retry backs off, so the init deadline must outlast the WHOLE retry budget (S6-02): 2x with headroom for wasm load + probes. */
+  private get initDeadlineMs(): number {
+    return this.options.requestTimeoutMs ?? Math.max(30_000, POOL_BOOT_BUDGET_MS * 2);
+  }
+
+  /**
+   * A deadline-bound request (init/open/reopen) is declared dead after `ms` of SILENCE from the worker (any message resets it) while the
+   * page is visible. A hidden page pauses every deadline (its timers/workers are throttled) and restarts them in full when it is visible again.
+   */
+  private readonly deadlines = new Map<number, { ms: number; timer: ReturnType<typeof setTimeout> | null; fire: () => void }>();
+  private visibilityBound = false;
+
+  private pageHidden(): boolean {
+    return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  }
+
+  private armDeadline(worker: WorkerLike, id: number, op: string, ms: number): void {
+    this.deadlines.set(id, { ms, timer: null, fire: () => this.onDeadline(worker, id, op) });
+    this.bindVisibility();
+    this.restartDeadline(id);
+  }
+
+  private restartDeadline(id: number): void {
+    const entry = this.deadlines.get(id);
+    if (!entry) return;
+    if (entry.timer !== null) clearTimeout(entry.timer);
+    entry.timer = this.pageHidden() ? null : setTimeout(entry.fire, entry.ms);
+  }
+
+  private clearDeadline(id: number): void {
+    const entry = this.deadlines.get(id);
+    if (entry?.timer) clearTimeout(entry.timer);
+    this.deadlines.delete(id);
+  }
+
+  private touchDeadlines(): void {
+    for (const id of [...this.deadlines.keys()]) this.restartDeadline(id);
+  }
+
+  private bindVisibility(): void {
+    if (this.visibilityBound || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+    this.visibilityBound = true;
+    document.addEventListener('visibilitychange', () => {
+      this.lastHeardAt = performance.now();
+      this.touchDeadlines(); // hidden: timers are cleared and not re-armed; visible: re-armed in full
+    });
+  }
+
   /** A deadline-bound request got no reply: the worker is treated as dead (pending = unknown, writes latch, reopen() recovers). */
   private onDeadline(worker: WorkerLike, id: number, op: string): void {
+    if (this.pageHidden()) { this.restartDeadline(id); return; }
     const pending = this.pending.get(id);
     if (!pending || worker !== this.worker) return;
     this.pending.delete(id);
@@ -440,8 +487,9 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     if (physical.closing) return Promise.reject(new WebStorageError('STALE_SESSION', 'That path is closing', { commitState: 'not_started' }));
     // a draining path only lets its current owner finish the open transaction
     if (physical.draining && physical.owner !== wrapper) return Promise.reject(new WebStorageError('STALE_SESSION', 'That path is closing', { commitState: 'not_started' }));
-    const verb = sqlVerb(statement.sql);
-    const isCommit = verb === 'COMMIT' || verb === 'END';
+    // RELEASE may be the outermost savepoint's COMMIT: its failure is just as ambiguous as a COMMIT's
+    const kind = classifySql(statement.sql).kind;
+    const isCommit = kind === 'commit' || kind === 'release';
     return this.enqueue(physical, {
       wrapper,
       bypassOwner: false,

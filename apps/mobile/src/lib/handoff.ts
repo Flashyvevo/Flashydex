@@ -63,7 +63,13 @@ export function useHandoffUi(): HandoffUiState {
 }
 /** "Restart later" / "Keep using FlashyDex": back to normal. Only meaningful for a recoverable failure. */
 /** Back to idle unconditionally (tests / a fresh page). */
-export const resetHandoffUi = (): void => { setUi({ phase: 'idle', failure: null }); };
+export const resetHandoffUi = (): void => { committed = false; setUi({ phase: 'idle', failure: null }); };
+/**
+ * Set at the point of no return of a handoff and never cleared on a real page (only `resetHandoffUi`, for tests/fresh pages): from then on
+ * this page's admissions are permanently invalid - the app wraps the write gate so `open()` is ignored - and the only way forward is a reload.
+ */
+let committed = false;
+export const isHandoffCommitted = (): boolean => committed;
 export function dismissHandoffFailure(): void {
   if (ui.phase === 'failed' && ui.failure?.recoverable) setUi({ phase: 'idle', failure: null });
 }
@@ -81,7 +87,7 @@ export interface HandoffDeps {
   /** Terminate the SQL worker after every path is closed. */
   shutdownClient(): Promise<void>;
   /** Release the origin-wide writer lock when this page can (no-op otherwise: the unload releases it). */
-  releaseWriterLock?(): Promise<void> | void;
+  releaseWriterLock?(): Promise<unknown> | unknown;
   /** A catalog install / restore / import / sync is running right now. */
   busyReason(): string | null;
   setBlocked(on: boolean): void;
@@ -128,11 +134,14 @@ export async function prepareUpdateHandoff(deps: HandoffDeps): Promise<void> {
     deps.setBlocked(false);
     throw error;
   }
-  // Point of no return: the gate stays closed; a failure from here on needs a reload to get a working storage layer back.
+  // Point of no return: the gate stays closed (permanently - see isHandoffCommitted); a failure from here on needs a reload to get a working storage layer back.
+  committed = true;
   try {
     const closeMs = deps.closeTimeoutMs ?? HANDOFF_CLOSE_TIMEOUT_MS;
     for (const path of await deps.listOpenPaths()) await withTimeout(deps.closePath(path, { drain: true }), closeMs, 'Closing your collection');
     await withTimeout(deps.shutdownClient(), closeMs, 'Stopping storage');
+    // Only now - every handle closed, worker terminated, admissions permanently invalid - may another tab become the writer.
+    // A failure above deliberately does NOT release: a worker may still hold handles, so the lock stays until the reload.
     await deps.releaseWriterLock?.();
   } catch (error) {
     throw error instanceof HandoffError ? new HandoffError(error.message, false, true) : new HandoffError('Storage could not be closed cleanly.', false, true);

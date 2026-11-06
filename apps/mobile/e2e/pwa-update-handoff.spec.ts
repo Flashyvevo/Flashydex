@@ -75,3 +75,38 @@ test('update handoff: a running catalog install refuses the restart and offers "
   // The app is still writable.
   await page.evaluate(() => window.__flashydexTest!.services.collection.createLocation({ name: 'Still works' }));
 });
+
+/**
+ * S6-06: the writer lock is released ONLY after the handoff closed every handle and stopped the worker, so a blocked second tab of the
+ * same context takes it over WITHOUT stealing (A never closes). Real Web Locks, real worker, fake service worker.
+ */
+for (const [label, opts, expectFailureCard] of [
+  ['successful handoff', undefined, false],
+  ['activation failure (no waiting worker)', { workerWaiting: false }, true]
+] as const) {
+  test(`writer lock release: ${label} -> the blocked tab B becomes the writer while A stays open, A is never a writer again`, async ({ context }) => {
+    const a = await context.newPage();
+    await onboardAndInstall(a);
+    await a.waitForFunction(() => Boolean(window.__flashydexTest?.services && window.__fdxHandoffTest));
+
+    const b = await context.newPage();
+    await b.goto('/');
+    await expect(b.getByTestId('instance-lock')).toBeVisible({ timeout: 30_000 }); // A holds the lock; B is blocked behind it
+    const heldBefore = await a.evaluate(async () => (await navigator.locks.query()).held?.some((l) => l.name === 'flashydex-user-writer') ?? false);
+    expect(heldBefore).toBe(true);
+
+    await a.evaluate((o) => window.__fdxHandoffTest!.run(o), opts);
+    if (expectFailureCard) {
+      await expect(a.getByTestId('update-handoff-failed')).toBeVisible();
+      await expect(a.getByTestId('update-handoff-reload')).toBeVisible(); // Reload offered
+    }
+    // B was granted the lock (no steal: A never closed, A's lock request callback settled) and reloaded into the real app.
+    await expect(b.getByTestId('instance-lock')).toHaveCount(0, { timeout: 30_000 });
+    // The lock screen disappears while B reloads: write through B once its fresh document has the services (retry across the navigation).
+    await expect.poll(async () => b.evaluate(() => window.__flashydexTest!.services.collection.createLocation({ name: `B writes after ${Date.now()}` }).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`)).catch(() => 'navigating'), { timeout: 45_000, intervals: [250, 500, 1000] }).toBe('ok');
+    expect(a.isClosed()).toBe(false);
+    // A's storage is closed for good: a write from the old page is refused.
+    const lateWrite = await a.evaluate(() => window.__flashydexTest!.services.collection.createLocation({ name: 'A after release' }).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`));
+    expect(lateWrite).not.toBe('ok');
+  });
+}

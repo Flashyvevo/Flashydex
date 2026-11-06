@@ -316,3 +316,24 @@ test.describe('jeep -> OPFS USER migration (W10)', () => {
     expect(r.result?.maxChunkBytes).toBeLessThanOrEqual(262144);
   });
 });
+
+test.describe('worker liveness under one long synchronous statement (S6-01)', () => {
+  test.setTimeout(120_000);
+  type Liveness = { outcome: { ok: boolean; rows?: unknown[]; error?: { code: string; commitState: string | null } }; elapsedMs: number; terminatedBeforeShutdown: number };
+
+  test('a healthy real worker stepping one statement for many multiples of livenessTimeoutMs is NOT terminated (progress heartbeats), result is correct', async ({ page }) => {
+    const r = await h<Liveness>(page, 'long-sql-liveness', { rows: 6_000_000, timeoutMs: 1000, intervalMs: 100 });
+    console.log('LONG-SQL', JSON.stringify(r));
+    expect(r.elapsedMs).toBeGreaterThan(1500); // the statement outlived the 1 s silence window (the worker cannot answer pings meanwhile)
+    expect(r.outcome).toEqual({ ok: true, rows: [[18_000_003_000_000]] });
+    expect(r.terminatedBeforeShutdown).toBe(0);
+  });
+
+  test('a truly dead worker (no replies, no pings, no progress) is still declared dead by the same policy', async ({ page }) => {
+    const r = await h<Liveness>(page, 'long-sql-liveness', { rows: 1000, timeoutMs: 300, intervalMs: 50, silent: true });
+    expect(r.outcome.ok).toBe(false);
+    expect(r.outcome.error).toMatchObject({ code: 'WORKER_DIED', commitState: 'unknown' });
+    expect(r.terminatedBeforeShutdown).toBe(1);
+    expect(r.elapsedMs).toBeLessThan(5000);
+  });
+});

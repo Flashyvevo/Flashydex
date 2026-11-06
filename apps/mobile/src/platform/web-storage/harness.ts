@@ -204,3 +204,32 @@ export async function poolState(): Promise<{ files: string[]; roles: unknown; st
   const est = await navigator.storage.estimate();
   return { files, roles, staging: await listStagingJobs(), usage: est.usage ?? null };
 }
+
+/**
+ * Personal data seam for the boundary matrix (WEB-STORAGE §4): adds three custom cards + owned copies with notes (no catalog needed, so it
+ * works before the first install) through the unchanged core collection service; every later fault is compared against a canonical dump.
+ */
+export async function seedUserRows(language: 'en' | 'ja' = 'en'): Promise<number> {
+  const { collection } = core().services;
+  for (let index = 0; index < 3; index += 1) {
+    const custom = await collection.createCustom({ name: `Matrix custom ${index}`, language, notes: `matrix-custom-${index}` } as never);
+    await collection.add({ language, customCardId: custom.id, variant: 'normal', notes: `matrix-seed-${index}` } as never);
+  }
+  return 3;
+}
+
+const USER_TABLES = ['owned_cards', 'grades', 'custom_cards', 'collection_groups', 'collection_group_members', 'price_snapshots'];
+/** Canonical (table-sorted, row-sorted, JSON) dump of the personal tables. Byte-compare before/after a fault. */
+export async function userCanon(): Promise<string> {
+  const user = core().services.databases.user;
+  return user.read(async (q) => {
+    const present = new Set((await q.rows("SELECT name FROM sqlite_master WHERE type = 'table'")).map((r) => String(r[0])));
+    const out: Record<string, unknown[]> = {};
+    for (const table of USER_TABLES) {
+      if (!present.has(table)) continue;
+      const rows = (await q.rows(`SELECT * FROM ${table}`)).map((r) => JSON.stringify(r));
+      out[table] = rows.sort();
+    }
+    return JSON.stringify(out);
+  });
+}

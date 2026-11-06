@@ -60,10 +60,13 @@ export async function run(options: HarnessOptions): Promise<Record<string, unkno
   const lock = createWebLock(`fdx-harness-lock-${suffix}`);
   const engine = createImageEngine({ cache, store: checked, lock, limits, touchDebounceMs: 5 });
   const handler = createImageHandler({ engine, perEntryMax });
+  // Controlled admission (S5-07 / S6-04): the 30-image concurrent step raises the SLOT count through the harness only, so the engine's
+  // cap/LRU/ledger invariants are exercised under real concurrency. Production keeps IMAGE_ADMISSION_SLOTS; `runBusy` below covers it.
+  const controlled = createImageHandler({ engine, perEntryMax, maxAdmissions: 64 });
 
-  const view = async (url: string) => {
+  const view = async (url: string, h = handler) => {
     const waits: Promise<unknown>[] = [];
-    const response = await handler.handle(new Request(url, { mode: 'no-cors' }), (p) => waits.push(p));
+    const response = await h.handle(new Request(url, { mode: 'no-cors' }), (p) => waits.push(p));
     await Promise.all(waits);
     return response;
   };
@@ -93,7 +96,7 @@ export async function run(options: HarnessOptions): Promise<Record<string, unkno
     }
 
     // 3. concurrent admissions
-    await Promise.all(Array.from({ length: 30 }, (_, i) => view(artUrl('slow', entryBytes, 200 + i))));
+    await Promise.all(Array.from({ length: 30 }, (_, i) => view(artUrl('slow', entryBytes, 200 + i), controlled)));
     {
       const rows = await realRows();
       results.concurrent = { sum: sum(rows), peak, writes, keys: (await realCacheKeys()).length, allCommitted: rows.every((r) => r.state === 'committed') };
@@ -159,4 +162,53 @@ export async function run(options: HarnessOptions): Promise<Record<string, unkno
     indexedDB.deleteDatabase(dbName);
   }
   return results;
+}
+
+/**
+ * Skip-when-busy (S6-04): the PRODUCTION admission slot count, a small cap, many concurrent images. Some responses must be served
+ * network-only (never admitted), every body is still delivered whole, and ledger + Cache Storage never exceed the cap.
+ */
+export async function runBusy(options: HarnessOptions & { images: number }): Promise<Record<string, unknown>> {
+  const { limit, perEntryMax, entryBytes, images } = options;
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const cacheName = `fdx-harness-busy-${suffix}`;
+  const dbName = `fdx-harness-busy-ledger-${suffix}`;
+  const cache = createCacheStorageAdapter(cacheName);
+  const realLedger = createIdbLedger(dbName);
+  let peak = 0;
+  const shadow = new Map<string, LedgerEntry>();
+  const checked: LedgerStore = {
+    loadAll: () => realLedger.loadAll(),
+    async putEntry(entry) {
+      const next = new Map(shadow).set(entry.url, entry);
+      peak = Math.max(peak, [...next.values()].reduce((a, e) => a + e.bytes, 0));
+      await realLedger.putEntry(entry);
+      shadow.set(entry.url, entry);
+    },
+    async deleteEntry(url) { await realLedger.deleteEntry(url); shadow.delete(url); },
+    async clearEntries() { await realLedger.clearEntries(); shadow.clear(); },
+    setLimit: (b) => realLedger.setLimit(b)
+  };
+  const engine = createImageEngine({ cache, store: checked, lock: createWebLock(`fdx-harness-busy-lock-${suffix}`), limits: { min: 1, default: limit, max: limit * 10, perEntryMax }, touchDebounceMs: 5 });
+  let admits = 0;
+  const counting = Object.create(engine) as typeof engine;
+  counting.admit = (input) => { admits += 1; return engine.admit(input); };
+  const handler = createImageHandler({ engine: counting, perEntryMax }); // production maxAdmissions
+  try {
+    const waits: Promise<unknown>[] = [];
+    const responses = await Promise.all(Array.from({ length: images }, (_, i) => handler.handle(new Request(artUrl('slow', entryBytes, 900 + i), { mode: 'no-cors' }), (p) => waits.push(p))));
+    const sizes = await Promise.all(responses.map(async (r) => (await r.arrayBuffer()).byteLength));
+    await Promise.all(waits);
+    const rows = (await realLedger.loadAll()).entries;
+    return {
+      error: null, images, admits, waits: waits.length, servedWhole: sizes.every((s) => s === entryBytes), statuses: [...new Set(responses.map((r) => r.status))],
+      peak, committed: rows.reduce((a, r) => a + r.bytes, 0), keys: (await (await caches.open(cacheName)).keys()).length, rows: rows.length
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    await caches.delete(cacheName);
+    await realLedger.close();
+    indexedDB.deleteDatabase(dbName);
+  }
 }

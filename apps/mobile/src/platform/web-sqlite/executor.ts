@@ -34,6 +34,8 @@ export interface Sqlite3Api {
   oo1: { DB: new (filename: string, flags?: string) => unknown };
   capi: {
     sqlite3_get_autocommit(db: unknown): number;
+    /** Optional: present in the pinned build (index.mjs ~8727) but tolerated absent (no heartbeats, the client's silence window then applies). */
+    sqlite3_progress_handler?(db: unknown, nOps: number, callback: ((arg: number) => number) | number, arg: number): void;
     sqlite3_prepare_v3(db: unknown, sql: number, len: number, flags: number, ppStmt: number, pzTail: number): number;
     sqlite3_finalize(stmt: number): number;
     sqlite3_stmt_readonly(stmt: number): number;

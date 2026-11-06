@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto';
 import { sqlVerb, type Oo1Db, type Sqlite3Api } from '../executor';
 import type { FaultSpec, RequestEnvelope, WorkerMessage } from '../protocol';
-import { SqlWorkerCore, type PoolLike, type Sha256, type StagingFile, type WorkerEnv } from '../worker-core';
+import { SqlWorkerCore, type CoreOptions, type PoolLike, type Sha256, type StagingFile, type WorkerEnv } from '../worker-core';
 import type { WorkerLike } from '../client';
 import { loadSqlite3 } from './sqlite-node';
 
@@ -133,6 +133,10 @@ export interface MemoryHarness {
   failBoot: { code: string } | null;
   /** Rewrite (or drop) a worker response before the client sees it: lost-ack / IO-on-COMMIT injection. */
   intercept: ((response: WorkerMessage, request: RequestEnvelope) => WorkerMessage | 'drop' | undefined) | null;
+  /** Count of every message kind the loopback workers posted (e.g. 'heartbeat'). */
+  posted: Record<string, number>;
+  /** Extra options for every spawned SqlWorkerCore (e.g. a tiny progressOps/heartbeatMs). */
+  coreOptions: Partial<CoreOptions>;
   /** A hung worker: requests are swallowed and nothing is ever answered. */
   hang: boolean;
 }
@@ -144,7 +148,7 @@ export async function createMemoryHarness(): Promise<MemoryHarness> {
   const log: MemoryHarness['log'] = [];
   const holds = new Map<string, { release: () => void; gate: Promise<void> }>();
   const harness: MemoryHarness = {
-    sqlite3, pool, staging, cores: [], log, failBoot: null, intercept: null, hang: false,
+    sqlite3, pool, staging, cores: [], log, failBoot: null, intercept: null, hang: false, posted: {}, coreOptions: {},
     hold(op) {
       let release!: () => void;
       const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -167,7 +171,8 @@ export async function createMemoryHarness(): Promise<MemoryHarness> {
       };
       const core = new SqlWorkerCore({
         dev: true,
-        post: (message) => deliver(message),
+        ...harness.coreOptions,
+        post: (message) => { harness.posted[message.kind] = (harness.posted[message.kind] ?? 0) + 1; deliver(message); },
         yieldToLoop: () => new Promise((resolve) => setTimeout(resolve, 0)),
         boot: async (fault?: FaultSpec) => {
           if (fault?.initFail) throw Object.assign(new Error('injected'), { name: 'InjectedInitFailure' });

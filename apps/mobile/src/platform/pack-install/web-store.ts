@@ -18,11 +18,15 @@ import type { CatalogStorage, DiskState } from './storage-types';
 /**
  * `capabilities().atomicActivation` on web. True because the pointer transition (role-state.ts) is one IDB transaction and every row of the
  * WEB-STORAGE §4 crash table is driven through the UNCHANGED core CatalogInstallService in web-store.test.ts.
- * Earned back (Sol S5-03) only after `e2e/web-install.spec.ts` passed in full twice in a row against REAL IndexedDB + sahpool, including v2 update,
- * rollback, discardPrevious, quota, short write, update killed mid-decode / mid-import and the receipt-COMMIT-unknown tests. Set it to false
- * again whenever any of those goes red: it is the production install gate (web-port.ts).
+ * It is the production install gate (web-port.ts) and stays FALSE until ALL of these hold (Sol review 6, S5-03):
+ *  1. Production-equivalent boot after a kill WITHOUT the spec's outer openCore retry — proven by the kill group in
+ *     `e2e/web-install.spec.ts` describe "no outer boot retry" (window.__fdxNoOuterBootRetry = true) passing --repeat-each=10.
+ *  2. A real-browser boundary matrix, `e2e/web-install.spec.ts` describe "boundary matrix": PREPARED journal write abort,
+ *     abort just before the role-store pointer transaction, kill just after the pointer transaction before cleanup, kill during
+ *     discardPrevious cleanup — each leaving a searchable catalog (previous or new, never neither), no orphan generation after boot
+ *     reconcile, and USER rows byte-equal to a canonical export taken before the fault.
  */
-export const WEB_ATOMIC_ACTIVATION_PROVEN = true;
+export const WEB_ATOMIC_ACTIVATION_PROVEN = false;
 
 const MIB = 1024 * 1024;
 
@@ -65,6 +69,17 @@ export interface WebCatalogStorage extends CatalogStorage {
   openCatalogDriver(language: WebLanguage, mode: 'ro' | 'rw'): Promise<SqlDriver | null>;
   /** Close every physical handle this storage opened for `language` (CatalogSource.release). */
   releaseLanguage(language: WebLanguage): Promise<void>;
+}
+
+/**
+ * DEV-only boundary seam (e2e boundary matrix): `window.__flashydexTest.webActivationHook(point)` may return a promise that never settles,
+ * stalling the install exactly at that point so the spec can kill the page there. A no-op in production builds.
+ */
+export type ActivationPoint = 'before-pointer' | 'after-pointer' | 'cleanup';
+async function faultPoint(point: ActivationPoint): Promise<void> {
+  if (!import.meta.env.DEV) return;
+  const hook = (globalThis as unknown as { __flashydexTest?: { webActivationHook?: (p: ActivationPoint) => Promise<void> | void } }).__flashydexTest?.webActivationHook;
+  if (typeof hook === 'function') await hook(point);
 }
 
 function mark(name: string, startEpochMs: number, endEpochMs: number): void {
@@ -256,7 +271,9 @@ export function createWebCatalogStorage(deps: () => WebStoreDeps): WebCatalogSto
         const before = await d().roles.language(language);
         // core already holds the language barrier and retired its handle; stop the physical connection of the OLD active before the switch
         if (before.activeRef !== null) await d().client.closePath(before.activeRef);
+        await faultPoint('before-pointer');
         const activated = await d().roles.activate(language, candidateRef, before.activeRef);
+        await faultPoint('after-pointer');
         mark('fdx:pack-activate', startedAt, epochNow());
         // an older leftover `previous` was displaced by this transition: it is no longer referenced by anything
         if (before.previousRef !== null && before.previousRef !== activated.previousRef) await retire(before.previousRef);
@@ -282,7 +299,9 @@ export function createWebCatalogStorage(deps: () => WebStoreDeps): WebCatalogSto
     },
 
     async discardPrevious(language) {
-      await retire(await d().roles.clearPrevious(language));
+      const displaced = await d().roles.clearPrevious(language);
+      await faultPoint('cleanup');
+      await retire(displaced);
     },
 
     async discardCandidate(ref) {

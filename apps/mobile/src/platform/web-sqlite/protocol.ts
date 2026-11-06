@@ -3,8 +3,12 @@
  * Nothing here touches SQLite or OPFS. No SQL text, bind values or rows ever appear in an error.
  */
 import { WebStorageError, WEB_STORAGE_PROTOCOL, type CommitState, type WebStorageErrorCode } from '../web-storage/contract';
+import type { PoolBootAttempt } from './pool-boot-retry';
 
 export const PROTOCOL = WEB_STORAGE_PROTOCOL;
+
+/** Total elapsed budget for the worker's sahpool acquire retry (pool-boot-retry.ts); the client's init deadline must outlast it. */
+export const POOL_BOOT_BUDGET_MS = 15_000;
 
 export type WorkerOp =
   | 'init'
@@ -52,6 +56,8 @@ export interface WireError {
   commitState: CommitState;
   /** Authoritative connection state after a failed statement (lets the client keep transaction ownership exact). */
   inTransaction?: boolean;
+  /** INIT_FAILED from the pool boot retry (S6-02): every failed acquire attempt with its cause and elapsed time. */
+  attempts?: PoolBootAttempt[];
 }
 
 export interface Timings {
@@ -70,12 +76,21 @@ export interface ProgressMessage {
   bytes: number;
 }
 
+/**
+ * Posted from INSIDE a long synchronous statement by the worker's SQLite progress handler (S6-01). The worker is single-threaded, so a
+ * running statement/integrity_check cannot answer pings; this is the proof of life that does not need the event loop.
+ */
+export interface HeartbeatMessage {
+  kind: 'heartbeat';
+  sessionId: string;
+}
+
 export interface ReadyMessage {
   kind: 'ready';
   protocol: typeof PROTOCOL;
 }
 
-export type WorkerMessage = ResponseEnvelope | ProgressMessage | ReadyMessage;
+export type WorkerMessage = ResponseEnvelope | ProgressMessage | HeartbeatMessage | ReadyMessage;
 
 // ───────────────────────── payloads ─────────────────────────
 export interface InitPayload {
@@ -168,19 +183,22 @@ export interface FaultSpec {
 // ───────────────────────── error helpers ─────────────────────────
 export function wireError(error: unknown): WireError {
   if (error instanceof WebStorageError) {
+    const attempts = (error.details as { attempts?: PoolBootAttempt[] }).attempts;
     return {
       code: error.code,
       message: error.message,
       sqliteCode: error.details.sqliteCode,
       retryable: error.details.retryable ?? false,
-      commitState: error.details.commitState ?? 'not_started'
+      commitState: error.details.commitState ?? 'not_started',
+      ...(Array.isArray(attempts) ? { attempts: attempts.map(({ attempt, force, code, cause, elapsedMs }) => ({ attempt, force, code, cause, elapsedMs })) } : {})
     };
   }
   return { code: 'IO', message: 'Unexpected storage error', retryable: false, commitState: 'unknown' };
 }
 
 export function fromWire(error: WireError): WebStorageError {
-  return new WebStorageError(error.code, error.message, { commitState: error.commitState, retryable: error.retryable, sqliteCode: error.sqliteCode });
+  const extra = error.attempts ? { attempts: error.attempts } : {};
+  return new WebStorageError(error.code, error.message, { commitState: error.commitState, retryable: error.retryable, sqliteCode: error.sqliteCode, ...extra });
 }
 
 /** Strip anything that can carry user data from an engine message: quoted SQL fragments after `near`, long strings, control chars. */

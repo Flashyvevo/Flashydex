@@ -6,7 +6,7 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Db, USER_MIGRATIONS, migrate, type SqlDriver } from '@flashydex/core';
 import { LEGACY_JEEP, STAGING_ROOT, type MigrationMarker, type RoleStore, type UserPrepareProgress, type UserRole } from '../web-storage/contract';
-import { createWebSqliteClient, type WebSqliteClientInternal } from './client';
+import { createWebSqliteClient, defaultWorkerFactory, type WebSqliteClientInternal, type WorkerLike } from './client';
 import { createEnsureUserDatabase } from './legacy-migration';
 import type { FaultSpec } from './protocol';
 import { dumpPersonal, operationalSnapshot, seedLegacyUser } from './testing/legacy-seed';
@@ -244,6 +244,45 @@ export async function run(scenario: string, args: Args = {}): Promise<unknown> {
     case 'user-integrity': {
       const path = String(args.path ?? USER_PATH);
       return { integrity: await sqlOn(path, 'PRAGMA integrity_check'), logRows: await sqlOn(path, 'SELECT COUNT(*) FROM log'), maxLog: await sqlOn(path, 'SELECT MAX(n) FROM log') };
+    }
+    case 'long-sql-liveness': {
+      // S6-01: a REAL worker running ONE synchronous statement far longer than livenessTimeoutMs (it cannot answer pings while stepping).
+      // `silent: true` instead makes the worker truly dead (nothing in or out) and expects the watchdog to declare it.
+      await closeAll();
+      await client.shutdown();
+      let terminated = 0;
+      let shuttingDown = false;
+      let silent = false;
+      const factory = (): WorkerLike => {
+        const w = defaultWorkerFactory();
+        return {
+          postMessage: (m, t) => { if (!silent) w.postMessage(m, t); },
+          terminate: () => { if (!shuttingDown) terminated += 1; w.terminate(); },
+          addEventListener: ((type: string, l: (e: unknown) => void) => {
+            (w.addEventListener as (t: string, l: (e: unknown) => void) => void)(type, type === 'message' ? (e) => { if (!silent) l(e); } : l);
+          }) as WorkerLike['addEventListener']
+        };
+      };
+      client = createWebSqliteClient({ workerFactory: factory, livenessIntervalMs: Number(args.intervalMs ?? 50), livenessTimeoutMs: Number(args.timeoutMs ?? 300) });
+      const path = '/user/u-liveness01.db';
+      const d = await open(path, 'rw', true);
+      const rows = Number(args.rows ?? 4_000_000);
+      const started = performance.now();
+      let outcome: unknown;
+      try {
+        if (args.silent === true) silent = true;
+        const r = await d.proxy(`WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<${rows}) SELECT SUM(x) FROM c`, [], 'values');
+        outcome = { ok: true, rows: r.rows };
+      } catch (e) {
+        outcome = { ok: false, error: errorInfo(e) };
+      }
+      const elapsedMs = performance.now() - started;
+      const terminatedBeforeShutdown = terminated;
+      shuttingDown = true;
+      silent = false;
+      drivers.clear();
+      await client.shutdown().catch(() => undefined);
+      return { outcome, elapsedMs, terminatedBeforeShutdown };
     }
     case 'unlink': return client.unlink(String(args.path) as never);
     case 'ensure-capacity': return client.ensureCapacity(Number(args.slots ?? 4));

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWriteGate } from '../platform/web-storage/write-gate';
-import { getHandoffUi, HandoffError, prepareUpdateHandoff, runUpdateHandoff, dismissHandoffFailure, resetHandoffUi, type HandoffDeps } from './handoff';
+import { getHandoffUi, HandoffError, isHandoffCommitted, prepareUpdateHandoff, runUpdateHandoff, dismissHandoffFailure, resetHandoffUi, type HandoffDeps } from './handoff';
 
 function fakeDriver(log: string[] = []) {
   return {
@@ -126,6 +126,25 @@ describe('prepareUpdateHandoff', () => {
     const { d } = deps({ closeTimeoutMs: 20, closePath: () => new Promise(() => undefined) });
     await expect(prepareUpdateHandoff(d)).rejects.toMatchObject({ recoverable: false, offerReload: true });
   });
+
+  it('a stuck closePath / shutdown NEVER releases the writer lock (handles may still be open)', async () => {
+    const stuck = deps({ closeTimeoutMs: 20, closePath: () => new Promise(() => undefined) });
+    await expect(prepareUpdateHandoff(stuck.d)).rejects.toBeInstanceOf(HandoffError);
+    expect(stuck.calls).not.toContain('release');
+    const stuckShutdown = deps({ closeTimeoutMs: 20, shutdownClient: () => new Promise(() => undefined) });
+    await expect(prepareUpdateHandoff(stuckShutdown.d)).rejects.toBeInstanceOf(HandoffError);
+    expect(stuckShutdown.calls).not.toContain('release');
+  });
+
+  it('commits the page: admissions stay invalid after the point of no return (isHandoffCommitted) until a fresh page', async () => {
+    resetHandoffUi();
+    const { d } = deps();
+    expect(isHandoffCommitted()).toBe(false);
+    await prepareUpdateHandoff(d);
+    expect(isHandoffCommitted()).toBe(true);
+    resetHandoffUi();
+    expect(isHandoffCommitted()).toBe(false);
+  });
 });
 
 describe('runUpdateHandoff', () => {
@@ -140,6 +159,21 @@ describe('runUpdateHandoff', () => {
     await runUpdateHandoff(d, activate, () => null);
     expect(activate).toHaveBeenCalledTimes(1);
     expect(getHandoffUi().phase).toBe('saving'); // the controller reloads; the overlay stays up
+  });
+
+  it('order through the whole flow: close -> terminate -> release -> activate', async () => {
+    const { d, calls } = deps();
+    await runUpdateHandoff(d, async (prepare) => { await prepare(); calls.push('activate'); }, () => null);
+    expect(calls).toEqual(['blocked:true', 'gate.close', 'closePath:/user/u-1.db:true', 'closePath:/catalog-en/g-1.db:true', 'shutdown', 'release', 'activate']);
+  });
+
+  it('activation failure: the lock was already released, the overlay offers Reload and stays blocked behind it', async () => {
+    const { d, calls } = deps();
+    await runUpdateHandoff(d, async (prepare) => { await prepare(); calls.push('activate'); }, () => 'The new version did not start');
+    expect(calls.filter((c) => c === 'release')).toHaveLength(1);
+    expect(calls.indexOf('release')).toBeLessThan(calls.indexOf('activate'));
+    expect(getHandoffUi()).toMatchObject({ phase: 'failed', failure: { recoverable: false, offerReload: true } });
+    expect(isHandoffCommitted()).toBe(true);
   });
 
   it('busy: failure is recoverable, "Restart later" returns the UI to idle', async () => {

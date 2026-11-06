@@ -26,36 +26,39 @@ export function createImageHandler(deps: ImageHandlerDeps): ImageHandler {
   const cap = deps.perEntryMax ?? IMAGE_CACHE_LIMITS.perEntryMax;
   const doFetch = deps.fetchFn ?? ((input, init) => fetch(input, init));
 
-  // ONE buffered read at a time; each buffer is <= cap bytes. Clones are only made while one of `slots` admission slots is free (taken
-  // BEFORE response.clone()), so at most `slots` tee branches can sit unread, however many images the page loads at once.
+  // At most `slots` capped reads exist at once (a slot is taken BEFORE response.clone() and held until the entry is written or dropped).
+  // The capped read starts the moment a body is admitted, so a clone never waits unread behind disk I/O and a tee branch cannot
+  // accumulate more than `cap` bytes (+ one chunk). Aggregate in-flight bytes <= slots * cap. Only engine.admit (the writes) is serial.
   const slots = deps.maxAdmissions ?? IMAGE_ADMISSION_SLOTS;
   let slotsUsed = 0;
   let admissionTail: Promise<unknown> = Promise.resolve();
   let revalidating = false;
 
-  /** Takes a slot, clones, queues the bounded read. Returns null (and clones nothing) when no slot is free. */
-  function tryAdmit(url: string, response: Response): Promise<unknown> | null {
+  /** Takes a slot and starts the capped read at once. `source` is a clone (page-served response) or the network response itself (revalidation). */
+  function tryAdmit(url: string, response: Response, mode: 'clone' | 'direct'): Promise<unknown> | null {
     if (slotsUsed >= slots) return null;
     slotsUsed++;
-    let clone: Response;
+    let source: Response;
     try {
-      clone = response.clone();
+      source = mode === 'clone' ? response.clone() : response;
     } catch {
       slotsUsed--;
       return null;
     }
-    return admission(url, clone);
+    return admission(url, source);
   }
 
-  function admission(url: string, clone: Response): Promise<unknown> {
-    const job = admissionTail.then(async () => {
-      const read = await readBounded(clone, cap);
+  function admission(url: string, source: Response): Promise<unknown> {
+    const reading = readBounded(source, cap); // starts NOW
+    const previous = admissionTail;
+    const job = (async () => {
+      const read = await reading;
       if (!read.ok) return;
-      await engine.admit({ url, body: read.body, contentType: clone.headers.get('content-type') ?? 'image/webp', etag: clone.headers.get('etag') ?? undefined });
-    });
+      await previous; // writes stay serial; the buffered body is <= cap
+      await engine.admit({ url, body: read.body, contentType: source.headers.get('content-type') ?? 'image/webp', etag: source.headers.get('etag') ?? undefined });
+    })();
     admissionTail = job.catch(() => undefined);
-    const done = job.catch(() => undefined).finally(() => { slotsUsed--; });
-    return done;
+    return job.catch(() => undefined).finally(() => { slotsUsed--; });
   }
 
   const declaredTooBig = (r: Response) => {
@@ -75,9 +78,9 @@ export function createImageHandler(deps: ImageHandlerDeps): ImageHandler {
         return;
       }
       if (isCacheable(net) && !declaredTooBig(net)) {
-        const admitted = tryAdmit(url, net);
+        const admitted = tryAdmit(url, net, 'direct'); // consumed directly: no clone, so no unread original branch
         if (admitted) await admitted;
-        else void net.body?.cancel().catch(() => undefined); // busy: nothing cloned, nothing cached
+        else void net.body?.cancel().catch(() => undefined); // busy: nothing read, nothing cached
       }
     } catch {
       // offline or network error: keep the stale entry, retry on a later view
@@ -105,7 +108,7 @@ export function createImageHandler(deps: ImageHandlerDeps): ImageHandler {
         return Response.error(); // offline + never viewed: <img> onerror shows the styled placeholder
       }
       if (isCacheable(net) && !declaredTooBig(net)) {
-        const admitted = tryAdmit(url.href, net); // no free slot: served network-only, no clone, no cache write
+        const admitted = tryAdmit(url.href, net, 'clone'); // no free slot: served network-only, no clone, no cache write
         if (admitted) waitUntil(admitted);
       }
       return net;

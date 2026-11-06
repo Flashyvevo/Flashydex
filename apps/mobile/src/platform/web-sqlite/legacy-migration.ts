@@ -282,9 +282,7 @@ export function createEnsureUserDatabase(options: EnsureUserOptions = {}): Ensur
 
     // A previous attempt that crashed before commitUser left a staged m-* file: redo from the legacy key with a NEW path.
     await unlinkOrphans(client, files, (p) => /^\/user\/m-/.test(p));
-    for (const path of userFiles.filter((p) => /^\/user\/u-/.test(p))) {
-      if (!(await isEmptyDatabase(client, path))) throw new MigrationBlockedError('orphan_user_data');
-    }
+    await assertAllOrphansEmpty(client, userFiles.filter((p) => /^\/user\/u-/.test(p)));
     return migrateLegacy(client, roles, legacy, newId, now, progress);
   };
 }
@@ -329,23 +327,46 @@ async function validateExistingUser(client: WebSqliteClient, path: PoolPath, fil
   }
 }
 
-async function isEmptyDatabase(client: WebSqliteClient, path: PoolPath): Promise<boolean> {
+/**
+ * S6-03: classify ONE USER-like orphan file. `empty` = no schema objects at all (provably nothing to lose); anything with schema is
+ * `nonempty`; anything that cannot be read is `unreadable`. Opened read-only; rw ONLY when the ro attempt fails (a HOT rollback journal
+ * left by a killed page cannot be recovered through a read-only connection, the rw open rolls it back before the first read).
+ */
+type OrphanClass = 'empty' | 'nonempty' | 'unreadable';
+
+async function classifyOrphan(client: WebSqliteClient, path: PoolPath): Promise<OrphanClass> {
+  const probe = (mode: 'ro' | 'rw'): Promise<OrphanClass> =>
+    withReadDriver(client, path, 'orphan-check', async (proxy) => (Number(((await proxy('SELECT COUNT(*) FROM sqlite_master', [], 'get')).rows as unknown[])[0]) === 0 ? 'empty' : 'nonempty'), mode);
   try {
-    return await withReadDriver(client, path, 'orphan-check', async (proxy) => Number(((await proxy('SELECT COUNT(*) FROM sqlite_master', [], 'get')).rows as unknown[])[0]) === 0);
+    return await probe('ro');
   } catch {
-    throw new MigrationBlockedError('orphan_user_data');
+    try {
+      return await probe('rw');
+    } catch {
+      return 'unreadable';
+    }
   }
+}
+
+/**
+ * Examine EVERY `/user/u-*` file. Returns the sorted list when all are provably empty; throws orphan_user_data (preserving every file, unlinking
+ * nothing) when any is nonempty or unreadable. Never decides from the first file only.
+ */
+async function assertAllOrphansEmpty(client: WebSqliteClient, orphans: PoolPath[]): Promise<PoolPath[]> {
+  const sorted = [...orphans].sort();
+  for (const path of sorted) {
+    if ((await classifyOrphan(client, path)) !== 'empty') throw new MigrationBlockedError('orphan_user_data');
+  }
+  return sorted;
 }
 
 async function createFresh(
   client: WebSqliteClient, roles: RoleStore, userFiles: PoolPath[], newId: () => string, now: () => Date, progress: (p: UserPrepareProgress) => void
 ): Promise<{ kind: 'fresh'; path: PoolPath }> {
   if (userFiles.some((p) => /^\/user\/m-/.test(p))) throw new MigrationBlockedError('orphan_user_data'); // data of unknown origin, legacy gone
-  let path = userFiles.find((p) => /^\/user\/u-/.test(p));
-  if (path !== undefined) {
-    // crash between creating the file and commitUser: adopt it only if it is provably empty
-    if (!(await isEmptyDatabase(client, path))) throw new MigrationBlockedError('orphan_user_data');
-  } else {
+  const candidates = await assertAllOrphansEmpty(client, userFiles.filter((p) => /^\/user\/u-/.test(p)));
+  let path = candidates[0]; // crash between creating the file and commitUser: adopt ONE provably empty orphan; the others stay until an explicit, membership-checked cleanup
+  if (path === undefined) {
     path = `/user/u-${newId()}.db`;
     progress({ phase: 'finalizing' });
     const created = await client.driver(path, 'user-create', { mode: 'rw', create: true, role: 'user' });

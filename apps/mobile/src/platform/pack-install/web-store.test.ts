@@ -11,7 +11,7 @@ import type { InstallClient, WebStoreDeps } from '../web-storage/runtime';
 import type { StageDone } from '../web-storage/opfs-staging';
 import { PackInstallError } from './run-worker';
 import { createWebInstallPort } from './web-port';
-import { createWebCatalogStorage, requiredFreeBytes, toPackInstallError } from './web-store';
+import { createWebCatalogStorage, requiredFreeBytes, toPackInstallError, WEB_ATOMIC_ACTIVATION_PROVEN } from './web-store';
 
 /**
  * WEB-STORAGE §4 crash table, driven through the UNCHANGED core CatalogInstallService: core -> web port (this repo) -> fake A client
@@ -281,9 +281,10 @@ describe('web install port: happy paths and bookkeeping', () => {
     expect(await c.receipt()).toMatchObject({ status: 'absent' });
   });
 
-  it('capabilities: pointer activation proven, never atomicRename, no attach reads, writes + full install on', async () => {
+  it('capabilities: atomicActivation stays false until Sol S5-03 conditions pass, never atomicRename, no attach reads, writes + full install on', async () => {
     const c = await setup();
-    expect(c.proc.port.capabilities()).toEqual({ fullInstall: true, atomicActivation: true, attachReads: false, catalogWrites: true, reason: null });
+    expect(WEB_ATOMIC_ACTIVATION_PROVEN).toBe(false); // flipping it needs the no-outer-retry + boundary-matrix browser evidence, not a unit edit
+    expect(c.proc.port.capabilities()).toEqual({ fullInstall: true, atomicActivation: false, attachReads: false, catalogWrites: true, reason: 'Pointer + journal fault tests have not passed yet.' });
     expect(c.proc.storage.capabilities.atomicRename).toBe(false);
     expect(createWebInstallPort(c.proc.storage, { allowDevUrls: false, fetchManifest: c.proc.port.fetchManifest, enabled: () => false }).capabilities()).toMatchObject({ fullInstall: false, catalogWrites: false });
   });

@@ -345,3 +345,82 @@ describe('migration', () => {
     expect(e.message).not.toMatch(/[0-9a-f]{32}/);
   });
 });
+
+describe('S6-03 multiple USER orphans', () => {
+  const makeUser = async (path: string, sql?: string) => {
+    const d = await client.driver(path, 'x', { mode: 'rw', create: true, role: 'user' });
+    if (sql) await d.proxy(sql, [], 'run');
+    await d.close();
+  };
+  const A = '/user/u-aaaaaaa1.db';
+  const B = '/user/u-bbbbbbb1.db';
+  /** Control the enumeration order (the pool's order is arbitrary) and record every open + unlink. */
+  function spyOrder(order: 'asc' | 'desc') {
+    const opened: { path: string; mode: string }[] = [];
+    const unlinked: string[] = [];
+    const list = client.listFiles.bind(client);
+    client.listFiles = async () => { const files = await list(); return order === 'asc' ? [...files].sort() : [...files].sort().reverse(); };
+    const driver = client.driver.bind(client);
+    client.driver = (async (path: string, label: string, options: { mode: string }) => { opened.push({ path, mode: options.mode }); return driver(path, label, options as never); }) as never;
+    const unlink = client.unlink.bind(client);
+    client.unlink = async (path) => { unlinked.push(path); return unlink(path); };
+    return { opened, unlinked };
+  }
+
+  for (const order of ['asc', 'desc'] as const) {
+    it(`empty + nonempty (${order}): orphan_user_data, no role committed, every file preserved, nothing unlinked, the nonempty one was examined`, async () => {
+      await makeUser(A); // empty
+      await makeUser(B, 'create table personal(a)');
+      const spy = spyOrder(order);
+      await expect(run()).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'orphan_user_data' });
+      expect(roles.commits).toEqual([]);
+      expect(spy.unlinked).toEqual([]);
+      expect([...h.pool.files.keys()].sort()).toEqual([A, B]);
+      expect(spy.opened.map((o) => o.path)).toContain(B);
+    });
+
+    it(`nonempty + empty with the empty one sorted ${order === 'asc' ? 'last' : 'first'}: same result (the first file never decides)`, async () => {
+      await makeUser(A, 'create table personal(a)');
+      await makeUser(B);
+      spyOrder(order);
+      await expect(run()).rejects.toMatchObject({ reason: 'orphan_user_data' });
+      expect(roles.commits).toEqual([]);
+    });
+
+    it(`empty + unreadable (${order}): blocked, nothing adopted or unlinked`, async () => {
+      await makeUser(A);
+      h.pool.files.set(B, new Uint8Array(8192).fill(7)); // not a database
+      const spy = spyOrder(order);
+      await expect(run()).rejects.toMatchObject({ reason: 'orphan_user_data' });
+      expect(roles.commits).toEqual([]);
+      expect(spy.unlinked).toEqual([]);
+      expect([...h.pool.files.keys()].sort()).toEqual([A, B]);
+    });
+  }
+
+  for (const order of ['asc', 'desc'] as const) {
+    it(`all provably empty (${order}): ONE is adopted deterministically (sorted first), nothing is unlinked, all are opened read-only`, async () => {
+      await makeUser(A);
+      await makeUser(B);
+      const spy = spyOrder(order);
+      expect(await run()).toEqual({ kind: 'fresh', path: A });
+      expect(roles.commits).toHaveLength(1);
+      expect(roles.commits[0]).toMatchObject({ role: { path: A, origin: 'fresh' }, marker: null });
+      expect(spy.unlinked).toEqual([]);
+      expect([...h.pool.files.keys()].sort()).toEqual([A, B]);
+      expect(spy.opened.filter((o) => o.path === A || o.path === B).every((o) => o.mode === 'ro')).toBe(true);
+      expect(new Set(spy.opened.map((o) => o.path))).toEqual(new Set([A, B]));
+    });
+  }
+
+  it('with a legacy key present, a nonempty orphan anywhere in the list blocks the migration before anything is imported', async () => {
+    const built = await buildLegacy();
+    legacy = built.bytes;
+    await makeUser(A);
+    await makeUser(B, 'create table personal(a)');
+    spyOrder('asc');
+    await expect(run()).rejects.toMatchObject({ reason: 'orphan_user_data' });
+    expect(roles.commits).toEqual([]);
+    expect([...h.pool.files.keys()].sort()).toEqual([A, B]);
+  });
+});

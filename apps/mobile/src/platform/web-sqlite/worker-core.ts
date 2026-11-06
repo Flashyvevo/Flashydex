@@ -56,6 +56,10 @@ export interface CoreOptions {
   dev: boolean;
   heapUsedBytes?: () => number | null;
   now?: () => number;
+  /** SQLite progress-handler granularity in VM steps (default 20 000 ≈ a few ms of stepping). */
+  progressOps?: number;
+  /** Minimum gap between `heartbeat` messages while a statement runs (default 250 ms). */
+  heartbeatMs?: number;
 }
 
 interface DbEntry {
@@ -68,6 +72,8 @@ interface DbEntry {
 }
 
 const SQLITE_JOURNAL = /-(journal|wal|shm)$/;
+const PROGRESS_OPS = 20_000;
+const HEARTBEAT_MS = 250;
 const STAGING_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 function assertPath(path: unknown): asserts path is string {
@@ -229,7 +235,33 @@ export class SqlWorkerCore {
     }
   }
 
+  private lastHeartbeatAt = Number.NEGATIVE_INFINITY;
+
+  /**
+   * S6-01: SQLite calls this every `progressOps` VM steps (and per page during integrity_check) from INSIDE sqlite3_step, i.e. while the
+   * worker cannot service its event loop. A throttled `heartbeat` message tells the client the worker is working, not dead.
+   */
+  private installHeartbeat(db: Oo1Db): void {
+    const progress = this.sqlite3.capi.sqlite3_progress_handler;
+    if (typeof progress !== 'function' || this.sessionId === null) return;
+    const sessionId = this.sessionId;
+    const everyMs = this.options.heartbeatMs ?? HEARTBEAT_MS;
+    progress.call(this.sqlite3.capi, db.pointer, this.options.progressOps ?? PROGRESS_OPS, () => {
+      const at = this.now();
+      if (at - this.lastHeartbeatAt >= everyMs) {
+        this.lastHeartbeatAt = at;
+        try {
+          this.options.post({ kind: 'heartbeat', sessionId });
+        } catch {
+          /* a failed liveness hint must never abort the statement */
+        }
+      }
+      return 0; // never interrupt
+    }, 0);
+  }
+
   private applyPragmas(db: Oo1Db, payload: OpenPayload): Record<string, string | number | null> {
+    this.installHeartbeat(db);
     const strict = (this.env as WorkerEnv).strictPragmas;
     const set = (sql: string) => { db.exec(sql); };
     const read = (name: string) => db.selectValue(`PRAGMA ${name}`) as string | number | null;
@@ -307,7 +339,7 @@ export class SqlWorkerCore {
     try {
       rows = runStatement(this.sqlite3, entry.db, statement.sql, statement.params, statement.method);
     } catch (error) {
-      const wasCommit = verb === 'COMMIT' || verb === 'END';
+      const wasCommit = verb === 'COMMIT' || verb === 'END' || verb === 'RELEASE';
       if (wasCommit && error instanceof WebStorageError) {
         // A failed COMMIT: SQLite either auto-rolled-back (autocommit again) or the transaction is still open (e.g. SQLITE_BUSY).
         const state: 'unknown' | 'rolled_back' | 'not_started' = error.code === 'IO' || error.code === 'QUOTA' ? 'unknown' : inTransaction(this.sqlite3, entry.db) ? 'not_started' : 'rolled_back';

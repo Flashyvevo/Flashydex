@@ -1,11 +1,13 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * Real Cache Storage + real IndexedDB + real Web Lock, tiny byte limit, synthetic art (route-mocked https://assets.tcgdex.net/**).
  * Run: FLASHYDEX_E2E_BASE_URL=https://127.0.0.1:3200 npx playwright test e2e/pwa-image-cache.spec.ts --project=mobile
  * The service worker itself needs a production build; see .agent/reports/sonnet-pwa-report.md for the shell-f scenarios.
  */
-test('ledger engine holds the cap, LRU order, bypass rules and reconciliation on real browser stores', async ({ page }) => {
+test.describe.configure({ mode: 'serial' });
+
+async function routeArt(page: Page): Promise<void> {
   await page.route('https://assets.tcgdex.net/**', async (route) => {
     const m = /\/t\/([a-z]+)\/(\d+)\/([^/]+)\/low\.webp$/.exec(new URL(route.request().url()).pathname);
     if (!m) return route.fulfill({ status: 400, body: 'bad' });
@@ -20,6 +22,31 @@ test('ledger engine holds the cap, LRU order, bypass rules and reconciliation on
     if (kind === 'slow') await new Promise((r) => setTimeout(r, 30));
     return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'image/webp' }, body });
   });
+}
+
+/** Skip-when-busy with the PRODUCTION slot count: some images are served network-only, every body arrives whole, the cap holds. */
+test('skip-when-busy: concurrent images beyond the admission slots are served network-only and the cache never exceeds the cap', async ({ page }) => {
+  await routeArt(page);
+  await page.goto('/harness.html');
+  const limit = 3000;
+  const r = (await page.evaluate(
+    (opts) => import('/src/platform/pwa/harness.ts').then((m) => m.runBusy(opts)),
+    { limit, perEntryMax: 2000, entryBytes: 1000, images: 30 }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  )) as Record<string, any>;
+  expect(r.error).toBeNull();
+  expect(r.servedWhole).toBe(true);
+  expect(r.statuses).toEqual([200]);
+  expect(r.admits).toBeGreaterThanOrEqual(1);
+  expect(r.admits).toBeLessThan(r.images); // some were served network-only
+  expect(r.waits).toBe(r.admits); // only admitted ones held the worker alive
+  expect(r.peak).toBeLessThanOrEqual(limit);
+  expect(r.committed).toBeLessThanOrEqual(limit);
+  expect(r.keys).toBe(r.rows);
+});
+
+test('controlled admission: ledger engine holds the cap, LRU order, bypass rules and reconciliation on real browser stores', async ({ page }) => {
+  await routeArt(page);
 
   await page.goto('/harness.html');
   const limit = 5000;

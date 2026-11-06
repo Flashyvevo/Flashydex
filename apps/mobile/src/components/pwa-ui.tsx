@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { ConfirmDialog } from './overlay';
 import { Button } from './ui';
 import { isNative } from '../lib/native';
-import { busyReason, dismissHandoffFailure, hasDirtyForms, runUpdateHandoff, setWritesBlockedForHandoff, useHandoffUi, useWritesBlockedForHandoff, type HandoffDeps } from '../lib/handoff';
+import { busyReason, dismissHandoffFailure, hasDirtyForms, isHandoffCommitted, runUpdateHandoff, setWritesBlockedForHandoff, useHandoffUi, useWritesBlockedForHandoff, type HandoffDeps } from '../lib/handoff';
+import { releaseWriterLock } from '../platform/instance-lock';
 import { useInstallState, useUpdateState } from '../lib/pwa-hooks';
 import { installController, updateController } from '../lib/pwa-bridge';
 import { closeClientPath, openClientPaths, shutdownClient, writeGate } from '../lib/storage-bridge';
@@ -17,10 +18,11 @@ let devBusy: string | null = null;
 /** Everything the handoff needs from the app: running jobs, the write gate, the SQL client. */
 function appHandoffDeps(restoreRunning: () => boolean = () => false): HandoffDeps {
   return {
-    gate: writeGate,
+    gate: { close: () => writeGate.close(), open: () => { if (!isHandoffCommitted()) writeGate.open(); }, drain: (ms) => writeGate.drain(ms) },
     listOpenPaths: openClientPaths,
     closePath: closeClientPath,
     shutdownClient,
+    releaseWriterLock,
     busyReason: () => (isCatalogInstallActive() ? 'A catalog download is running.' : restoreRunning() ? 'A restore is running.' : (import.meta.env.DEV ? devBusy : null) ?? busyReason()),
     setBlocked: setWritesBlockedForHandoff
   };
