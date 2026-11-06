@@ -70,3 +70,63 @@ export async function readOwnedCopies(page: Page): Promise<Array<{ id: string; n
   const owned = findKey(doc, 'ownedCards') as Array<{ id: string; notes: string | null }>;
   return owned.map((c) => ({ id: c.id, notes: c.notes ?? null })).sort((a, b) => a.id.localeCompare(b.id));
 }
+
+export interface CatalogPoolState {
+  /** Catalog files in the SQLite pool (`/catalog-<lang>/g-<job>.db`), sorted. */
+  files: string[];
+  activeRefs: Record<string, string | null>;
+  previousRefs: Record<string, string | null>;
+  /** OPFS staging job directories still present. */
+  staging: string[];
+}
+
+/** Stage F storage truth read in-page: pool catalog files + role-store pointers + OPFS staging jobs (replaces the old jeep IndexedDB key listing). */
+export async function catalogPoolState(page: Page): Promise<CatalogPoolState> {
+  return page.evaluate(async () => {
+    const [{ getWebSqliteClient }, { getRoleStore }, { listStagingJobs }] = await Promise.all([
+      import('/src/platform/web-sqlite/index.ts'), import('/src/platform/web-storage/role-store.ts'), import('/src/platform/web-storage/opfs-staging.ts')
+    ] as never[]) as unknown as [
+      { getWebSqliteClient(): { listFiles(): Promise<string[]> } },
+      { getRoleStore(): { load(): Promise<{ languages: Record<string, { activeRef: string | null; previousRef: string | null }> }> } },
+      { listStagingJobs(): Promise<string[]> }
+    ];
+    const files = (await getWebSqliteClient().listFiles()).map(String).filter((f) => f.startsWith('/catalog-')).sort();
+    const languages = (await getRoleStore().load()).languages;
+    const activeRefs: Record<string, string | null> = {};
+    const previousRefs: Record<string, string | null> = {};
+    for (const [language, roles] of Object.entries(languages)) { activeRefs[language] = roles.activeRef; previousRefs[language] = roles.previousRef; }
+    return { files, activeRefs, previousRefs, staging: await listStagingJobs() };
+  });
+}
+
+/**
+ * Worker death at a chosen point of a USER write (R02 fault on the Stage F path). Install BEFORE the first navigation, then set
+ * `window.__fdxDieAt` to 'commit' or 'barrier'. The next matching message to the SQL worker is swallowed and the worker is terminated
+ * through the client's DEV seam, so the in-flight request rejects WORKER_DIED / commitState `unknown`:
+ *  - 'commit':  the COMMIT never executes (nothing is durable); core sees a failed COMMIT.
+ *  - 'barrier': the COMMIT already executed (synchronous=FULL) and the durability barrier is lost; core latches persistence_failed (D43).
+ * `window.__fdxKilled` counts how many times the fault fired.
+ */
+export async function installWorkerDeath(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __fdxDieAt?: 'commit' | 'barrier' | null; __fdxKilled?: number };
+    const original = Worker.prototype.postMessage;
+    const matches = (message: unknown, at: 'commit' | 'barrier'): boolean => {
+      const m = message as { op?: string; payload?: { sql?: string; statements?: { sql?: string }[] } } | null;
+      if (!m) return false;
+      if (at === 'barrier') return m.op === 'durableBarrier';
+      if (m.op !== 'exec' && m.op !== 'batch') return false;
+      const isCommit = (sql?: string) => typeof sql === 'string' && /^\s*(COMMIT|END)\b/i.test(sql);
+      return isCommit(m.payload?.sql) || (m.payload?.statements ?? []).some((s) => isCommit(s.sql));
+    };
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      if (w.__fdxDieAt && matches(args[0], w.__fdxDieAt)) {
+        w.__fdxDieAt = null;
+        w.__fdxKilled = (w.__fdxKilled ?? 0) + 1;
+        void import('/src/platform/web-sqlite/index.ts' as never).then((mod: { getWebSqliteClient(): { __terminateWorker(): void } }) => mod.getWebSqliteClient().__terminateWorker());
+        return;
+      }
+      return (original as (...a: unknown[]) => void).apply(this, args);
+    } as typeof Worker.prototype.postMessage;
+  });
+}

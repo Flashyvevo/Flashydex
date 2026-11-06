@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-
+import { catalogPoolState, type CatalogPoolState } from './helpers';
 
 interface Manifest {
   languages: Record<string, { targetVersion: string; sha256: string; uncompressedBytes: number; compressedBytes: number; counts: Record<string, number> }>;
@@ -14,20 +14,9 @@ async function loadDevPack(page: Page, language: 'en' | 'ja') {
   return { entry: entry!, metrics };
 }
 
-async function jeepKeys(page: Page): Promise<string[]> {
-  return page.evaluate(
-    () => new Promise<string[]>((resolve) => {
-      const open = indexedDB.open('jeepSqliteStore');
-      open.onerror = () => resolve([]);
-      open.onsuccess = () => {
-        const db = open.result;
-        if (!db.objectStoreNames.contains('databases')) { db.close(); resolve([]); return; }
-        const request = db.transaction('databases', 'readonly').objectStore('databases').getAllKeys();
-        request.onsuccess = () => { db.close(); resolve((request.result as string[]).filter((k) => k.startsWith('catalog-'))); };
-        request.onerror = () => { db.close(); resolve([]); };
-      };
-    })
-  );
+/** The harness' own pool snapshots (taken in-page right after activate and after finalize). */
+async function harnessPool(page: Page, which: 'pool-before-finalize' | 'pool-after'): Promise<CatalogPoolState> {
+  return JSON.parse((await page.getByTestId(which).textContent()) ?? '{}') as CatalogPoolState;
 }
 
 async function openHarness(page: Page) {
@@ -38,10 +27,21 @@ async function openHarness(page: Page) {
   return errors;
 }
 
+/** Nothing installed: no catalog file in the pool, no role pointers, no OPFS staging directories. */
+function expectNoCatalog(state: CatalogPoolState): void {
+  expect(state.files).toEqual([]);
+  expect(state.activeRefs.en ?? null).toBeNull();
+  expect(state.activeRefs.ja ?? null).toBeNull();
+  expect(state.previousRefs.en ?? null).toBeNull();
+  expect(state.previousRefs.ja ?? null).toBeNull();
+  expect(state.staging).toEqual([]);
+}
+
 for (const language of ['en', 'ja'] as const) {
   test(`installs the ${language.toUpperCase()} dev pack, opens it and the row counts match the builder metrics`, async ({ page }) => {
     const errors = await openHarness(page);
     const { entry, metrics } = await loadDevPack(page, language);
+    expectNoCatalog(await catalogPoolState(page));
 
     await page.getByTestId(`install-${language}`).click();
     await expect(page.getByTestId('pack-status')).toHaveText('installed', { timeout: 60_000 });
@@ -66,7 +66,14 @@ for (const language of ['en', 'ja'] as const) {
     expect(Number(deviceMetrics.pendingBytesMax)).toBeLessThanOrEqual(32 * 1024 * 1024);
     expect(Number(deviceMetrics.zstdWindowBytes)).toBeLessThanOrEqual(2 ** 25);
 
-    expect(await jeepKeys(page)).toEqual([`catalog-${language}SQLite.db`]);
+    // Pool truth: exactly one catalog file for this language, referenced as active; nothing for the other language; no staging left over.
+    const pool = await catalogPoolState(page);
+    const active = pool.activeRefs[language];
+    expect(active).toMatch(new RegExp(`^/catalog-${language}/g-[A-Za-z0-9_-]+\\.db$`));
+    expect(pool.files).toEqual([active]);
+    expect(pool.previousRefs[language] ?? null).toBeNull();
+    expect(pool.activeRefs[language === 'en' ? 'ja' : 'en'] ?? null).toBeNull();
+    expect(pool.staging).toEqual([]);
     expect(errors).toEqual([]);
   });
 }
@@ -76,11 +83,41 @@ test('reinstalling over an installed catalog keeps the previous copy until final
   const { metrics } = await loadDevPack(page, 'en');
   await page.getByTestId('install-en').click();
   await expect(page.getByTestId('pack-status')).toHaveText('installed', { timeout: 60_000 });
+  const first = await catalogPoolState(page);
+  const firstRef = first.activeRefs.en!;
+  expect(first.files).toEqual([firstRef]);
+
   await page.getByTestId('install-en').click();
   await expect(page.getByTestId('pack-previous')).toHaveText('true', { timeout: 60_000 });
   await expect(page.getByTestId('pack-status')).toHaveText('installed');
   await expect(page.getByTestId('count-catalog_cards')).toHaveText(String(metrics.counts.cards));
-  expect(await jeepKeys(page)).toEqual(['catalog-enSQLite.db']);
+
+  // Between activate and finalize: the NEW generation is active, the OLD one is still on disk as previous (rollback target).
+  const mid = await harnessPool(page, 'pool-before-finalize');
+  const secondRef = mid.activeRefs.en!;
+  expect(secondRef).not.toBe(firstRef);
+  expect(mid.previousRefs.en).toBe(firstRef);
+  expect(mid.files).toEqual([firstRef, secondRef].sort());
+
+  // After finalize: only the active generation remains, no previous pointer, no staging.
+  const done = await catalogPoolState(page);
+  expect(done.activeRefs.en).toBe(secondRef);
+  expect(done.previousRefs.en ?? null).toBeNull();
+  expect(done.files).toEqual([secondRef]);
+  expect(done.staging).toEqual([]);
+  expect(await harnessPool(page, 'pool-after')).toEqual(done);
+});
+
+test('removing an installed catalog leaves no catalog file, role pointer or staging', async ({ page }) => {
+  await openHarness(page);
+  await page.getByTestId('install-en').click();
+  await expect(page.getByTestId('pack-status')).toHaveText('installed', { timeout: 60_000 });
+  expect((await catalogPoolState(page)).files).toHaveLength(1);
+
+  await page.getByTestId('remove').click();
+  await expect(page.getByTestId('pack-status')).toHaveText('ready', { timeout: 20_000 });
+  await expect(page.getByTestId('count-catalog_sets')).toHaveCount(0);
+  expectNoCatalog(await catalogPoolState(page));
 });
 
 test('a manifest hash mismatch fails with PACK_HASH_MISMATCH and installs nothing', async ({ page }) => {
@@ -94,7 +131,8 @@ test('a manifest hash mismatch fails with PACK_HASH_MISMATCH and installs nothin
   await expect(page.getByTestId('pack-status')).toHaveText('error', { timeout: 60_000 });
   await expect(page.getByTestId('pack-error')).toContainText('PACK_HASH_MISMATCH');
   await expect(page.getByTestId('count-catalog_sets')).toHaveCount(0);
-  expect(await jeepKeys(page)).toEqual([]);
+  await expect.poll(async () => (await catalogPoolState(page)).staging, { timeout: 10_000 }).toEqual([]);
+  expectNoCatalog(await catalogPoolState(page));
 });
 
 test('a wrong compressed size fails with PACK_SIZE_MISMATCH and installs nothing', async ({ page }) => {
@@ -107,7 +145,8 @@ test('a wrong compressed size fails with PACK_SIZE_MISMATCH and installs nothing
   await page.getByTestId('install-en').click();
   await expect(page.getByTestId('pack-status')).toHaveText('error', { timeout: 60_000 });
   await expect(page.getByTestId('pack-error')).toContainText('PACK_SIZE_MISMATCH');
-  expect(await jeepKeys(page)).toEqual([]);
+  await expect.poll(async () => (await catalogPoolState(page)).staging, { timeout: 10_000 }).toEqual([]);
+  expectNoCatalog(await catalogPoolState(page));
 });
 
 test('cancelling a slow download aborts cleanly and leaves no catalog', async ({ page }) => {
@@ -121,5 +160,6 @@ test('cancelling a slow download aborts cleanly and leaves no catalog', async ({
   await page.getByTestId('cancel').click();
   await expect(page.getByTestId('pack-status')).toHaveText('cancelled', { timeout: 10_000 });
   await expect(page.getByTestId('count-catalog_sets')).toHaveCount(0);
-  expect(await jeepKeys(page)).toEqual([]);
+  await expect.poll(async () => (await catalogPoolState(page)).staging, { timeout: 10_000 }).toEqual([]);
+  expectNoCatalog(await catalogPoolState(page));
 });

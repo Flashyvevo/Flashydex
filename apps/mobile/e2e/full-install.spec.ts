@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext, type CDPSession, type Page } from '@
 import { skipProtectionPrompt } from './helpers';
 
 /**
- * W03/W08 evidence: install the REAL full EN pack (12.3 MB zstd → 138,002,432 B raw, 23,736 cards) through the real onboarding UI.
+ * W03/W08 evidence: install the REAL full EN pack (~12.3 MB zstd → 120,848,384 B raw at 64 KiB pages, 23,736 cards) through the real onboarding UI.
  * Needs the dev packs, so run it against the owner's server:
  *   FLASHYDEX_E2E_BASE_URL=https://127.0.0.1:3200 npx playwright test e2e/full-install.spec.ts --project=mobile
  *
@@ -14,7 +14,7 @@ import { skipProtectionPrompt } from './helpers';
 test.describe.configure({ timeout: 420_000 });
 
 const X = 134_217_728;
-const RAW_BYTES = 138_002_432;
+const RAW_BYTES = Number(process.env.FLASHYDEX_FULL_RAW_BYTES ?? 120_848_384); // full EN, 64 KiB pages (ADR-055)
 
 interface HeapReport {
   pagePeak: number;

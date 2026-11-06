@@ -49,7 +49,7 @@ Two-query means one domain projection plus one batched lookup per bounded chunk/
 
 ## Pack contents and schema
 
-One language per ordinary unencrypted SQLite pack; no images, user entities, migrations to execute, recognition indexes, or full JSON dump distribution. Uses the SAME bundled catalog SQL schema as core, built with Node better-sqlite3 in tools/catalog-builder ONLY (not mobile dependency). `journal_mode=DELETE`, no WAL/SHM shipped, portable page size4096, foreign_keys ON during build, deterministic insert ordering. VACUUM after indexes/latest prices; close before hashing/compressing.
+One language per ordinary unencrypted SQLite pack; no images, user entities, migrations to execute, recognition indexes, or full JSON dump distribution. Uses the SAME bundled catalog SQL schema as core, built with Node better-sqlite3 in tools/catalog-builder ONLY (not mobile dependency). `journal_mode=DELETE`, no WAL/SHM shipped, page size 65536 (ADR-055; was 4096 until 2026-10-31 — web OPFS reads are per-page synchronous calls, so fewer, larger pages cut validation and cold-search time by ~10×), foreign_keys ON during build, deterministic insert ordering. VACUUM after indexes/latest prices; close before hashing/compressing.
 
 Tables (detailed column/types/constraints in DATA-MODEL):
 

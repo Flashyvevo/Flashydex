@@ -13,6 +13,13 @@ const SMALL = '/dev-packs/catalog-manifest.json';
 const FULL = '/dev-packs/full/catalog-manifest.json';
 const MIB = 1024 * 1024;
 
+interface PackEntry { targetVersion: string; fullPackUrl: string; compressedBytes: number; uncompressedBytes: number; sha256: string }
+/** The FULL EN entry is read from the served manifest (never hard-coded: the pack is regenerated, see ADR-055). */
+async function fullEntry(page: Page): Promise<PackEntry> {
+  const manifest = (await (await page.request.get(FULL)).json()) as { languages: Record<string, PackEntry> };
+  return manifest.languages.en!;
+}
+
 type Staged = { job: string; files: { name: string; size: number }[] }[];
 interface Done { compressedBytes: number; decodedBytes: number; sha256: string; maxChunkBytes: number; maxInFlightObserved: number; pendingBytesMax: number; windowBytes: number; timestamps: { start: number; downloadEnd: number; decodeEnd: number } }
 type StageResult = { ok: true; done: Done; ms: number; heapPeak: number; heapSamples: number; staged: Staged } | { ok: false; code: string; message: string; heapPeak: number; staged: Staged };
@@ -89,7 +96,7 @@ test.describe('OPFS stage worker', () => {
 
   test('cancel mid-flight through AbortSignal -> CANCELLED and no staging left', async ({ page }) => {
     await openHarness(page);
-    const result = await stage(page, { manifestUrl: SMALL, language: 'en', fault: { decodeDelayMs: 50 }, abortAfterMs: 400 });
+    const result = await stage(page, { manifestUrl: SMALL, language: 'en', fault: { decodeDelayMs: 1500 }, abortAfterMs: 300 }); // first decode chunk sleeps 5x the abort timer: deterministic at any pipeline speed
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe('CANCELLED');
@@ -100,6 +107,7 @@ test.describe('OPFS stage worker', () => {
     test.setTimeout(240_000);
     await openHarness(page);
     await page.bringToFront();
+    const entry = await fullEntry(page);
     const result = await stage(page, { manifestUrl: FULL, language: 'en', keep: true });
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
@@ -108,12 +116,13 @@ test.describe('OPFS stage worker', () => {
       decodeMs: Math.round(result.done.timestamps.decodeEnd - result.done.timestamps.downloadEnd)
     };
     console.log(`FULL-EN stage-only: ${JSON.stringify({ ...phases, totalMs: result.ms, heapPeak: result.heapPeak, heapSamples: result.heapSamples, maxChunk: result.done.maxChunkBytes, pendingMax: result.done.pendingBytesMax, window: result.done.windowBytes })}`);
-    expect(result.done.decodedBytes).toBe(138_002_432);
-    expect(result.done.sha256).toBe('bbca47b37ae46b73684ea784abb8c96ac9bba98b5317512cb6841285ec081606');
+    expect(result.done.decodedBytes).toBe(entry.uncompressedBytes);
+    expect(result.done.compressedBytes).toBe(entry.compressedBytes);
+    expect(result.done.sha256).toBe(entry.sha256);
     expect(result.done.maxChunkBytes).toBeLessThanOrEqual(262_144);
     expect(result.done.pendingBytesMax).toBeLessThanOrEqual(MIB);
     expect(result.heapPeak).toBeLessThan(134_217_728);
-    expect(result.staged[0]!.files.find((f) => f.name === 'catalog.db.part')?.size).toBe(138_002_432);
+    expect(result.staged[0]!.files.find((f) => f.name === 'catalog.db.part')?.size).toBe(entry.uncompressedBytes);
     await page.evaluate(async (path) => (await import(/* @vite-ignore */ path)).clearStaging(), HARNESS);
   });
 });
@@ -126,17 +135,25 @@ interface PoolState { files: string[]; roles: Record<string, { activeRef: string
 /* v2 packs: same bytes except catalog_meta.version (all occurrences of the 14-char version string rewritten in place) -> a genuinely different release for core's republish guard. */
 const V2S = '/dev-packs/mock-v2/small-manifest.json';
 const V2F = '/dev-packs/mock-v2/full-manifest.json';
-const V1_VERSION = '2026.10.31.001';
-const V2_VERSION = '2026.10.31.002';
-interface V2Pack { manifest: string; pack: Buffer; packName: string }
+interface V2Pack { manifest: string; pack: Buffer; packName: string; version: string }
 const v2Cache = new Map<string, V2Pack>();
+/** Same-width successor of a dotted version ('2026.10.31.002' -> '2026.10.31.003'): the in-place rewrite must not change the file size. */
+function bumpVersion(version: string): string {
+  const m = /^(.*\.)(\d+)$/.exec(version);
+  if (!m) throw new Error(`unexpected version shape: ${version}`);
+  return `${m[1]}${String(Number(m[2]) + 1).padStart(m[2]!.length, '0')}`;
+}
+const bumpedSmall = (): string => buildV2('small').version;
 function buildV2(kind: 'small' | 'full'): V2Pack {
   const cached = v2Cache.get(kind);
   if (cached) return cached;
+  // Version + pack path come from the served manifest, so regenerated packs (new version/page size, ADR-055) need no spec edits.
   const dir = join(process.cwd(), 'public', 'dev-packs', kind === 'small' ? '' : 'full');
   const manifest = JSON.parse(readFileSync(join(dir, 'catalog-manifest.json'), 'utf8')) as { targetVersion: string; languages: Record<string, Record<string, unknown>> };
   const en = manifest.languages.en!;
-  const raw = zstdDecompressSync(readFileSync(join(dir, `catalog-en-${V1_VERSION}.db.zst`)));
+  const V1_VERSION = String(en.targetVersion);
+  const V2_VERSION = bumpVersion(V1_VERSION);
+  const raw = zstdDecompressSync(readFileSync(join(process.cwd(), 'public', String(en.fullPackUrl).replace(/^\//, ''))));
   const needle = Buffer.from(V1_VERSION);
   const replacement = Buffer.from(V2_VERSION);
   let hits = 0;
@@ -150,7 +167,7 @@ function buildV2(kind: 'small' | 'full'): V2Pack {
     targetVersion: V2_VERSION, fullPackUrl: `/dev-packs/mock-v2/${kind}/${packName}`, compressedBytes: pack.length, uncompressedBytes: raw.length,
     sha256: createHash('sha256').update(raw).digest('hex'), compressedSha256: createHash('sha256').update(pack).digest('hex')
   });
-  const built = { manifest: JSON.stringify(manifest), pack, packName };
+  const built = { manifest: JSON.stringify(manifest), pack, packName, version: V2_VERSION };
   v2Cache.set(kind, built);
   return built;
 }
@@ -175,8 +192,10 @@ async function openCore(page: Page, manifest = SMALL): Promise<void> {
       await page.evaluate(([path, url]) => import(/* @vite-ignore */ path as string).then((m) => m.bootCore(url as string)), [HARNESS, manifest] as const);
       return;
     } catch (error) {
-      if (attempt >= 5 || !/context was destroyed|navigation|Execution context/i.test(String(error))) throw error;
-      await page.waitForTimeout(1000);
+      // A just-killed page's worker may still hold the sahpool access handles for a moment: retry the boot.
+      if (attempt >= 15 || !/context was destroyed|navigation|Execution context|storage pool could not be opened/i.test(String(error))) { console.log(`openCore giving up at attempt ${attempt}: ${String(error).slice(0, 200)}`); throw error; }
+      console.log(`openCore retry ${attempt}: ${String(error).slice(0, 120)}`);
+      await page.waitForTimeout(500);
     }
   }
 }
@@ -227,7 +246,7 @@ test.describe('web install through core (OPFS + sahpool + IDB roles)', () => {
     console.log(`FULL-EN pool: ${JSON.stringify({ files: state.files, usage: state.usage })}`);
     expect(state.staging).toEqual([]);
     expect(enGenerations(state.files)).toHaveLength(1);
-    expect(state.usage!).toBeLessThan(1.5 * 138_002_432);
+    expect(state.usage!).toBeLessThan(1.5 * (await fullEntry(page)).uncompressedBytes);
     expect((await search(page, 'Umbreon')).total).toBeGreaterThanOrEqual(1);
   });
 
@@ -250,7 +269,9 @@ test.describe('web install through core (OPFS + sahpool + IDB roles)', () => {
     expect(after.roles.en!.previousRef).toBeNull();
     expect(enGenerations(after.files)).toEqual([after.roles.en!.activeRef]);
     expect(after.staging).toEqual([]);
-    expect((await search(page, '')).total).toBeGreaterThan(smallTotal);
+    // v2 differs from v1 only in catalog_meta.version: same card set, new release
+    expect((await search(page, '')).total).toBe(smallTotal);
+    expect((await h<{ status: string; version: string }>(page, 'coreReceipt')).version).toBe(bumpedSmall());
     expect(userFiles(after.files)).toEqual(userFiles(v1.files));
   });
 

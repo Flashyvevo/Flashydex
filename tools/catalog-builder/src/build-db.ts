@@ -27,6 +27,14 @@ export interface BuildDbInput {
 export interface BuildDbResult { counts: PackCounts; warnings: string[]; fingerprint: string }
 
 const ALLOWED_TABLES = [catalogSets, catalogCards, catalogVariants, catalogLatestPrices, catalogMeta, schemaMigrations].map((t) => getTableConfig(t).name).sort();
+/**
+ * Pack page size (ADR-055). 64 KiB, not SQLite's 4 KiB default: on the production web path every page is one synchronous
+ * OPFS read (~0.3 ms each regardless of size), so page count, not byte count, sets the cost of integrity_check,
+ * foreign_key_check and cold searches. Measured on the full EN catalog: validate 36.9 s → 3.5 s, cold table scan 9.3 s → 0.5 s,
+ * and the raw file is 12% smaller. Native SQLite handles 64 KiB pages without configuration.
+ */
+export const CATALOG_PAGE_SIZE = 65536;
+
 const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const flag = (value: boolean) => (value ? 1 : 0);
 
@@ -36,7 +44,7 @@ export function buildCatalogDb(partPath: string, input: BuildDbInput): BuildDbRe
   const db = new Database(partPath);
   const warnings: string[] = [];
   try {
-    db.pragma('page_size = 4096'); // must precede the first table
+    db.pragma(`page_size = ${CATALOG_PAGE_SIZE}`); // must precede the first table (ADR-055)
     db.pragma('journal_mode = DELETE');
     db.pragma('foreign_keys = ON');
     applyCatalogMigrations(db, input.migrations, input.builtAt);
@@ -140,9 +148,11 @@ export function verifyCatalogDb(path: string, expected: { language: CatalogLangu
     }
     const journalMode = String(db.pragma('journal_mode', { simple: true }));
     if (journalMode !== 'delete') throw new Error(`journal_mode is ${journalMode}, expected delete`);
+    const pageSize = Number(db.pragma('page_size', { simple: true }));
+    if (pageSize !== CATALOG_PAGE_SIZE) throw new Error(`page_size is ${pageSize}, expected ${CATALOG_PAGE_SIZE}`);
     return {
       counts, language: String(meta[0]!.language), version: String(meta[0]!.version), schemaVersion: Number(meta[0]!.schema_version),
-      journalMode, pageSize: Number(db.pragma('page_size', { simple: true }))
+      journalMode, pageSize
     };
   } finally {
     db.close();

@@ -274,8 +274,12 @@ async function unlinkOrphans(client: WebSqliteClient, files: PoolPath[], match: 
   for (const path of files.filter(match)) await client.unlink(path).catch(() => false);
 }
 
-async function withReadDriver<T>(client: WebSqliteClient, path: PoolPath, label: string, fn: (proxy: Proxy) => Promise<T>): Promise<T> {
-  const driver = await client.driver(path, label, { mode: 'ro', create: false, role: 'validation' });
+/**
+ * `mode: 'rw'` is for the USER check only: a page killed mid-write leaves a HOT rollback journal that a read-only connection cannot
+ * recover ("attempt to write a readonly database"); the rw open rolls it back before the first read. Nothing is written otherwise.
+ */
+async function withReadDriver<T>(client: WebSqliteClient, path: PoolPath, label: string, fn: (proxy: Proxy) => Promise<T>, mode: 'ro' | 'rw' = 'ro'): Promise<T> {
+  const driver = await client.driver(path, label, { mode, create: false, role: 'validation' });
   try {
     return await fn(driver.proxy as Proxy);
   } finally {
@@ -286,7 +290,7 @@ async function withReadDriver<T>(client: WebSqliteClient, path: PoolPath, label:
 async function validateExistingUser(client: WebSqliteClient, path: PoolPath, files: PoolPath[]): Promise<void> {
   if (!files.includes(path)) throw new MigrationBlockedError('user_missing');
   try {
-    await withReadDriver(client, path, 'user-check', (proxy) => checkCoreSchema(proxy, true));
+    await withReadDriver(client, path, 'user-check', (proxy) => checkCoreSchema(proxy, true), 'rw');
   } catch (error) {
     if (error instanceof MigrationBlockedError) throw error;
     throw new MigrationBlockedError('user_unreadable');
