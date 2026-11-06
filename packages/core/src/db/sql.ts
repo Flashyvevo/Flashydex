@@ -284,6 +284,12 @@ export class Db {
       try {
         await this.direct.run('COMMIT');
       } catch (error) {
+        if (isUnknownCommit(error)) {
+          // The COMMIT may have landed (lost ack / worker death / IO): never ROLLBACK, never report a plain failure.
+          this.persistenceFailed = true;
+          this.notify();
+          throw new PersistenceError();
+        }
         await this.direct.run('ROLLBACK').catch(() => undefined);
         throw translateSqliteError(error);
       }
@@ -303,6 +309,13 @@ export class Db {
   async close(): Promise<void> {
     await this.lock(() => this.driver.close());
   }
+}
+
+/** True when a driver rejection says the COMMIT outcome is unknown (`commitState: 'unknown'`, set by the driver). */
+export function isUnknownCommit(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as { commitState?: unknown; details?: { commitState?: unknown } | null };
+  return e.commitState === 'unknown' || e.details?.commitState === 'unknown';
 }
 
 /** Constraint failures that escaped service validation become typed, sanitized errors (never SQL text). */

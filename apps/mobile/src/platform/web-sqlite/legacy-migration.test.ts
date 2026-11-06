@@ -84,12 +84,64 @@ describe('decision table', () => {
     expect(roles.commits).toHaveLength(1);
   });
 
-  it('role without marker + a legacy key present -> existing; legacy is not even read', async () => {
+  it('S5-02: role without marker + a legacy key present -> MIGRATION_BLOCKED conflicting_stores; nothing is read-through, chosen, written or unlinked', async () => {
     await run();
+    const before = { files: await client.listFiles(), bytes: new Map([...h.pool.files]) };
     legacy = (await buildLegacy()).bytes;
     legacyReads = 0;
+    await expect(run()).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'conflicting_stores' });
+    expect(legacyReads).toBe(1); // the probe
+    expect(roles.commits).toHaveLength(1); // no new role / marker
+    expect(await client.listFiles()).toEqual(before.files);
+    for (const [path, bytes] of before.bytes) expect(h.pool.files.get(path)).toEqual(bytes);
+    expect(legacy).not.toBeNull();
+  });
+
+  it('S5-02: fresh role + stray m-* file (ambiguous) is never unlinked', async () => {
+    await run();
+    h.pool.files.set('/user/m-stray0001.db', new Uint8Array(1024));
     expect(await run()).toMatchObject({ kind: 'existing' });
+    expect(await client.listFiles()).toContain('/user/m-stray0001.db');
+  });
+
+  it('S5-02: migrated role without a marker -> conflicting_stores (before any file is touched)', async () => {
+    legacy = (await buildLegacy()).bytes;
+    const first = (await run()) as { path: string };
+    h.pool.files.set('/user/m-stale0001.db', new Uint8Array(1024));
+    roles.marker = null;
+    legacyReads = 0;
+    await expect(run()).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'conflicting_stores' });
     expect(legacyReads).toBe(0);
+    expect(await client.listFiles()).toEqual(expect.arrayContaining([first.path, '/user/m-stale0001.db'])); // stale file kept: provenance is unproven
+  });
+
+  it('S5-02: marker names a different USER path than the role -> conflicting_stores', async () => {
+    legacy = (await buildLegacy()).bytes;
+    await run();
+    roles.marker = { ...(roles.marker as MigrationMarker), userPath: '/user/m-other001.db' };
+    await expect(run()).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'conflicting_stores' });
+  });
+
+  it('S5-02: marker present but no user role (mapping lost) -> conflicting_stores; no fresh DB, no re-migration, nothing unlinked', async () => {
+    legacy = (await buildLegacy()).bytes;
+    const first = (await run()) as { path: string };
+    roles.userRole = null; // marker survives, role does not
+    const commits = roles.commits.length;
+    await expect(run()).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'conflicting_stores' });
+    expect(roles.commits).toHaveLength(commits);
+    expect(await client.listFiles()).toEqual([first.path]);
+  });
+
+  it('S5-02: fresh role carrying a migration marker -> conflicting_stores', async () => {
+    await run();
+    roles.marker = { version: 1, state: 'completed', source: 'jeep-indexeddb', userPath: roles.userRole!.path, at: 'x', legacyBytes: 1, legacySha256: 'a'.repeat(64), counts: {}, legacyRetained: true };
+    await expect(run()).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'conflicting_stores' });
+  });
+
+  it('S5-02: an unreadable legacy probe on an unmarked role fails closed (never "assume no legacy")', async () => {
+    await run();
+    const failing = createEnsureUserDatabase({ readLegacy: async () => { throw new Error('idb exploded'); }, now: () => new Date(), newId: () => 'idx' });
+    await expect(failing({ client, roles: roles.asStore() })).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'legacy_unreadable' });
   });
 
   it('marker + valid new USER (migrated) -> existing, legacy never replayed', async () => {
@@ -114,6 +166,7 @@ describe('decision table', () => {
   it('unreadable (garbage) new USER -> user_unreadable even when a legacy key exists; nothing is replaced', async () => {
     h.pool.files.set('/user/u-bad00001.db', new Uint8Array(4096).fill(7));
     roles.userRole = { path: '/user/u-bad00001.db', origin: 'migrated', createdAt: 'x' };
+    roles.marker = { version: 1, state: 'completed', source: 'jeep-indexeddb', userPath: '/user/u-bad00001.db', at: 'x', legacyBytes: 1, legacySha256: 'a'.repeat(64), counts: {}, legacyRetained: true }; // consistent metadata: this test is about the unreadable FILE
     legacy = (await buildLegacy()).bytes;
     await expect(run()).rejects.toMatchObject({ code: 'MIGRATION_BLOCKED', reason: 'user_unreadable' });
     expect(h.pool.files.get('/user/u-bad00001.db')?.[0]).toBe(7);

@@ -39,3 +39,24 @@ export function withMetricsRecording(port: CatalogInstallPort): CatalogInstallPo
   };
   return wrapped;
 }
+
+/** Update-handoff plumbing (lib/handoff.ts): the page's write gate + the SQL client's open paths / drained close / shutdown. */
+export { writeGate } from '../platform/web-storage/write-gate';
+
+type DrainingClient = { closePath(path: string, options?: { drain?: boolean; timeoutMs?: number }): Promise<void> };
+
+export async function openClientPaths(): Promise<string[]> {
+  const client = webSqliteClient();
+  if (!client) return [];
+  return (await client.stats()).openPaths.map((p) => p.path);
+}
+
+/** `closePath(path, { drain: true })`: waits for the current owner's transaction and the queue before closing (fix-i seam). */
+export function closeClientPath(path: string, options: { drain: true }): Promise<void> {
+  const client = webSqliteClient() as unknown as DrainingClient | null;
+  return client ? client.closePath(path, options) : Promise.resolve();
+}
+
+export async function shutdownClient(): Promise<void> {
+  await webSqliteClient()?.shutdown();
+}

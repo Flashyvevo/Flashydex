@@ -131,6 +131,10 @@ export interface MemoryHarness {
   /** Hold every response for `op` until the returned function is called. */
   hold(op: string): () => void;
   failBoot: { code: string } | null;
+  /** Rewrite (or drop) a worker response before the client sees it: lost-ack / IO-on-COMMIT injection. */
+  intercept: ((response: WorkerMessage, request: RequestEnvelope) => WorkerMessage | 'drop' | undefined) | null;
+  /** A hung worker: requests are swallowed and nothing is ever answered. */
+  hang: boolean;
 }
 
 export async function createMemoryHarness(): Promise<MemoryHarness> {
@@ -140,7 +144,7 @@ export async function createMemoryHarness(): Promise<MemoryHarness> {
   const log: MemoryHarness['log'] = [];
   const holds = new Map<string, { release: () => void; gate: Promise<void> }>();
   const harness: MemoryHarness = {
-    sqlite3, pool, staging, cores: [], log, failBoot: null,
+    sqlite3, pool, staging, cores: [], log, failBoot: null, intercept: null, hang: false,
     hold(op) {
       let release!: () => void;
       const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -150,7 +154,14 @@ export async function createMemoryHarness(): Promise<MemoryHarness> {
     workerFactory: () => {
       let dead = false;
       const listeners: { message: ((e: { data: unknown }) => void)[]; error: ((e: unknown) => void)[] } = { message: [], error: [] };
-      const deliver = (message: WorkerMessage) => {
+      const requests = new Map<number, RequestEnvelope>();
+      const deliver = (original: WorkerMessage) => {
+        let message = original;
+        if (original.kind === 'response' && harness.intercept) {
+          const out = harness.intercept(original, requests.get(original.requestId) as RequestEnvelope);
+          if (out === 'drop') return;
+          if (out) message = out;
+        }
         const copy = structuredClone(message);
         setTimeout(() => { if (!dead) for (const l of listeners.message) l({ data: copy }); }, 0);
       };
@@ -174,6 +185,8 @@ export async function createMemoryHarness(): Promise<MemoryHarness> {
         postMessage: (message) => {
           const request = structuredClone(message) as RequestEnvelope;
           log.push({ op: request.op, dbId: request.dbId, requestId: request.requestId });
+          requests.set(request.requestId, request);
+          if (harness.hang) return;
           setTimeout(() => {
             if (dead) return;
             const held = holds.get(request.op);

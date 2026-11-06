@@ -18,6 +18,9 @@ import type { CatalogStorage, DiskState } from './storage-types';
 /**
  * `capabilities().atomicActivation` on web. True because the pointer transition (role-state.ts) is one IDB transaction and every row of the
  * WEB-STORAGE §4 crash table is driven through the UNCHANGED core CatalogInstallService in web-store.test.ts.
+ * Earned back (Sol S5-03) only after `e2e/web-install.spec.ts` passed in full twice in a row against REAL IndexedDB + sahpool, including v2 update,
+ * rollback, discardPrevious, quota, short write, update killed mid-decode / mid-import and the receipt-COMMIT-unknown tests. Set it to false
+ * again whenever any of those goes red: it is the production install gate (web-port.ts).
  */
 export const WEB_ATOMIC_ACTIVATION_PROVEN = true;
 

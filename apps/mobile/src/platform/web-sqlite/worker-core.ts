@@ -146,6 +146,7 @@ export class SqlWorkerCore {
       case 'cancel': return this.cancel(request.payload as { targetRequestId: number });
       case 'stageImport': return this.stageImport(request, request.payload as StageImportPayload);
       case 'importBytes': return this.importBytes(request, request.payload as ImportBytesPayload);
+      case 'ping': return { pong: true };
       case 'storageStats': return this.stats();
       case 'shutdown': return this.shutdown();
       case 'unlink': return this.unlink((request.payload as { path: string }).path);
@@ -386,7 +387,7 @@ export class SqlWorkerCore {
       if (staged.size !== payload.expectedBytes) throw new WebStorageError('INTEGRITY', 'The staged file size does not match the manifest');
       let offset = 0;
       const buffer = new Uint8Array(IMPORT_CHUNK_BYTES);
-      return await this.runImport(request, payload.target, payload.expectedBytes, payload.expectedSha256, async () => {
+      return await this.runImport(request, payload.target, payload.expectedBytes, payload.expectedSha256, 'catalog', async () => {
         const n = Math.min(IMPORT_CHUNK_BYTES, staged.size - offset);
         if (n <= 0) return undefined;
         const view = buffer.subarray(0, n);
@@ -406,7 +407,7 @@ export class SqlWorkerCore {
     this.assertImportable(payload.target);
     const bytes = payload.bytes;
     let offset = 0;
-    return this.runImport(request, payload.target, bytes.byteLength, payload.expectedSha256, async () => {
+    return this.runImport(request, payload.target, bytes.byteLength, payload.expectedSha256, 'user-migration', async () => {
       const n = Math.min(IMPORT_CHUNK_BYTES, bytes.byteLength - offset);
       if (n <= 0) return undefined;
       const view = bytes.subarray(offset, offset + n);
@@ -425,7 +426,7 @@ export class SqlWorkerCore {
    * journal can never be handed the same free SAH), then stream chunks through `pool.importDb(target, asyncSupplier)`.
    */
   private async runImport(
-    request: RequestEnvelope, target: string, expectedBytes: number, expectedSha256: string, nextChunk: () => Promise<Uint8Array | undefined> | Uint8Array | undefined | Promise<undefined>
+    request: RequestEnvelope, target: string, expectedBytes: number, expectedSha256: string, policy: ImportPolicy, nextChunk: () => Promise<Uint8Array | undefined> | Uint8Array | undefined | Promise<undefined>
   ): Promise<ImportResult> {
     const started = this.now();
     const env = this.env as WorkerEnv;
@@ -434,6 +435,7 @@ export class SqlWorkerCore {
     this.imports.add(target);
     let total = 0;
     let maxChunk = 0;
+    let pageSize = 0;
     let lastProgress = 0;
     try {
       // capacity: the placeholder needs a main slot plus a journal slot while it is created
@@ -452,7 +454,8 @@ export class SqlWorkerCore {
       } finally {
         placeholder?.close();
       }
-      const hasher = await env.createSha256();
+      const hasher = await env.createSha256(); // digest of the bytes handed to importDb (= the bytes in the pool, no normalization for catalogs)
+      const sourceHasher = policy === 'user-migration' ? await env.createSha256() : hasher; // digest of the caller's ORIGINAL bytes
       const bytesWritten = await this.pool.importDb(target, async () => {
         if (abort.signal.aborted) throw new WebStorageError('CANCELLED', 'The import was cancelled');
         const fault = this.options.dev ? this.faults.supplier : undefined;
@@ -464,8 +467,18 @@ export class SqlWorkerCore {
             await new Promise<never>(() => undefined);
           }
         }
-        const chunk = await nextChunk();
+        let chunk = await nextChunk();
         if (chunk === undefined) return undefined;
+        if (total === 0) {
+          const header = checkSqliteImportHeader(chunk, policy);
+          pageSize = header.pageSize;
+          if (policy === 'user-migration') {
+            sourceHasher.update(chunk);
+            if (header.needsNormalization) chunk = normalizeUserMigrationHeader(chunk);
+          }
+        } else if (policy === 'user-migration') {
+          sourceHasher.update(chunk);
+        }
         hasher.update(chunk);
         total += chunk.byteLength;
         maxChunk = Math.max(maxChunk, chunk.byteLength);
@@ -479,9 +492,11 @@ export class SqlWorkerCore {
         return chunk;
       });
       const digest = hasher.digest();
+      const sourceDigest = policy === 'user-migration' ? sourceHasher.digest() : digest;
       if (bytesWritten !== expectedBytes || total !== expectedBytes) throw new WebStorageError('INTEGRITY', 'The imported byte count does not match the expected size');
-      if (digest !== expectedSha256.toLowerCase()) throw new WebStorageError('INTEGRITY', 'The imported content hash does not match the expected hash');
-      return { bytes: total, sha256: digest, ms: this.now() - started, maxChunkBytes: maxChunk };
+      if (pageSize !== 0 && total % pageSize !== 0) throw new WebStorageError('INTEGRITY', 'The imported size is not a whole number of database pages');
+      if (sourceDigest !== expectedSha256.toLowerCase()) throw new WebStorageError('INTEGRITY', 'The imported content hash does not match the expected hash');
+      return { bytes: total, sha256: digest, ms: this.now() - started, maxChunkBytes: maxChunk, ...(policy === 'user-migration' ? { sourceSha256: sourceDigest } : {}) };
     } catch (error) {
       try {
         this.pool.unlink(target); // never leave a partial/unverified candidate behind (the placeholder is ours)
@@ -561,4 +576,40 @@ export function mapAnyError(error: unknown, fallback: WebStorageErrorCode = 'IO'
   if (name === 'NoModificationAllowedError' || name === 'InvalidStateError') return new WebStorageError('BUSY', 'The storage file is locked by another handle', { retryable: true });
   if (name === 'SQLite3Error' || name === 'WasmAllocError' || typeof (error as { resultCode?: unknown } | null)?.resultCode === 'number') return mapSqliteError(error);
   return new WebStorageError(fallback, 'Storage operation failed', { commitState: 'unknown' });
+}
+
+// ───────────────────────── import header policy (S5-05) ─────────────────────────
+/**
+ * `catalog`: bytes are written to the pool EXACTLY as supplied. The pinned sahpool `importDb` overwrites header bytes 18/19 with 1/1, so a
+ * catalog header must already carry 1/1 (rollback-journal format, not WAL): then the verified digest is the digest of the pool bytes.
+ * `user-migration`: legacy (sql.js/jeep) exports may carry 2/2; that normalization is done explicitly HERE (`normalizeUserMigrationHeader`),
+ * before hashing, so `sha256` is still the digest of what was written, and `sourceSha256` is the digest the caller's original bytes had.
+ */
+export type ImportPolicy = 'catalog' | 'user-migration';
+const SQLITE_HEADER_MAGIC = 'SQLite format 3\u0000';
+
+export function checkSqliteImportHeader(chunk: Uint8Array, policy: ImportPolicy): { pageSize: number; needsNormalization: boolean } {
+  if (chunk.byteLength < 100) throw new WebStorageError('INTEGRITY', 'The import is too small to hold a SQLite header');
+  for (let i = 0; i < 16; i += 1) {
+    if (chunk[i] !== SQLITE_HEADER_MAGIC.charCodeAt(i)) throw new WebStorageError('INTEGRITY', 'The import is not a SQLite database');
+  }
+  const raw = ((chunk[16] as number) << 8) | (chunk[17] as number);
+  const pageSize = raw === 1 ? 65536 : raw;
+  if (pageSize < 512 || pageSize > 65536 || (pageSize & (pageSize - 1)) !== 0) throw new WebStorageError('INTEGRITY', 'The import has an invalid database page size');
+  const write = chunk[18];
+  const read = chunk[19];
+  if (policy === 'catalog') {
+    if (write !== 1 || read !== 1) throw new WebStorageError('INTEGRITY', 'The import is not a rollback-journal (DELETE) database');
+    return { pageSize, needsNormalization: false };
+  }
+  if (!((write === 1 || write === 2) && (read === 1 || read === 2))) throw new WebStorageError('INTEGRITY', 'The import has an unsupported file format');
+  return { pageSize, needsNormalization: write !== 1 || read !== 1 };
+}
+
+/** USER migration only: a copy of the first chunk with bytes 18/19 = 1/1 (exactly what the pool will store). */
+export function normalizeUserMigrationHeader(chunk: Uint8Array): Uint8Array {
+  const copy = chunk.slice();
+  copy[18] = 1;
+  copy[19] = 1;
+  return copy;
 }

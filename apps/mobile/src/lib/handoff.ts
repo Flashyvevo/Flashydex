@@ -49,3 +49,131 @@ export function useReportBusy(active: boolean, message: string): void {
     return () => { busy.delete(id); emit(); };
   }, [active, message, id]);
 }
+
+/* ──────────────── update handoff controller (S5-04) ──────────────── */
+
+export type HandoffFailure = { message: string; /** the app is still usable (gate reopened) */ recoverable: boolean; offerReload: boolean };
+export type HandoffUiState = { phase: 'idle' | 'saving' | 'failed'; failure: HandoffFailure | null };
+
+let ui: HandoffUiState = { phase: 'idle', failure: null };
+const setUi = (next: HandoffUiState) => { ui = next; emit(); };
+export const getHandoffUi = (): HandoffUiState => ui;
+export function useHandoffUi(): HandoffUiState {
+  return useSyncExternalStore(subscribe, () => ui, () => ui);
+}
+/** "Restart later" / "Keep using FlashyDex": back to normal. Only meaningful for a recoverable failure. */
+/** Back to idle unconditionally (tests / a fresh page). */
+export const resetHandoffUi = (): void => { setUi({ phase: 'idle', failure: null }); };
+export function dismissHandoffFailure(): void {
+  if (ui.phase === 'failed' && ui.failure?.recoverable) setUi({ phase: 'idle', failure: null });
+}
+
+export const HANDOFF_DRAIN_TIMEOUT_MS = 10_000;
+export const HANDOFF_CLOSE_TIMEOUT_MS = 10_000;
+
+export interface HandoffDeps {
+  /** The page's write gate (web-storage/write-gate.ts). */
+  gate: { close(): void; open(): void; drain(timeoutMs: number): Promise<boolean> };
+  /** Open pool paths of the SQL client (empty off web). */
+  listOpenPaths(): Promise<string[]>;
+  /** WebSqliteClient.closePath with the fix-i drain option: waits for the owner's transaction, empties the queue, then closes. */
+  closePath(path: string, options: { drain: true }): Promise<void>;
+  /** Terminate the SQL worker after every path is closed. */
+  shutdownClient(): Promise<void>;
+  /** Release the origin-wide writer lock when this page can (no-op otherwise: the unload releases it). */
+  releaseWriterLock?(): Promise<void> | void;
+  /** A catalog install / restore / import / sync is running right now. */
+  busyReason(): string | null;
+  setBlocked(on: boolean): void;
+  drainTimeoutMs?: number;
+  closeTimeoutMs?: number;
+}
+
+const withTimeout = async <T>(p: Promise<T>, ms: number, what: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([p, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new HandoffError(`${what} took too long.`, true, true)), ms); })]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+export class HandoffError extends Error {
+  constructor(message: string, readonly recoverable: boolean, readonly offerReload: boolean) {
+    super(message);
+    this.name = 'HandoffError';
+  }
+}
+
+const BUSY_TEXT = (reason: string) => `${reason} FlashyDex can restart for the update once it finishes. Restart later, or wait and try again.`;
+
+/**
+ * The `prepare` step handed to `updateController.applyUpdate`. Order (S5-04): (1) refuse when a job is running, (2) close the write gate
+ * (new service mutations reject MAINTENANCE), (3) await the drain of admitted transactions / in-flight driver calls, (4) close every open
+ * pool path with drain, (5) shut the worker down, (6) release the writer lock. Failure before (4) reopens the gate: the app stays usable.
+ * Throws HandoffError; the caller (runUpdateHandoff) records it in the UI state.
+ */
+export async function prepareUpdateHandoff(deps: HandoffDeps): Promise<void> {
+  const early = deps.busyReason();
+  if (early) throw new HandoffError(BUSY_TEXT(early), true, false);
+  deps.setBlocked(true);
+  deps.gate.close();
+  try {
+    const drained = await deps.gate.drain(deps.drainTimeoutMs ?? HANDOFF_DRAIN_TIMEOUT_MS);
+    if (!drained) throw new HandoffError('FlashyDex is still saving something and it is taking too long.', true, true);
+    const late = deps.busyReason(); // a job that registered while the gate was closing
+    if (late) throw new HandoffError(BUSY_TEXT(late), true, false);
+  } catch (error) {
+    deps.gate.open();
+    deps.setBlocked(false);
+    throw error;
+  }
+  // Point of no return: the gate stays closed; a failure from here on needs a reload to get a working storage layer back.
+  try {
+    const closeMs = deps.closeTimeoutMs ?? HANDOFF_CLOSE_TIMEOUT_MS;
+    for (const path of await deps.listOpenPaths()) await withTimeout(deps.closePath(path, { drain: true }), closeMs, 'Closing your collection');
+    await withTimeout(deps.shutdownClient(), closeMs, 'Stopping storage');
+    await deps.releaseWriterLock?.();
+  } catch (error) {
+    throw error instanceof HandoffError ? new HandoffError(error.message, false, true) : new HandoffError('Storage could not be closed cleanly.', false, true);
+  }
+}
+
+/**
+ * Whole restart-for-update flow. `activate` is `updateController.applyUpdate` (or a DEV stand-in). Every path leaves the app usable or
+ * shows an explicit failure: refused/timeout -> gate reopened + "Restart later"; storage already shut down but the new worker never
+ * activated (`getUpdateError()` set, applyUpdate resolved) -> failure with a Reload button (reload restarts storage).
+ */
+export async function runUpdateHandoff(deps: HandoffDeps, activate: (prepare: () => Promise<void>) => Promise<void>, getUpdateError: () => string | null): Promise<void> {
+  if (ui.phase === 'saving') return;
+  setUi({ phase: 'saving', failure: null });
+  let prepared = false;
+  const out: { failure: HandoffFailure | null } = { failure: null };
+  try {
+    await activate(async () => {
+      try {
+        await prepareUpdateHandoff(deps);
+      } catch (error) {
+        const e = error instanceof HandoffError ? error : new HandoffError('The update didn’t start. Nothing changed.', true, false);
+        out.failure = { message: e.message, recoverable: e.recoverable, offerReload: e.offerReload };
+        throw e;
+      }
+      prepared = true;
+    });
+  } catch {
+    out.failure ??= { message: 'The update didn’t start.', recoverable: !prepared, offerReload: true };
+  }
+  if (!out.failure && prepared) {
+    // applyUpdate resolves normally when no worker was waiting or activation timed out: the page is NOT reloading and its storage is closed.
+    const updateError = getUpdateError();
+    if (updateError) out.failure = { message: `${updateError}. FlashyDex needs a quick reload to finish.`, recoverable: false, offerReload: true };
+  }
+  if (out.failure) {
+    const failure = out.failure;
+    if (!failure.recoverable) deps.setBlocked(true); // storage is closed: keep the UI blocked behind the failure card
+    setUi({ phase: 'failed', failure });
+  } else if (!prepared) {
+    setUi({ phase: 'idle', failure: null });
+  }
+  // success: the controller reloads the page; the overlay stays up until then
+}

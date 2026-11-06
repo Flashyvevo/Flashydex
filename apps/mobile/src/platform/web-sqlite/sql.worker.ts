@@ -10,6 +10,7 @@ import { createSHA256 } from 'hash-wasm';
 import { POOL_DIRECTORY, POOL_INITIAL_CAPACITY, POOL_VFS_NAME, PROBE_PATH_RE, STAGING_ROOT, WebStorageError } from '../web-storage/contract';
 import type { Oo1Db, Sqlite3Api } from './executor';
 import { PROTOCOL, type FaultSpec, type InitResult, type RequestEnvelope, type WorkerMessage } from './protocol';
+import { withPoolOpenRetry } from './pool-boot-retry';
 import { mapAnyError, SqlWorkerCore, type PoolLike, type Sha256, type StagingFile, type WorkerEnv } from './worker-core';
 
 const scope = self as unknown as {
@@ -117,15 +118,18 @@ async function boot(fault: FaultSpec | undefined): Promise<WorkerEnv> {
 
   let pool: PoolLike;
   try {
-    const util = await (sqlite3 as unknown as { installOpfsSAHPoolVfs(options: object): Promise<PoolLike & { reserveMinimumCapacity(n: number): Promise<number> }> }).installOpfsSAHPoolVfs({
-      name: POOL_VFS_NAME,
-      directory: POOL_DIRECTORY,
-      initialCapacity: POOL_INITIAL_CAPACITY,
-      clearOnInit: false, // data MUST survive re-init
-      preserveOnInitFailure: true // a failed init releases handles but never deletes the pool
+    // Transient right after a killed worker (handles still held): bounded retry, only for the "could not be opened" cause (never quota/corruption).
+    pool = await withPoolOpenRetry(async () => {
+      const util = await (sqlite3 as unknown as { installOpfsSAHPoolVfs(options: object): Promise<PoolLike & { reserveMinimumCapacity(n: number): Promise<number> }> }).installOpfsSAHPoolVfs({
+        name: POOL_VFS_NAME,
+        directory: POOL_DIRECTORY,
+        initialCapacity: POOL_INITIAL_CAPACITY,
+        clearOnInit: false, // data MUST survive re-init
+        preserveOnInitFailure: true // a failed init releases handles but never deletes the pool
+      });
+      await util.reserveMinimumCapacity(POOL_INITIAL_CAPACITY); // initialCapacity only applies to an empty pool
+      return util;
     });
-    pool = util;
-    await util.reserveMinimumCapacity(POOL_INITIAL_CAPACITY); // initialCapacity only applies to an empty pool
   } catch (error) {
     const mapped = mapAnyError(error, 'INIT_FAILED');
     throw mapped.code === 'QUOTA' || mapped.code === 'CAPACITY' ? mapped : new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', { cause: error });

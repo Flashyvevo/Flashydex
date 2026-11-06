@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, ProgressBar } from './ui';
 import { formatBytes } from '../lib/format';
 import { useStartupProgress } from '../data';
 import type { StoragePrepareProgress } from '../platform/web-storage/contract';
+import { downloadBlob, readLegacyForExport } from '../platform/web-storage/legacy-export';
 
 const FRAME_STYLE = { paddingTop: 'var(--ps-safe-top)', paddingBottom: 'var(--ps-safe-bottom)' } as const;
 const FRAME = 'flex min-h-dvh items-center justify-center bg-bg px-6';
@@ -131,6 +132,17 @@ function plainReason(message: string): string | null {
  * No "start fresh" button.
  */
 export function MigrationBlockedScreen({ code, message }: { code: string; message: string }) {
+  const [exportState, setExportState] = useState<{ phase: 'idle' | 'working' | 'done' | 'failed'; text: string | null }>({ phase: 'idle', text: null });
+  const exportOld = async () => {
+    setExportState({ phase: 'working', text: null });
+    const result = await readLegacyForExport();
+    if (!result.ok) {
+      setExportState({ phase: 'failed', text: result.message });
+      return;
+    }
+    downloadBlob(result.blob, result.filename);
+    setExportState({ phase: 'done', text: `Saved ${formatBytes(result.bytes)} as ${result.filename}. Keep this file safe. The original is still untouched in this browser.` });
+  };
   return (
     <div role="alert" className={FRAME} style={FRAME_STYLE} data-testid="migration-blocked">
       <div className="flex w-full max-w-sm flex-col gap-3">
@@ -147,6 +159,14 @@ export function MigrationBlockedScreen({ code, message }: { code: string; messag
           <li>If it keeps happening, open FlashyDex in the browser or Home Screen app you used before and export a backup there (Settings → Import, export &amp; backup), then contact support with the code below.</li>
         </ul>
         <Button variant="primary" full onClick={() => window.location.reload()} data-testid="migration-reload">Reload</Button>
+        {code === 'MIGRATION_BLOCKED' && (
+          <>
+            <Button variant="secondary" full onClick={() => void exportOld()} loading={exportState.phase === 'working'} data-testid="migration-export">Export my old collection</Button>
+            {exportState.text && (
+              <p role="status" className="selectable text-small text-fg-muted" data-testid="migration-export-result">{exportState.text}</p>
+            )}
+          </>
+        )}
         <span className="text-caption text-fg-subtle">Code: {code}</span>
       </div>
     </div>

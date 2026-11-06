@@ -186,15 +186,16 @@ async function mockV2(context: BrowserContext): Promise<void> {
 
 async function openCore(page: Page, manifest = SMALL): Promise<void> {
   await mockV2(page.context());
+  // After a killed page the browser can keep the sahpool access handles for several seconds. The SQL worker retries 10 x 300 ms
+  // (web-sqlite/pool-boot-retry.ts); that budget is NOT enough for the kill group (7 of 40 boots exhausted it in --repeat-each=10), so
+  // the spec keeps a bounded outer retry for exactly that cause (and one dev-server context reset). Everything else fails at once.
   for (let attempt = 0; ; attempt += 1) {
     try {
       await page.goto('/harness.html');
       await page.evaluate(([path, url]) => import(/* @vite-ignore */ path as string).then((m) => m.bootCore(url as string)), [HARNESS, manifest] as const);
       return;
     } catch (error) {
-      // A just-killed page's worker may still hold the sahpool access handles for a moment: retry the boot.
-      if (attempt >= 15 || !/context was destroyed|navigation|Execution context|storage pool could not be opened/i.test(String(error))) { console.log(`openCore giving up at attempt ${attempt}: ${String(error).slice(0, 200)}`); throw error; }
-      console.log(`openCore retry ${attempt}: ${String(error).slice(0, 120)}`);
+      if (attempt >= 15 || !/context was destroyed|navigation|Execution context|storage pool could not be opened/i.test(String(error))) throw error;
       await page.waitForTimeout(500);
     }
   }
@@ -378,13 +379,114 @@ test.describe('web install through core (OPFS + sahpool + IDB roles)', () => {
   });
 });
 
+/**
+ * Receipt COMMIT of unknown outcome (Sol S5-01/S5-03). The REAL worker executes the receipt COMMIT (so it IS durable); only the reply to
+ * the page is replaced by `{code:'IO', commitState:'unknown'}` (same postMessage/message trap technique as helpers.installWorkerDeath).
+ * Core must treat it as PersistenceError: keep every generation, never roll the receipt back, never unlink a catalog; the next boot
+ * reconciles from the durable USER receipt + disk.
+ */
+async function installReceiptCommitTrap(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __fdxReceiptUnknown?: boolean; __fdxInjected?: number };
+    const sqlsOf = (m: { payload?: { sql?: string; statements?: { sql?: string }[] } }): string[] => [m.payload?.sql, ...(m.payload?.statements ?? []).map((s) => s.sql)].filter((s): s is string => typeof s === 'string');
+    const watched = new Set<number>(); // requestIds of the receipt COMMIT
+    let sawReceipt = false;
+    const original = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      const m = args[0] as { op?: string; requestId?: number; payload?: { sql?: string; statements?: { sql?: string }[] } } | null;
+      if (w.__fdxReceiptUnknown && m && (m.op === 'exec' || m.op === 'batch')) {
+        const sqls = sqlsOf(m);
+        if (sqls.some((s) => /^\s*UPDATE installed_catalogs SET status = 'installed'/i.test(s))) sawReceipt = true;
+        if (sawReceipt && sqls.some((s) => /^\s*(COMMIT|END)\b/i.test(s)) && typeof m.requestId === 'number') {
+          watched.add(m.requestId);
+          sawReceipt = false;
+        }
+      }
+      return (original as (...a: unknown[]) => void).apply(this, args);
+    } as typeof Worker.prototype.postMessage;
+    const originalAdd = Worker.prototype.addEventListener;
+    Worker.prototype.addEventListener = function (this: Worker, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
+      if (type !== 'message' || typeof listener !== 'function') return (originalAdd as (...a: unknown[]) => void).call(this, type, listener, options);
+      const wrapped = (event: MessageEvent) => {
+        const d = event.data as { kind?: string; requestId?: number; ok?: boolean } | null;
+        if (d?.kind === 'response' && typeof d.requestId === 'number' && watched.delete(d.requestId)) {
+          w.__fdxInjected = (w.__fdxInjected ?? 0) + 1;
+          const forged = { ...d, ok: false, payload: undefined, error: { code: 'IO', message: 'injected: lost COMMIT acknowledgement', retryable: false, commitState: 'unknown', inTransaction: false } };
+          return (listener as (e: unknown) => void)({ data: forged, ports: [], origin: event.origin, target: event.target, type: 'message' });
+        }
+        return (listener as (e: MessageEvent) => void)(event);
+      };
+      return (originalAdd as (...a: unknown[]) => void).call(this, type, wrapped, options);
+    } as typeof Worker.prototype.addEventListener;
+  });
+}
+const arm = (page: Page) => page.evaluate(() => { (window as unknown as { __fdxReceiptUnknown: boolean }).__fdxReceiptUnknown = true; });
+const injected = (page: Page) => page.evaluate(() => (window as unknown as { __fdxInjected?: number }).__fdxInjected ?? 0);
+
+test.describe('receipt COMMIT of unknown outcome (real worker, real IDB + sahpool)', () => {
+  test('first install: PersistenceError, catalog file kept (no unlink), receipt durable; after reload the catalog is installed and searchable', async ({ page }) => {
+    test.setTimeout(180_000);
+    await installReceiptCommitTrap(page);
+    await openCore(page, SMALL);
+    const userBefore = userFiles((await pool(page)).files);
+    await arm(page);
+    const failed = await install(page);
+    expect(await injected(page)).toBe(1);
+    expect(failed.ok).toBe(false);
+    expect(failed.code).toBe('PERSISTENCE_FAILED');
+    const mid = await pool(page);
+    expect(mid.roles.en!.activeRef).not.toBeNull(); // not removed by undoSwap
+    expect(enGenerations(mid.files)).toEqual([mid.roles.en!.activeRef]); // the committed generation file is still there
+    expect(userFiles(mid.files)).toEqual(userBefore);
+    await page.reload();
+    await openCore(page, SMALL);
+    const after = await pool(page);
+    expect(after.roles.en!.activeRef).toBe(mid.roles.en!.activeRef);
+    expect(enGenerations(after.files)).toEqual(enGenerations(mid.files));
+    expect(after.staging).toEqual([]);
+    const receipt = await h<{ status: string; version: string }>(page, 'coreReceipt');
+    expect(receipt.status).toBe('installed'); // the receipt was NOT rolled back
+    expect((await search(page, '')).total).toBeGreaterThan(0);
+  });
+
+  test('update: both generations retained at the uncertain COMMIT; after reload the new receipt wins, the catalog is searchable', async ({ page }) => {
+    test.setTimeout(240_000);
+    await installReceiptCommitTrap(page);
+    await openCore(page, SMALL);
+    expect((await install(page)).ok).toBe(true);
+    const v1 = await pool(page);
+    const oldRef = v1.roles.en!.activeRef!;
+    const total = (await search(page, '')).total;
+    await arm(page);
+    const failed = await install(page, { manifestUrl: V2S });
+    expect(await injected(page)).toBe(1);
+    expect(failed.ok).toBe(false);
+    expect(failed.code).toBe('PERSISTENCE_FAILED');
+    const mid = await pool(page);
+    const newRef = mid.roles.en!.activeRef!;
+    expect(newRef).not.toBe(oldRef);
+    expect(mid.roles.en!.previousRef).toBe(oldRef); // previous kept, not discarded, not restored
+    expect(enGenerations(mid.files).sort()).toEqual([oldRef, newRef].sort()); // both generations on disk: no unlink
+    await page.reload();
+    await openCore(page, SMALL);
+    const receipt = await h<{ status: string; version: string }>(page, 'coreReceipt');
+    expect(receipt.status).toBe('installed');
+    expect(receipt.version).toBe(bumpedSmall()); // the durable receipt is the NEW one: not rolled back
+    const after = await pool(page);
+    expect(after.roles.en!.activeRef).toBe(newRef);
+    expect(enGenerations(after.files)).toContain(newRef);
+    expect(after.staging).toEqual([]);
+    expect((await search(page, '')).total).toBe(total);
+  });
+});
+
 test.describe('kill tests: page closed mid-install, boot reconcile in a NEW page of the same context', () => {
   async function killWhen(page: Page, ready: string, manifest: string, fault: Record<string, unknown> | null): Promise<void> {
     if (fault) await page.evaluate((f) => { (window as unknown as { __flashydexTest: unknown }).__flashydexTest = { webInstallFault: f }; }, fault);
     await page.evaluate(([path, url]) => { void import(/* @vite-ignore */ path as string).then((m) => m.startInstall({ manifestUrl: url as string })); }, [HARNESS, manifest] as const);
     const deadline = Date.now() + 120_000;
     for (;;) {
-      if (await page.evaluate((expr) => Boolean(eval(expr)), ready)) break; // eslint-disable-line no-eval
+      if (await page.evaluate((expr) => Boolean(eval(expr)), ready)) break;
       if (Date.now() > deadline) throw new Error(`kill trigger never fired: ${ready}`);
       await page.waitForTimeout(15);
     }

@@ -10,7 +10,7 @@
 import { USER_MIGRATIONS, migrationChecksum } from '@flashydex/core';
 import {
   LEGACY_JEEP, LEGACY_MIGRATION_MAX_BYTES, USER_PATH_RE, WebStorageError,
-  type EnsureUserDatabase, type MigrationMarker, type PoolPath, type RoleStore, type UserPrepareProgress, type WebSqliteClient
+  type EnsureUserDatabase, type MigrationMarker, type PoolPath, type RoleStore, type UserPrepareProgress, type UserRole, type WebSqliteClient
 } from '../web-storage/contract';
 import type { WebSqliteClientInternal } from './client';
 
@@ -25,6 +25,7 @@ export type MigrationBlockedReason =
   | 'user_missing'
   | 'future_schema'
   | 'orphan_user_data'
+  | 'conflicting_stores' // role / marker / legacy key disagree (WEB-STORAGE §5 fail-closed): nothing is chosen, nothing is unlinked
   | 'validation_failed'
   | 'client_cannot_import';
 
@@ -242,14 +243,32 @@ export function createEnsureUserDatabase(options: EnsureUserOptions = {}): Ensur
     const progress = (p: UserPrepareProgress) => onProgress?.(p);
     progress({ phase: 'checking' });
     const role = await roles.user();
+    const marker = await roles.migration(); // role + marker are judged TOGETHER (WEB-STORAGE §5 step 1): neither is trusted alone
     const files = await client.listFiles();
 
     if (role) {
-      // marker + valid USER, or a fresh role without marker: the new USER is authoritative; legacy is NOT read and NEVER replayed.
+      checkRoleMarkerConsistency(role, marker);
       await validateExistingUser(client, role.path, files);
-      await unlinkOrphans(client, files, (p) => /^\/user\/m-/.test(p) && p !== role.path);
+      if (role.origin === 'migrated') {
+        // marker + valid migrated USER: authoritative; legacy is NOT read and NEVER replayed. Stale staged m-* files are provably ours.
+        await unlinkOrphans(client, files, (p) => /^\/user\/m-/.test(p) && p !== role.path);
+        return { kind: 'existing', path: role.path };
+      }
+      // An UNMARKED (fresh) role must not coexist with a legacy USER key: that is two stores that may hold different personal data
+      // (lost marker, stale tab, partial restore). Fail closed instead of picking one; nothing is unlinked in this state.
+      let legacyPresent: boolean;
+      try {
+        legacyPresent = (await readLegacy()) !== null; // existence probe only: the bytes are dropped immediately
+      } catch (error) {
+        throw error instanceof MigrationBlockedError ? error : new MigrationBlockedError('legacy_unreadable', 'probe');
+      }
+      if (legacyPresent) throw new MigrationBlockedError('conflicting_stores', 'unmarked user + legacy key');
       return { kind: 'existing', path: role.path };
     }
+
+    // No role. A completed-migration marker without any USER role says the new store's mapping was lost: never re-migrate over it,
+    // never create a fresh database, never unlink anything.
+    if (marker) throw new MigrationBlockedError('conflicting_stores', 'marker without user role');
 
     let legacy: Uint8Array | null;
     try {
@@ -268,6 +287,19 @@ export function createEnsureUserDatabase(options: EnsureUserOptions = {}): Ensur
     }
     return migrateLegacy(client, roles, legacy, newId, now, progress);
   };
+}
+
+/**
+ * WEB-STORAGE §5 step 1, role side: a MIGRATED role needs a completed marker for the SAME path; a fresh role must have no marker.
+ * Anything else is a provenance conflict (shape-valid metadata is not proof) and blocks before any file is touched.
+ */
+function checkRoleMarkerConsistency(role: UserRole, marker: MigrationMarker | null): void {
+  if (role.origin === 'migrated') {
+    if (!marker) throw new MigrationBlockedError('conflicting_stores', 'migrated role without marker');
+    if (marker.state !== 'completed' || marker.userPath !== role.path) throw new MigrationBlockedError('conflicting_stores', 'marker does not match the user role');
+    return;
+  }
+  if (marker) throw new MigrationBlockedError('conflicting_stores', 'fresh role with a migration marker');
 }
 
 async function unlinkOrphans(client: WebSqliteClient, files: PoolPath[], match: (p: PoolPath) => boolean): Promise<void> {

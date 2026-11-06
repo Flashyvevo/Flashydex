@@ -10,6 +10,7 @@ import { NATIVE_CATALOG_WRITES } from './pack-install/native-store';
 import { createWebInstallPort } from './pack-install/web-port';
 import type { StoragePrepareProgress, StoragePrepareResult } from './web-storage/contract';
 import { setWebRuntime } from './web-storage/runtime';
+import { writeGate } from './web-storage/write-gate';
 
 const isWeb = () => Capacitor.getPlatform() === 'web';
 
@@ -77,7 +78,7 @@ export function prepareStorage(onProgress?: (progress: StoragePrepareProgress) =
 export async function createUserDriver(): Promise<SqlDriver> {
   const prepared = await prepareStorage();
   const driver = prepared.kind === 'web' ? await openWebUserDriver(prepared.user.path) : await openLegacyOrNativeUserDriver(prepared.kind === 'legacy-dev');
-  return withDevDelay(driver);
+  return writeGate.wrap(withDevDelay(driver)); // update-handoff gate under every service mutation: web-storage/write-gate.ts
 }
 
 async function openWebUserDriver(path: string): Promise<SqlDriver> {
@@ -117,6 +118,8 @@ function withDevDelay(driver: SqlDriver): SqlDriver {
 /** Web keeps catalog writes (direct TCGdex refresh over the shared physical connection). Native is OFF until the writable-copy design is proven on a Mac (R04). */
 const catalogWrites = (): boolean => (isWeb() ? !devLegacy() : NATIVE_CATALOG_WRITES); // TODO(R04-mac): native catalogWrites switch
 
+const gated = (driver: SqlDriver | null): SqlDriver | null => (driver ? writeGate.wrap(driver) : driver);
+
 /** Catalog connections are SqlDrivers over the sahpool file the role store maps as ACTIVE; an absent catalog is `null`, never created. */
 export const catalogSource: CatalogSource = {
   get writable() {
@@ -126,7 +129,7 @@ export const catalogSource: CatalogSource = {
     if (isWeb()) {
       if (devLegacy()) return null;
       await prepareStorage();
-      return getWebCatalogStorage().openCatalogDriver(language, 'ro');
+      return gated(await getWebCatalogStorage().openCatalogDriver(language, 'ro'));
     }
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const connection = await openCatalogDb(language);
@@ -140,7 +143,7 @@ export const catalogSource: CatalogSource = {
     if (!catalogWrites()) return null;
     if (isWeb()) {
       await prepareStorage();
-      return getWebCatalogStorage().openCatalogDriver(language, 'rw');
+      return gated(await getWebCatalogStorage().openCatalogDriver(language, 'rw'));
     }
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const handle = await openCatalogDbWritable(language);

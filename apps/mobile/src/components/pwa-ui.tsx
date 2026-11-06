@@ -4,11 +4,61 @@ import { createPortal } from 'react-dom';
 import { ConfirmDialog } from './overlay';
 import { Button } from './ui';
 import { isNative } from '../lib/native';
-import { busyReason, hasDirtyForms, setWritesBlockedForHandoff, useWritesBlockedForHandoff } from '../lib/handoff';
+import { busyReason, dismissHandoffFailure, hasDirtyForms, runUpdateHandoff, setWritesBlockedForHandoff, useHandoffUi, useWritesBlockedForHandoff, type HandoffDeps } from '../lib/handoff';
 import { useInstallState, useUpdateState } from '../lib/pwa-hooks';
 import { installController, updateController } from '../lib/pwa-bridge';
-import { webSqliteClient } from '../lib/storage-bridge';
+import { closeClientPath, openClientPaths, shutdownClient, writeGate } from '../lib/storage-bridge';
+import { createUpdateController } from '../platform/pwa';
 import { isCatalogInstallActive, useStorageStatus } from '../data';
+
+/** DEV-only stand-in for a running job (see the seam below). */
+let devBusy: string | null = null;
+
+/** Everything the handoff needs from the app: running jobs, the write gate, the SQL client. */
+function appHandoffDeps(restoreRunning: () => boolean = () => false): HandoffDeps {
+  return {
+    gate: writeGate,
+    listOpenPaths: openClientPaths,
+    closePath: closeClientPath,
+    shutdownClient,
+    busyReason: () => (isCatalogInstallActive() ? 'A catalog download is running.' : restoreRunning() ? 'A restore is running.' : (import.meta.env.DEV ? devBusy : null) ?? busyReason()),
+    setBlocked: setWritesBlockedForHandoff
+  };
+}
+
+/**
+ * DEV-ONLY e2e seam (compiled out of production): runs the REAL handoff + the REAL update controller against a fake service worker, so a
+ * spec can prove drain-before-close and exactly-one reload without a production build. `window.__fdxHandoffTest.reloads` counts reloads.
+ */
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  const w = window as unknown as { __fdxHandoffTest?: unknown };
+  const state = { reloads: 0 };
+  w.__fdxHandoffTest = {
+    state,
+    setBusy: (message: string | null) => { devBusy = message; },
+    run: (opts: { workerWaiting?: boolean } = {}) => {
+      const listeners = new Set<() => void>();
+      const waiting = { postMessage: () => { queueMicrotask(() => { for (const l of [...listeners]) l(); }); } };
+      const controller = createUpdateController({
+        env: {
+          isProd: true,
+          now: () => new Date(),
+          reload: () => { state.reloads += 1; },
+          navigator: {
+            serviceWorker: {
+              controller: { postMessage: () => undefined },
+              addEventListener: (_t: 'controllerchange', l: () => void) => { listeners.add(l); },
+              removeEventListener: (_t: 'controllerchange', l: () => void) => { listeners.delete(l); },
+              getRegistration: () => Promise.resolve({ waiting: opts.workerWaiting === false ? null : waiting })
+            }
+          }
+        },
+        activationTimeoutMs: 1000
+      });
+      return runUpdateHandoff(appHandoffDeps(), (prepare) => controller.applyUpdate(prepare), () => controller.getState().error);
+    }
+  };
+}
 
 /**
  * Install banner (WEB-STORAGE §7). In-flow (never fixed): it sits at the top of the tab content so it cannot cover the tab bar or
@@ -64,27 +114,15 @@ export function InstallBanner() {
 export function UpdateToast() {
   const update = useUpdateState();
   const blocked = useWritesBlockedForHandoff();
+  const handoffUi = useHandoffUi();
   const storage = useStorageStatus();
   const [dismissed, setDismissed] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
 
-  const runHandoff = async () => {
+  const runHandoff = () => {
     setRefusal(null);
-    try {
-      await updateController.applyUpdate(async () => {
-        setWritesBlockedForHandoff(true);
-        try {
-          await webSqliteClient()?.shutdown();
-        } catch (error) {
-          setWritesBlockedForHandoff(false);
-          throw error;
-        }
-      });
-    } catch {
-      setWritesBlockedForHandoff(false);
-      setRefusal('The update didn’t start. Nothing changed; you can keep using FlashyDex and try again.');
-    }
+    return runUpdateHandoff(appHandoffDeps(() => Boolean(storage.maintenance)), (prepare) => updateController.applyUpdate(prepare), () => updateController.getState().error);
   };
 
   const restart = () => {
@@ -125,12 +163,13 @@ export function UpdateToast() {
         onConfirm={() => { setConfirm(false); void runHandoff(); }}
         testId="update-discard"
       />
-      {blocked && <HandoffOverlay />}
+      {(blocked || handoffUi.phase !== 'idle') && <HandoffOverlay />}
     </>
   );
 }
 
 function HandoffOverlay() {
+  const { phase, failure } = useHandoffUi();
   return createPortal(
     <div
       role="alertdialog"
@@ -141,10 +180,21 @@ function HandoffOverlay() {
       style={{ zIndex: 'var(--ps-z-blocking)' }}
       data-testid="update-handoff"
     >
-      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-        <h2 className="text-h3 font-semibold">Restarting to update…</h2>
-        <p className="text-body text-fg-muted">Saving everything first. FlashyDex reopens in a moment.</p>
-      </div>
+      {phase === 'failed' && failure ? (
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center" data-testid="update-handoff-failed">
+          <h2 className="text-h3 font-semibold">{failure.recoverable ? 'The update has to wait' : 'FlashyDex needs a reload'}</h2>
+          <p className="text-body text-fg-muted" data-testid="update-handoff-message">{failure.message}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {failure.offerReload && <Button variant="primary" onClick={() => window.location.reload()} data-testid="update-handoff-reload">Reload</Button>}
+            {failure.recoverable && <Button variant={failure.offerReload ? 'text' : 'primary'} onClick={() => dismissHandoffFailure()} data-testid="update-handoff-later">Restart later</Button>}
+          </div>
+        </div>
+      ) : (
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <h2 className="text-h3 font-semibold">Restarting to update…</h2>
+          <p className="text-body text-fg-muted">Saving everything first. FlashyDex reopens in a moment.</p>
+        </div>
+      )}
     </div>,
     document.body
   );

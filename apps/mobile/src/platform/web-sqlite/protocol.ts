@@ -17,6 +17,7 @@ export type WorkerOp =
   | 'cancel'
   | 'stageImport'
   | 'importBytes'
+  | 'ping' // liveness probe: answered as soon as the worker's event loop is free
   | 'storageStats'
   | 'shutdown'
   | 'unlink'
@@ -140,6 +141,8 @@ export interface ImportResult {
   sha256: string;
   ms: number;
   maxChunkBytes: number;
+  /** USER-migration imports only: digest of the caller's ORIGINAL bytes (`sha256` is the digest of the normalized bytes actually written). */
+  sourceSha256?: string;
 }
 
 export interface StatsResult {
