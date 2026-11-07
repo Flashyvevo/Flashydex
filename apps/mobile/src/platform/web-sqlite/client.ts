@@ -10,6 +10,7 @@ import {
 } from '../web-storage/contract';
 import { classifySql, isMutationKind } from './sql-class';
 import { isPageRetired, retiredError } from '../web-storage/write-gate';
+import { backoffDelayMs, type PoolBootAttempt, type PoolOpenRetryOptions } from './pool-boot-retry';
 import {
   fromWire, POOL_BOOT_BUDGET_MS, PROTOCOL, type BatchPayload, type BatchResult, type FaultSpec, type ImportResult, type InitResult, type OpenResult, type ProxyMethod,
   type RequestEnvelope, type StatsResult, type WireError, type WorkerMessage
@@ -34,6 +35,12 @@ export interface WebSqliteClientOptions {
   livenessIntervalMs?: number;
   /** ... and declares the worker dead when NOTHING was heard from it for this long while the page is visible (default 20 s). */
   livenessTimeoutMs?: number;
+  /** Total elapsed budget for acquiring the pool across worker restarts (default POOL_BOOT_BUDGET_MS; tests shorten it). */
+  bootBudgetMs?: number;
+  /** Bound for ONE pool-acquire attempt inside a worker (default 8 s; tests shorten it). */
+  bootAttemptTimeoutMs?: number;
+  /** Backoff between a discarded (hung) worker and its replacement (tests inject instant sleeps / fixed jitter). */
+  bootBackoff?: Pick<PoolOpenRetryOptions, 'startDelayMs' | 'capDelayMs' | 'random' | 'sleep'>;
 }
 
 export interface ClosePathOptions {
@@ -230,7 +237,41 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     return this.initPromise;
   }
 
+  /**
+   * S8-03: supervises the whole boot. A worker whose pool acquisition HUNG (its own per-attempt bound expired: the pinned initializer
+   * caches a pending promise, so it can never be retried inside that worker) is terminated and replaced by a fresh one. Ownership is
+   * retained (the writer Web Lock is held by the page); preservation flags are fixed in the worker (clearOnInit:false,
+   * preserveOnInitFailure:true), so nothing is wiped. Backoff + the ONE total budget bound the replacements; the next worker's own
+   * attempt/budget is clipped to what is left. Never two reservations in one pool: at most one worker exists at a time.
+   */
   private async startSession(): Promise<WebSqliteInitInfo> {
+    const budget = this.options.bootBudgetMs ?? POOL_BOOT_BUDGET_MS;
+    const sleep = this.options.bootBackoff?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const started = performance.now();
+    const attempts: PoolBootAttempt[] = [];
+    for (let worker = 1; ; worker += 1) {
+      const workerStartedOffset = Math.round(performance.now() - started);
+      const remaining = Math.max(1, budget - workerStartedOffset);
+      try {
+        return await this.bootWorkerOnce(remaining);
+      } catch (error) {
+        const hung = (error as { details?: { hung?: boolean } } | null)?.details?.hung === true;
+        if (!hung) throw error;
+        const own = (error as { details?: { attempts?: PoolBootAttempt[] } }).details?.attempts ?? [];
+        for (const a of own) attempts.push({ ...a, attempt: attempts.length + 1, elapsedMs: workerStartedOffset + a.elapsedMs });
+        this.teardownWorker(); // discard the worker that holds the hung acquisition (its handles die with it)
+        this.assertLive();
+        const delay = backoffDelayMs(worker, this.options.bootBackoff);
+        if (performance.now() - started + delay >= budget) {
+          throw new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', { retryable: true, cause: error, attempts: [...attempts], exhausted: true } as ConstructorParameters<typeof WebStorageError>[2]);
+        }
+        await sleep(delay);
+        this.assertLive();
+      }
+    }
+  }
+
+  private async bootWorkerOnce(budgetMs: number): Promise<WebSqliteInitInfo> {
     this.assertLive();
     const factory = this.options.workerFactory ?? defaultWorkerFactory;
     let worker: WorkerLike;
@@ -263,7 +304,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     this.assertLive(); // retired while the worker was booting: never ask it to acquire the pool (init's catch tears the worker down)
     const workerReadyMs = performance.now() - this.workerStartedAt;
     mark('fdx:web-worker-ready');
-    const result = (await this.send('init', { protocol: PROTOCOL, ...(import.meta.env.DEV && this.options.fault ? { fault: this.options.fault } : {}) }, { deadlineMs: this.initDeadlineMs }).promise) as InitResult;
+    const result = (await this.send('init', { protocol: PROTOCOL, bootBudgetMs: Math.round(budgetMs), ...(this.options.bootAttemptTimeoutMs !== undefined ? { bootAttemptTimeoutMs: this.options.bootAttemptTimeoutMs } : {}), ...(import.meta.env.DEV && this.options.fault ? { fault: this.options.fault } : {}) }, { deadlineMs: this.initDeadlineMs }).promise) as InitResult;
     this.assertLive(); // retired while the pool was being acquired: do not hand out a session
     mark('fdx:web-pool-ready');
     return {
@@ -302,13 +343,23 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
       this.readyResolve = null;
       return;
     }
-    // S7-03: an init/open/reopen deadline measures progress of THAT request. Ping replies, STALE_SESSION errors and other requests' replies
-    // do not extend it; only a worker-internal SQLite heartbeat (bounded by a hard cap) or a progress message tagged with its own id does.
+    // S7-03/S8-02: an init/open/reopen deadline measures progress of THAT request. Ping replies, STALE_SESSION errors and other requests'
+    // replies never extend it. A worker-internal SQLite heartbeat is tagged with the request that is executing; it extends (a) that request's
+    // own deadline and (b) the deadline of every request still QUEUED behind it (not started yet) - queued work behind a progressing
+    // executor is not a stalled worker. A request's own deadline starts when the worker posts `started` for it.
     if (message.kind === 'heartbeat') {
-      this.touchDeadlines('heartbeat');
+      this.touchDeadlines('heartbeat', message.requestId);
       return;
     }
     if (message.sessionId !== this.sessionId) return;
+    if (message.kind === 'started') {
+      const entry = this.deadlines.get(message.requestId);
+      if (entry) {
+        entry.started = true;
+        this.restartDeadline(message.requestId); // the full window starts now (hidden time was never counted: timers are paused while hidden)
+      }
+      return;
+    }
     const pending = this.pending.get(message.requestId);
     if (!pending) return;
     if (message.kind === 'progress') {
@@ -391,7 +442,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
    * A deadline-bound request (init/open/reopen) is declared dead after `ms` of SILENCE from the worker (any message resets it) while the
    * page is visible. A hidden page pauses every deadline (its timers/workers are throttled) and restarts them in full when it is visible again.
    */
-  private readonly deadlines = new Map<number, { ms: number; capMs: number; startedAt: number; timer: ReturnType<typeof setTimeout> | null; fire: () => void }>();
+  private readonly deadlines = new Map<number, { ms: number; capMs: number; startedAt: number; started: boolean; timer: ReturnType<typeof setTimeout> | null; fire: () => void }>();
   private visibilityBound = false;
 
   private pageHidden(): boolean {
@@ -399,7 +450,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   }
 
   private armDeadline(worker: WorkerLike, id: number, op: string, ms: number): void {
-    this.deadlines.set(id, { ms, capMs: ms * DEADLINE_HEARTBEAT_CAP_FACTOR, startedAt: performance.now(), timer: null, fire: () => this.onDeadline(worker, id, op) });
+    this.deadlines.set(id, { ms, capMs: ms * DEADLINE_HEARTBEAT_CAP_FACTOR, startedAt: performance.now(), started: false, timer: null, fire: () => this.onDeadline(worker, id, op) });
     this.bindVisibility();
     this.restartDeadline(id);
   }
@@ -418,13 +469,20 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   }
 
   /**
-   * 'visibility': hidden clears and visible re-arms in full. 'heartbeat': extends every pending deadline, but never past `capMs` since the
-   * request started (a worker looping heartbeats inside one statement cannot hold an init/open open forever).
+   * 'visibility': hidden clears and visible re-arms in full. 'heartbeat' (S8-02, executor-aware): a heartbeat tagged with request X extends
+   * X's own deadline and every deadline that has NOT started executing yet (queued behind X); an already-started request is not kept alive by
+   * another request's progress. An UNTAGGED heartbeat (legacy worker) extends every deadline but never past `capMs` since the request began.
    */
-  private touchDeadlines(reason: 'visibility' | 'heartbeat'): void {
+  private touchDeadlines(reason: 'visibility' | 'heartbeat', executingId?: number): void {
     const now = performance.now();
     for (const [id, entry] of [...this.deadlines.entries()]) {
-      if (reason === 'heartbeat' && now - entry.startedAt >= entry.capMs) continue;
+      if (reason === 'heartbeat') {
+        if (executingId === undefined) {
+          if (now - entry.startedAt >= entry.capMs) continue;
+        } else if (id !== executingId && entry.started) {
+          continue;
+        }
+      }
       this.restartDeadline(id);
     }
   }

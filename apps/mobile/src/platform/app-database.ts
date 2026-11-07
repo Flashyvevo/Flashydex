@@ -8,11 +8,12 @@ import {
 } from './pack-install';
 import { NATIVE_CATALOG_WRITES } from './pack-install/native-store';
 import { createWebInstallPort } from './pack-install/web-port';
-import type { StoragePrepareProgress, StoragePrepareResult } from './web-storage/contract';
+import { WebStorageError, type StoragePrepareProgress, type StoragePrepareResult } from './web-storage/contract';
 import { setWebRuntime } from './web-storage/runtime';
 import { __resetPageRetiredForTests, isPageRetired, isRetiredError, retiredError, retirePage, writeGate } from './web-storage/write-gate';
 import { isWriterLockReleased, releaseWriterLock } from './instance-lock';
-import { registerStorageRetirement, type RetireStorageOptions } from '../lib/handoff';
+import { jobRegistry, observeJobAdmission, JOB_SETTLE_TIMEOUT_MS } from './web-storage/job-registry';
+import { registerJobFence, registerStorageRetirement, type RetireStorageOptions } from '../lib/handoff';
 
 const isWeb = () => Capacitor.getPlatform() === 'web';
 
@@ -47,7 +48,15 @@ async function refuseIfRetired<T extends SqlDriver | null>(driver: T): Promise<T
  * deliberately does NOT release the lock (a worker may still hold SAHs); the fence stays up regardless.
  */
 export async function retireStorage(options: RetireStorageOptions = {}): Promise<void> {
-  fenceStorage();
+  // S8-01: whole-job lifetime. (a) no NEW job can be admitted from here on (the port/driver reject RETIRED); (b) a cancellable job that has
+  // no durable effect yet is aborted, every other admitted job is AWAITED (bounded) - the lock stays and the SQL gate stays open for it,
+  // so its role transitions and final USER receipt finish under this page's ownership; (c) only then fence storage, drain, close, release.
+  // On expiry the lock is NOT released (unload releases it) and the caller shows the explicit "still finishing" state.
+  const pendingJobs = jobRegistry.retire(options.jobSettleMs ?? JOB_SETTLE_TIMEOUT_MS); // synchronous part: admission fence + aborts
+  if (jobRegistry.active().length === 0) fenceStorage(); // no admitted job: the page fence rises synchronously (S7-01), before any await
+  const jobs = await pendingJobs;
+  if (!jobs.settled) throw new WebStorageError('BUSY', 'An update is still finishing', { commitState: 'unknown' });
+  fenceStorage(); // jobs settled: now (and only now) storage may be refused to everybody
   await options.quiesce?.();
   const step = options.step ?? (<T,>(promise: Promise<T>) => promise);
   if (isWeb()) {
@@ -60,6 +69,7 @@ export async function retireStorage(options: RetireStorageOptions = {}): Promise
   await releaseWriterLock();
 }
 registerStorageRetirement(retireStorage);
+registerJobFence({ settle: async (ms) => (await jobRegistry.retire(ms)).settled, lift: () => jobRegistry.lift() });
 
 /** Test seam: a real page never un-retires. */
 export function __resetRetiredForTests(): void {
@@ -144,7 +154,7 @@ export async function createUserDriver(): Promise<SqlDriver> {
   assertNotRetired();
   const driver = prepared.kind === 'web' ? await openWebUserDriver(prepared.user.path) : await openLegacyOrNativeUserDriver(prepared.kind === 'legacy-dev');
   await refuseIfRetired(driver);
-  return writeGate.wrap(withDevDelay(driver)); // update-handoff gate under every service mutation: web-storage/write-gate.ts
+  return writeGate.wrap(observeJobAdmission(withDevDelay(driver))); // update-handoff gate under every service mutation: web-storage/write-gate.ts
 }
 
 async function openWebUserDriver(path: string): Promise<SqlDriver> {
@@ -250,11 +260,13 @@ export function createInstallPort(): CatalogInstallPort {
     // Catalog operations need the prepared runtime; bootstrap prepares first, but never rely on that ordering. A retired page (S7-01) refuses
     // BEFORE touching storage and, for the operations that only stage bytes or hand out a handle, again after the await (a handle is closed first).
     // Operations that move roles (activate / restore / discard / remove) are NOT rejected after the fact: their durable effect already happened.
-    const ready = <A extends unknown[], R>(fn: (...args: A) => Promise<R>, afterCheck = false) => async (...args: A): Promise<R> => {
+    // S8-01: every operation is tracked as a job (an operation of an already admitted job may finish after the admission fence; a stand-alone
+    // one may not start) and the role-moving ones mark the job durable (no abort once the pointer / files may have changed).
+    const ready = <A extends unknown[], R>(fn: (...args: A) => Promise<R>, afterCheck = false, durable = false) => async (...args: A): Promise<R> => {
       assertNotRetired();
       await prepareStorage();
       assertNotRetired();
-      const result = await fn(...args);
+      const result = await jobRegistry.run('operation', () => fn(...args), { durable });
       if (afterCheck && isRetired()) {
         await Promise.resolve((result as { close?: () => unknown } | null)?.close?.()).catch(() => undefined);
         throw retiredError();
@@ -265,12 +277,12 @@ export function createInstallPort(): CatalogInstallPort {
       ...port,
       stage: ready(port.stage, true),
       openForValidation: ready(port.openForValidation, true),
-      activate: ready(port.activate),
-      restorePrevious: ready(port.restorePrevious),
-      discardPrevious: ready(port.discardPrevious),
-      discardCandidate: ready(port.discardCandidate),
+      activate: ready(port.activate, false, true),
+      restorePrevious: ready(port.restorePrevious, false, true),
+      discardPrevious: ready(port.discardPrevious, false, true),
+      discardCandidate: ready(port.discardCandidate, false, true),
       inspect: ready(port.inspect),
-      remove: ready(port.remove)
+      remove: ready(port.remove, false, true)
     };
   }
   return {

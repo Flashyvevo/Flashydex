@@ -44,7 +44,7 @@ describe('boot pool-open retry policy (S6-02)', () => {
     const c = clock();
     const contexts: { attempt: number; force: boolean }[] = [];
     const result = await withPoolOpenRetry(async (ctx) => {
-      contexts.push(ctx);
+      contexts.push({ attempt: ctx.attempt, force: ctx.force });
       if (ctx.attempt < 4) throw domException('NoModificationAllowedError');
       return 'pool';
     }, { ...noJitter, now: c.now, sleep: c.sleep });

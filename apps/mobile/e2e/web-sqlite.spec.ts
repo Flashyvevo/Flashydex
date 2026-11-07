@@ -337,3 +337,50 @@ test.describe('worker liveness under one long synchronous statement (S6-01)', ()
     expect(r.elapsedMs).toBeLessThan(5000);
   });
 });
+
+test.describe('executor-aware deadlines, real worker + real WASM (S8-02)', () => {
+  test.setTimeout(180_000);
+  type Probe = { long: string; second: string; elapsedMs: number; terminations: number; heartbeats: number; started: number };
+
+  /** Sol's reproduction: ONE long synchronous recursive SELECT on path A + a queued open of path B, request window 500 ms / liveness 1500 ms (shortened policy windows, not phone timings). */
+  const probe = (page: Page, rows: number) =>
+    page.evaluate(async ({ rows: n }) => {
+      const { createWebSqliteClient } = (await import('/src/platform/web-sqlite/client.ts' as string)) as { createWebSqliteClient: (o: object) => { driver(p: string, l: string, o: object): Promise<{ proxy(sql: string, p: unknown[], m: string): Promise<unknown> }>; shutdown(): Promise<void> } };
+      const w = window as unknown as { __s8: { terminations: number; heartbeats: number; started: number } };
+      w.__s8 = { terminations: 0, heartbeats: 0, started: 0 };
+      const terminate = Worker.prototype.terminate;
+      Worker.prototype.terminate = function (this: Worker) { w.__s8.terminations += 1; return terminate.call(this); };
+      const post = Worker.prototype.addEventListener;
+      Worker.prototype.addEventListener = function (this: Worker, type: string, listener: unknown, ...rest: unknown[]) {
+        if (type === 'message') (post as (...a: unknown[]) => void).call(this, type, (event: MessageEvent) => { const k = (event.data as { kind?: string })?.kind; if (k === 'heartbeat') w.__s8.heartbeats += 1; if (k === 'started') w.__s8.started += 1; (listener as (e: MessageEvent) => void)(event); }, ...rest);
+        else (post as (...a: unknown[]) => void).call(this, type, listener, ...rest);
+      } as typeof Worker.prototype.addEventListener;
+      try {
+        const client = createWebSqliteClient({ requestTimeoutMs: 500, livenessIntervalMs: 250, livenessTimeoutMs: 1500 });
+        const a = await client.driver('/user/u-s8l02a01.db', 'a', { mode: 'rw', create: true, role: 'user' });
+        const t0 = performance.now();
+        const long = a.proxy(`WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < ${n}) SELECT sum(x) FROM c`, [], 'values');
+        await new Promise((r) => setTimeout(r, 50));
+        const second = client.driver('/user/u-s8l02b01.db', 'b', { mode: 'rw', create: true, role: 'user' });
+        const settle = (p: Promise<unknown>) => p.then(() => 'ok', (e: { code?: string }) => `err:${e.code}`);
+        const [l, s] = await Promise.all([settle(long), settle(second)]);
+        const result = { long: l, second: s, elapsedMs: performance.now() - t0, ...w.__s8 };
+        await client.shutdown().catch(() => undefined);
+        return result;
+      } finally {
+        Worker.prototype.terminate = terminate;
+        Worker.prototype.addEventListener = post;
+      }
+    }, { rows });
+
+  test('a long synchronous SELECT + a queued second-path open, 500 ms request window: BOTH succeed past 6x the window, tagged heartbeats flowed, 0 terminations', async ({ page }) => {
+    const r = await probe(page, 24_000_000) as Probe;
+    console.log('S8-02 PROBE', JSON.stringify(r));
+    expect(r.elapsedMs).toBeGreaterThan(3500); // beyond the old 6 x 500 ms = 3 s heartbeat cap (+ one window)
+    expect(r.long).toBe('ok');
+    expect(r.second).toBe('ok');
+    expect(r.heartbeats).toBeGreaterThan(5);
+    expect(r.started).toBeGreaterThanOrEqual(2); // init + the queued open each announced their start
+    expect(r.terminations).toBe(0);
+  });
+});

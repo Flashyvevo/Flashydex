@@ -46,7 +46,11 @@ export interface PoolBootAttempt {
 
 /** The boot retry gave up (non-transient cause, or the elapsed budget ran out). `lastError` is the LAST original error. */
 export class PoolOpenFailure extends Error {
-  constructor(readonly attempts: readonly PoolBootAttempt[], readonly lastError: unknown, readonly exhausted: boolean) {
+  /**
+   * `hung`: an attempt never settled. The pinned initializer's cached pending promise cannot be retried in this worker (S8-03), so the
+   * caller must discard the worker and boot a fresh one; `exhausted` then says whether the whole budget is gone too.
+   */
+  constructor(readonly attempts: readonly PoolBootAttempt[], readonly lastError: unknown, readonly exhausted: boolean, readonly hung: boolean = false) {
     super(exhausted ? 'The storage pool could not be opened within the retry budget' : 'The storage pool could not be opened', { cause: lastError });
     this.name = 'PoolOpenFailure';
   }
@@ -70,6 +74,8 @@ export interface PoolOpenContext {
   attempt: number;
   /** true for every attempt after the first: pass `forceReinitIfPreviouslyFailed: true`. */
   force: boolean;
+  /** true once this attempt was given up on (hung / timed out): its late settle must be ignored. */
+  abandoned(): boolean;
 }
 
 function describeError(error: unknown): { code: string; cause: string } {
@@ -87,19 +93,28 @@ export function backoffDelayMs(retryIndex: number, options: Pick<PoolOpenRetryOp
   return Math.max(0, Math.round(Math.min(cap, base * jitter)));
 }
 
+
 /**
- * S7-03: ONE attempt must not be able to eat the whole budget. A never-settling `install` (a hung handle acquisition) is abandoned after
- * this long and counts as a transient INIT_FAILED, so the next attempt (forced re-init) still happens inside the elapsed budget.
+ * S7-03/S8-03: ONE attempt must not be able to eat the whole budget. An attempt that does not settle within this long is HUNG.
+ * The pinned initializer caches a PENDING promise per VFS name (dist/index.mjs ~17228-17237): a second call - forced or not - returns
+ * that same pending promise, so retrying inside this worker can never recover a hung acquisition (and a late resolve would race a second
+ * `reserveMinimumCapacity` caller). The only safe recovery is to DISCARD the worker: the attempt fails with `PoolOpenFailure.hung` and the
+ * client terminates this worker and boots a fresh one (the Web Lock is page-held, so ownership is retained).
  */
 export const POOL_BOOT_ATTEMPT_TIMEOUT_MS = 8_000;
 
+class AttemptHung extends WebStorageError {
+  constructor() {
+    super('INIT_FAILED', 'The storage pool attempt did not finish in time', { retryable: true });
+  }
+}
+
 async function boundedAttempt<T>(run: () => Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const attempt = run();
+  attempt.catch(() => undefined); // an abandoned attempt that rejects late must not surface as an unhandled rejection
   try {
-    return await Promise.race([
-      run(),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new WebStorageError('INIT_FAILED', 'The storage pool attempt did not finish in time', { retryable: true })), ms); })
-    ]);
+    return await Promise.race([attempt, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new AttemptHung()), ms); })]);
   } finally {
     clearTimeout(timer);
   }
@@ -107,6 +122,8 @@ async function boundedAttempt<T>(run: () => Promise<T>, ms: number): Promise<T> 
 
 /**
  * Runs `open` until it succeeds, a non-transient error occurs, or the elapsed budget cannot cover the next backoff.
+ * Settled transient rejections are retried in the SAME worker (forced re-init). A HUNG attempt is never retried here: it throws
+ * PoolOpenFailure with `hung: true` at once (the caller discards the worker). Every attempt is clipped to the remaining budget.
  * Throws PoolOpenFailure (attempts + last error); never wraps a success.
  */
 export async function withPoolOpenRetry<T>(open: (context: PoolOpenContext) => Promise<T>, options: PoolOpenRetryOptions = {}): Promise<T> {
@@ -117,11 +134,15 @@ export async function withPoolOpenRetry<T>(open: (context: PoolOpenContext) => P
   const attempts: PoolBootAttempt[] = [];
   for (let attempt = 1; ; attempt += 1) {
     const force = attempt > 1;
+    let abandoned = false;
+    const remaining = Math.max(1, budget - (now() - started));
     try {
-      return await boundedAttempt(() => open({ attempt, force }), options.attemptTimeoutMs ?? POOL_BOOT_ATTEMPT_TIMEOUT_MS);
+      return await boundedAttempt(() => open({ attempt, force, abandoned: () => abandoned }), Math.min(options.attemptTimeoutMs ?? POOL_BOOT_ATTEMPT_TIMEOUT_MS, remaining));
     } catch (error) {
+      abandoned = true; // a late settle of this attempt is ignored from here on
       const record: PoolBootAttempt = { attempt, force, ...describeError(error), elapsedMs: Math.round(now() - started) };
       attempts.push(record);
+      if (error instanceof AttemptHung) throw new PoolOpenFailure(attempts, error, now() - started >= budget, true);
       if (!isTransientPoolOpenError(error)) throw new PoolOpenFailure(attempts, error, false);
       const delay = backoffDelayMs(attempt, options);
       if (now() - started + delay >= budget) throw new PoolOpenFailure(attempts, error, true);
@@ -147,13 +168,15 @@ export function installPoolWithRetry<U extends { reserveMinimumCapacity(n: numbe
   base: { name: string; directory: string; initialCapacity: number },
   options: PoolOpenRetryOptions = {}
 ): Promise<U> {
-  return withPoolOpenRetry(async ({ force }) => {
+  return withPoolOpenRetry(async ({ force, abandoned }) => {
     const util = await install({
       ...base,
       clearOnInit: false, // data MUST survive re-init
       preserveOnInitFailure: true, // a failed init releases handles but never deletes the pool
       ...(force ? { forceReinitIfPreviouslyFailed: true as const } : {})
     });
+    // A late resolve of an ABANDONED (hung) attempt must not become a second reservation caller in one pool: its worker is being discarded.
+    if (abandoned()) throw new WebStorageError('INIT_FAILED', 'The storage pool attempt was abandoned', { retryable: true });
     await util.reserveMinimumCapacity(base.initialCapacity); // initialCapacity only applies to an empty pool
     return util;
   }, options);

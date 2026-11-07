@@ -103,12 +103,30 @@ export interface RetireStorageOptions {
   quiesce?: () => Promise<unknown>;
   /** Wraps one close step with a timeout / error message (handoff passes its HandoffError timeout). */
   step?: <T>(promise: Promise<T>, what: string) => Promise<T>;
+  /** How long to wait for admitted install/uninstall/rollback/sync/restore jobs to settle before giving up (S8-01). */
+  jobSettleMs?: number;
 }
 let registeredRetirement: ((options: RetireStorageOptions) => Promise<void>) | null = null;
 /** app-database.ts registers its `retireStorage` here at load, so handoff.ts needs no import of the storage layer. Returns an unregister (tests). */
 export function registerStorageRetirement(fn: (options: RetireStorageOptions) => Promise<void>): () => void {
   registeredRetirement = fn;
   return () => { if (registeredRetirement === fn) registeredRetirement = null; };
+}
+
+/**
+ * S8-01 job-lifetime fence. `settle(ms)` raises the admission fence (no NEW job can start), cancels what is still cancellable, and resolves
+ * true once every admitted job has fully settled (final USER receipt + role transitions included), false when `ms` elapsed first. The SQL
+ * write gate is deliberately still OPEN while it waits, so the admitted job finishes under this page's ownership. `lift()` takes the
+ * admission fence down again after a recoverable refusal.
+ */
+export interface JobFence {
+  settle(timeoutMs: number): Promise<boolean>;
+  lift(): void;
+}
+let registeredJobFence: JobFence | null = null;
+export function registerJobFence(fence: JobFence): () => void {
+  registeredJobFence = fence;
+  return () => { if (registeredJobFence === fence) registeredJobFence = null; };
 }
 
 /* ──────────────── update handoff controller (S5-04) ──────────────── */
@@ -139,8 +157,14 @@ export const HANDOFF_DRAIN_TIMEOUT_MS = 10_000;
 export const HANDOFF_CLOSE_TIMEOUT_MS = 10_000;
 /** How long the retirement waits for cancelled background jobs (sync / network refresh) to unregister. */
 export const HANDOFF_JOB_QUIESCE_MS = 3_000;
+/** How long the handoff waits for an admitted catalog/sync/restore job to finish (cancelling it when it still can) before it gives up and keeps the lock. */
+export const HANDOFF_JOB_SETTLE_MS = 20_000;
+const JOB_PENDING_TEXT = 'An update is still finishing. Reload when it’s done, or choose Restart later and try again.';
 
 export interface HandoffDeps {
+  /** Job-lifetime fence (S8-01). When omitted, the registered one is used; none registered = no job tracking (unit tests / native). */
+  jobFence?: JobFence;
+  jobSettleMs?: number;
   /** The page's write gate (web-storage/write-gate.ts). */
   gate: { close(): void; open(): void; drain(timeoutMs: number): Promise<boolean> };
   /** Open pool paths of the SQL client (empty off web). */
@@ -189,6 +213,22 @@ export async function prepareUpdateHandoff(deps: HandoffDeps): Promise<void> {
   const early = deps.busyReason();
   if (early) throw new HandoffError(BUSY_TEXT(early), true, false);
   deps.setBlocked(true);
+  const jobFence = deps.jobFence ?? registeredJobFence;
+  if (jobFence) {
+    // S8-01: BEFORE the write gate closes. An admitted install/uninstall/rollback/sync/restore must reach its final USER receipt (a transaction
+    // the closed gate would refuse) and its role-store transitions while this page still owns the writer lock; new jobs are refused (RETIRED).
+    let settled: boolean;
+    try {
+      settled = await jobFence.settle(deps.jobSettleMs ?? HANDOFF_JOB_SETTLE_MS);
+    } catch {
+      settled = false;
+    }
+    if (!settled) {
+      jobFence.lift(); // nothing was retired: the app stays usable, the lock stays held (unload releases it)
+      deps.setBlocked(false);
+      throw new HandoffError(JOB_PENDING_TEXT, true, true);
+    }
+  }
   deps.gate.close();
   try {
     const drained = await deps.gate.drain(deps.drainTimeoutMs ?? HANDOFF_DRAIN_TIMEOUT_MS);
@@ -197,6 +237,7 @@ export async function prepareUpdateHandoff(deps: HandoffDeps): Promise<void> {
     if (late) throw new HandoffError(BUSY_TEXT(late), true, false);
   } catch (error) {
     deps.gate.open();
+    jobFence?.lift();
     deps.setBlocked(false);
     throw error;
   }

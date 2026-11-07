@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import { onboardAndInstall, trackErrors } from './helpers';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { catalogPoolState, onboardAndInstall, trackErrors } from './helpers';
 
 test.describe.configure({ timeout: 180_000 });
 test.skip(({ isMobile }) => !isMobile, 'handoff harness is viewport-independent; run once (mobile project)');
@@ -188,3 +188,173 @@ for (const [label, opts, expectFailureCard] of [
     expect(await b.evaluate(() => (window as unknown as { __fdxWorkers: number }).__fdxWorkers)).toBeGreaterThanOrEqual(1);
   });
 }
+
+/**
+ * S8-01 (P1): the handoff must not release the writer lock while an admitted catalog/sync job is alive (admission -> final USER receipt,
+ * role-store IndexedDB transitions included). Sol's reproduction: A starts uninstall of the small EN catalog, its role IO is held behind
+ * a real fixture IndexedDB transaction, A requests the handoff. B (same context, blocked on the lock) must stay blocked until A's job has
+ * settled; then B boots with a CONSISTENT receipt (installed + active, or absent + no orphan - never installed + null active).
+ */
+type Gate = { promise: Promise<void>; open(): void };
+const gate = (): Gate => {
+  let open!: () => void;
+  const promise = new Promise<void>((resolve) => { open = resolve; });
+  return { promise, open };
+};
+type JobServices = { settings: { update(i: Record<string, unknown>): Promise<unknown> }; install: { installed(l: string): Promise<{ status: string }>; install(l: string, on: (p: unknown) => void, s: AbortSignal): Promise<unknown>; uninstall(i: { language: string; confirm: true }): Promise<unknown> }; catalog: { searchCards(i: Record<string, unknown>): Promise<{ page: { total: number } }> }; sync: { start(i: Record<string, unknown>): Promise<unknown> } };
+type Win = { __flashydexTest?: { services: JobServices }; __fdxHandoffTest?: { run(): Promise<void> }; __fdxJob?: Promise<string>; __fdxHandoff?: Promise<void>; __fdxRoleHold?: { released: boolean; done: Promise<void> } };
+
+/** A REAL readwrite IndexedDB transaction on the role store, kept alive with read requests until released: later role transactions queue behind it. */
+async function holdRoleStore(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open('flashydex-web-storage-v1');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('meta', 'readwrite');
+      const store = tx.objectStore('meta');
+      const hold = { released: false, done: new Promise<void>((done) => { tx.oncomplete = () => { db.close(); done(); }; }) };
+      (window as unknown as Win).__fdxRoleHold = hold;
+      const pump = () => { if (!hold.released) store.get('state').onsuccess = pump; };
+      pump();
+      resolve();
+    };
+  }));
+}
+async function releaseRoleStore(page: Page): Promise<void> {
+  await page.evaluate(async () => { const h = (window as unknown as Win).__fdxRoleHold!; h.released = true; await h.done; });
+}
+const activeJobs = (page: Page) => page.evaluate(async () => ((await import(/* @vite-ignore */ '/src/platform/web-storage/job-registry.ts' as string)) as { jobRegistry: { active(): Array<{ kind: string; durable: boolean }> } }).jobRegistry.active().map((j) => `${j.kind}:${j.durable}`));
+const lockHeld = (page: Page) => page.evaluate(async () => (await navigator.locks.query()).held?.some((l) => l.name === 'flashydex-user-writer') ?? false);
+
+async function blockedSecondTab(context: BrowserContext, a: Page): Promise<Page> {
+  const b = await context.newPage();
+  await b.goto('/');
+  await expect(b.getByTestId('instance-lock')).toBeVisible({ timeout: 30_000 });
+  expect(await lockHeld(a)).toBe(true);
+  return b;
+}
+/** B stays blocked and A keeps the lock for `ms` while the handoff is requested and the job is alive. */
+async function expectStillOwned(a: Page, b: Page, ms = 2500): Promise<void> {
+  await a.waitForTimeout(ms);
+  await expect(b.getByTestId('instance-lock')).toBeVisible();
+  expect(await lockHeld(a)).toBe(true);
+}
+async function bootedConsistent(b: Page, expectLanguage: 'en' | 'ja' = 'en'): Promise<{ status: string; total: number | null }> {
+  await expect(b.getByTestId('instance-lock')).toHaveCount(0, { timeout: 45_000 });
+  await b.waitForFunction(() => Boolean((window as unknown as Win).__flashydexTest?.services), undefined, { timeout: 45_000 });
+  const view = await b.evaluate(async (language) => {
+    const services = (window as unknown as Win).__flashydexTest!.services;
+    const status = (await services.install.installed(language)).status;
+    const total = await services.catalog.searchCards({ q: '', language, limit: 5 }).then((r) => r.page.total, () => null);
+    return { status, total };
+  }, expectLanguage);
+  const pool = await catalogPoolState(b);
+  const files = pool.files.filter((f) => f.startsWith(`/catalog-${expectLanguage}/`));
+  const active = pool.activeRefs[expectLanguage] ?? null;
+  if (view.status === 'installed') {
+    expect(active, 'installed receipt with a null active mapping').not.toBeNull();
+    expect(files).toContain(active);
+    expect(view.total).toBeGreaterThan(0); // search works
+  } else {
+    expect(view.status).toBe('absent');
+    expect(active).toBeNull();
+    expect(files, 'orphan catalog generation').toEqual([]);
+  }
+  return view;
+}
+const lateWriteOnA = (a: Page) => a.evaluate(() => (window as unknown as { __flashydexTest: { services: { collection: { createLocation(i: { name: string }): Promise<unknown> } } } }).__flashydexTest.services.collection.createLocation({ name: 'A after handoff' }).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`));
+
+test('S8-01 uninstall with its role IO held: handoff waits, B stays blocked until the uninstall settled, B boots absent with no orphan', async ({ context }) => {
+  const a = await context.newPage();
+  await onboardAndInstall(a);
+  await a.waitForFunction(() => Boolean((window as unknown as Win).__flashydexTest?.services && (window as unknown as Win).__fdxHandoffTest));
+  const b = await blockedSecondTab(context, a);
+
+  await holdRoleStore(a);
+  await a.evaluate(() => {
+    const w = window as unknown as Win;
+    w.__fdxJob = w.__flashydexTest!.services.install.uninstall({ language: 'en', confirm: true }).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`);
+  });
+  await expect.poll(() => activeJobs(a), { timeout: 15_000 }).toContain('uninstall:false');
+  await a.evaluate(() => { const w = window as unknown as Win; w.__fdxHandoff = w.__fdxHandoffTest!.run(); });
+
+  await expectStillOwned(a, b); // the lock is NOT released while the uninstall's role IO is queued
+  expect(await a.evaluate(() => (window as unknown as Win).__fdxRoleHold!.released)).toBe(false);
+
+  await releaseRoleStore(a);
+  expect(await a.evaluate(() => (window as unknown as Win).__fdxJob)).toBe('ok'); // the receipt transaction was admitted (never MAINTENANCE)
+  await a.evaluate(() => (window as unknown as Win).__fdxHandoff);
+  expect(await bootedConsistent(b)).toMatchObject({ status: 'absent' });
+  expect(await lateWriteOnA(a)).not.toBe('ok');
+  expect(await b.evaluate(() => (window as unknown as { __flashydexTest: { services: { collection: { createLocation(i: { name: string }): Promise<unknown> } } } }).__flashydexTest.services.collection.createLocation({ name: 'B writes' }).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`))).toBe('ok');
+});
+
+test('S8-01 install in progress (download stalled), no canceller: the handoff waits for the whole install, B boots consistent', async ({ context }) => {
+  const stall = gate();
+  await context.route('**/dev-packs/catalog-ja-*.zst', async (route) => { await stall.promise; await route.continue().catch(() => undefined); });
+  const a = await context.newPage();
+  await onboardAndInstall(a);
+  await a.waitForFunction(() => Boolean((window as unknown as Win).__flashydexTest?.services && (window as unknown as Win).__fdxHandoffTest));
+  const b = await blockedSecondTab(context, a);
+
+  await a.evaluate(() => (window as unknown as Win).__flashydexTest!.services.settings.update({ languages: ['en', 'ja'] })); // JA must be a selected catalog
+  // No canceller registered (a caller outside install-hooks): the handoff must wait for the whole install.
+  await a.evaluate(() => {
+    const w = window as unknown as Win;
+    w.__fdxJob = w.__flashydexTest!.services.install.install('ja', () => undefined, new AbortController().signal).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`);
+  });
+  await expect.poll(() => activeJobs(a), { timeout: 30_000 }).toContain('install:false');
+  await a.evaluate(() => { const w = window as unknown as Win; w.__fdxHandoff = w.__fdxHandoffTest!.run(); });
+  await expectStillOwned(a, b);
+  stall.open();
+  expect(await a.evaluate(() => (window as unknown as Win).__fdxJob)).toBe('ok');
+  await a.evaluate(() => (window as unknown as Win).__fdxHandoff);
+  expect(await bootedConsistent(b, 'ja')).toMatchObject({ status: 'installed' });
+  expect(await bootedConsistent(b, 'en')).toMatchObject({ status: 'installed' });
+});
+
+test('S8-01 install in progress with a canceller (install-hooks): the pre-durable install is aborted, EN stays intact, the lock is released afterwards', async ({ context }) => {
+  const stall = gate(); // never opened: only the abort can end the stalled download
+  await context.route('**/dev-packs/catalog-ja-*.zst', async (route) => { await stall.promise; await route.continue().catch(() => undefined); });
+  const a = await context.newPage();
+  await onboardAndInstall(a);
+  await a.waitForFunction(() => Boolean((window as unknown as Win).__flashydexTest?.services && (window as unknown as Win).__fdxHandoffTest));
+  const b = await blockedSecondTab(context, a);
+
+  await a.evaluate(() => (window as unknown as Win).__flashydexTest!.services.settings.update({ languages: ['en', 'ja'] }));
+  await a.evaluate(async () => {
+    const w = window as unknown as Win;
+    const { jobRegistry } = (await import(/* @vite-ignore */ '/src/platform/web-storage/job-registry.ts' as string)) as { jobRegistry: { registerCanceller(k: string, f: () => void): () => void } };
+    const controller = new AbortController();
+    jobRegistry.registerCanceller('install', () => controller.abort());
+    w.__fdxJob = w.__flashydexTest!.services.install.install('ja', () => undefined, controller.signal).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`);
+  });
+  await expect.poll(() => activeJobs(a), { timeout: 30_000 }).toContain('install:false');
+  await a.evaluate(() => { const w = window as unknown as Win; w.__fdxHandoff = w.__fdxHandoffTest!.run(); });
+  await a.evaluate(() => (window as unknown as Win).__fdxHandoff);
+  expect(await a.evaluate(() => (window as unknown as Win).__fdxJob)).toBe('err:CANCELLED');
+  expect(await bootedConsistent(b, 'en')).toMatchObject({ status: 'installed' });
+  expect((await bootedConsistent(b, 'ja')).status).toBe('absent');
+  stall.open();
+});
+
+test('S8-01 sync in progress: the handoff waits for the sync lease to settle, B boots consistent', async ({ context }) => {
+  const stall = gate();
+  await context.route('**/api.tcgdex.net/**', async (route) => { await stall.promise; await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }).catch(() => undefined); });
+  const a = await context.newPage();
+  await onboardAndInstall(a);
+  await a.waitForFunction(() => Boolean((window as unknown as Win).__flashydexTest?.services && (window as unknown as Win).__fdxHandoffTest));
+  const b = await blockedSecondTab(context, a);
+
+  await a.evaluate(() => {
+    const w = window as unknown as Win;
+    w.__fdxJob = w.__flashydexTest!.services.sync.start({ mode: 'incremental' }).then(() => 'ok', (e: { code?: string }) => `err:${e.code}`);
+  });
+  await expect.poll(() => activeJobs(a), { timeout: 30_000 }).toContain('sync:false');
+  await a.evaluate(() => { const w = window as unknown as Win; w.__fdxHandoff = w.__fdxHandoffTest!.run(); });
+  await expectStillOwned(a, b);
+  stall.open();
+  await a.evaluate(() => (window as unknown as Win).__fdxHandoff);
+  expect(await bootedConsistent(b, 'en')).toMatchObject({ status: 'installed' });
+});

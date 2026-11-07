@@ -56,6 +56,8 @@ export interface WireError {
   commitState: CommitState;
   /** Authoritative connection state after a failed statement (lets the client keep transaction ownership exact). */
   inTransaction?: boolean;
+  /** 1: the INIT_FAILED came from a HUNG pool acquisition; the client discards this worker and boots a fresh one (S8-03). */
+  hung?: boolean;
   /** INIT_FAILED from the pool boot retry (S6-02): every failed acquire attempt with its cause and elapsed time. */
   attempts?: PoolBootAttempt[];
 }
@@ -83,6 +85,18 @@ export interface ProgressMessage {
 export interface HeartbeatMessage {
   kind: 'heartbeat';
   sessionId: string;
+  /** The request whose synchronous SQLite work is executing right now (S8-02). Absent = unattributed (legacy). */
+  requestId?: number;
+}
+
+/**
+ * Posted when the worker actually BEGINS handling an init/open/reopen request (S8-02). The single-threaded worker may have queued it behind
+ * a long synchronous statement; the client starts that request's deadline only now.
+ */
+export interface StartedMessage {
+  kind: 'started';
+  sessionId: string;
+  requestId: number;
 }
 
 export interface ReadyMessage {
@@ -90,13 +104,17 @@ export interface ReadyMessage {
   protocol: typeof PROTOCOL;
 }
 
-export type WorkerMessage = ResponseEnvelope | ProgressMessage | HeartbeatMessage | ReadyMessage;
+export type WorkerMessage = ResponseEnvelope | ProgressMessage | HeartbeatMessage | StartedMessage | ReadyMessage;
 
 // ───────────────────────── payloads ─────────────────────────
 export interface InitPayload {
   protocol: number;
   /** DEV-only fault seam (ignored in production builds). */
   fault?: FaultSpec;
+  /** Remaining client-side boot budget for THIS worker (S8-03: a fresh worker after a hung acquisition gets the clipped remainder). */
+  bootBudgetMs?: number;
+  /** Per-attempt bound override (tests / clipping). */
+  bootAttemptTimeoutMs?: number;
 }
 
 export interface InitResult {
@@ -184,12 +202,14 @@ export interface FaultSpec {
 export function wireError(error: unknown): WireError {
   if (error instanceof WebStorageError) {
     const attempts = (error.details as { attempts?: PoolBootAttempt[] }).attempts;
+    const hung = (error.details as { hung?: boolean }).hung === true;
     return {
       code: error.code,
       message: error.message,
       sqliteCode: error.details.sqliteCode,
       retryable: error.details.retryable ?? false,
       commitState: error.details.commitState ?? 'not_started',
+      ...(hung ? { hung: true } : {}),
       ...(Array.isArray(attempts) ? { attempts: attempts.map(({ attempt, force, code, cause, elapsedMs }) => ({ attempt, force, code, cause, elapsedMs })) } : {})
     };
   }
@@ -197,7 +217,7 @@ export function wireError(error: unknown): WireError {
 }
 
 export function fromWire(error: WireError): WebStorageError {
-  const extra = error.attempts ? { attempts: error.attempts } : {};
+  const extra = { ...(error.attempts ? { attempts: error.attempts } : {}), ...(error.hung ? { hung: true } : {}) };
   return new WebStorageError(error.code, error.message, { commitState: error.commitState, retryable: error.retryable, sqliteCode: error.sqliteCode, ...extra });
 }
 

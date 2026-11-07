@@ -4,6 +4,7 @@ import type { CatalogProgress, CatalogStatus, CatalogUpdateCheck, DomainError, I
 import { useServices, useServicesIfReady } from './context';
 import { invalidateAll, keys } from './keys';
 import { maybeShowProtectionPrompt } from '../lib/protection-prompt';
+import { jobRegistry } from '../platform/web-storage/job-registry';
 
 /**
  * Install progress lives OUTSIDE React so a download keeps running while screens mount/unmount (CatalogInstallService is app-scoped).
@@ -72,6 +73,8 @@ export function useCatalogInstall(): CatalogInstallControls {
     if (state.active) return null;
     maybeShowProtectionPrompt(); // before the first full catalog download: one-time, dismissible, does not delay the download
     controller = new AbortController();
+    // S8-01: the handoff's job fence aborts an install that has no durable effect yet instead of waiting out the whole download.
+    const offCanceller = jobRegistry.registerCanceller('install', () => controller?.abort());
     setState({ progress: null, active: true, error: null, errorLanguage: null });
     try {
       const installed = await servicesRef.current.install.install(language, (progress) => setState({ ...state, progress }), controller.signal);
@@ -83,6 +86,7 @@ export function useCatalogInstall(): CatalogInstallControls {
       await invalidateAll(qc);
       return null;
     } finally {
+      offCanceller();
       controller = null;
     }
   }, [qc]);

@@ -103,7 +103,7 @@ async function stagingOpen(job: string, name: string): Promise<StagingFile> {
   };
 }
 
-async function boot(fault: FaultSpec | undefined): Promise<WorkerEnv> {
+async function boot(fault: FaultSpec | undefined, bootOptions: { budgetMs?: number; attemptTimeoutMs?: number } = {}): Promise<WorkerEnv> {
   const poolStarted = performance.now();
   let sqlite3: Sqlite3Api;
   try {
@@ -120,15 +120,15 @@ async function boot(fault: FaultSpec | undefined): Promise<WorkerEnv> {
   try {
     // Transient right after a killed worker (handles still held): elapsed-budget retry that REALLY re-acquires (force after the first failure).
     const installer = (sqlite3 as unknown as { installOpfsSAHPoolVfs(options: object): Promise<PoolLike & { reserveMinimumCapacity(n: number): Promise<number> }> }).installOpfsSAHPoolVfs;
-    pool = await installPoolWithRetry((options) => installer.call(sqlite3, options), { name: POOL_VFS_NAME, directory: POOL_DIRECTORY, initialCapacity: POOL_INITIAL_CAPACITY });
+    pool = await installPoolWithRetry((options) => installer.call(sqlite3, options), { name: POOL_VFS_NAME, directory: POOL_DIRECTORY, initialCapacity: POOL_INITIAL_CAPACITY }, bootOptions);
   } catch (error) {
     const last = error instanceof PoolOpenFailure ? error.lastError : error;
     const mapped = mapAnyError(last, 'INIT_FAILED');
     if (mapped.code === 'QUOTA' || mapped.code === 'CAPACITY') throw mapped;
     throw new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', {
       cause: last,
-      ...(error instanceof PoolOpenFailure ? { attempts: error.attempts } : {})
-    });
+      ...(error instanceof PoolOpenFailure ? { attempts: error.attempts, ...(error.hung ? { hung: true } : {}) } : {})
+    } as ConstructorParameters<typeof WebStorageError>[2]);
   }
   if (fault?.initFail === 'after-vfs') throw new WebStorageError('INIT_FAILED', 'Injected initialization failure');
   const poolReadyMs = performance.now() - poolStarted;

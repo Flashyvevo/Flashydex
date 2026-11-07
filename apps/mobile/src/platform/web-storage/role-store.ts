@@ -3,6 +3,7 @@ import {
   type CatalogCandidate, type ImportIntent, type LanguageRoles, type MigrationMarker, type PoolPath, type RoleStateV1, type RoleStore, type UserRole, type WebLanguage
 } from './contract';
 import * as roles from './role-state';
+import { isPageRetired, retiredError } from './write-gate';
 
 /**
  * Role store (contract `RoleStore`) over raw IndexedDB `flashydex-web-storage-v1`.
@@ -79,13 +80,13 @@ export function createMemoryStateCell(initial?: unknown): StateCell & { raw(): u
 
 const corruptDb = (why: string, cause?: unknown): WebStorageError => new WebStorageError('METADATA_CORRUPT', `Role metadata store is unusable: ${why}`, { cause });
 
-function openDatabase(name: string): Promise<IDBDatabase> {
+function openDatabase(name: string, factory: IDBFactory | undefined = typeof indexedDB === 'undefined' ? undefined : indexedDB): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
+    if (!factory) {
       reject(new WebStorageError('STORAGE_UNAVAILABLE', 'IndexedDB is not available'));
       return;
     }
-    const request = indexedDB.open(name, DB_VERSION);
+    const request = factory.open(name, DB_VERSION);
     request.onupgradeneeded = (event) => {
       // Only version 0 -> 1 exists. A future schema never reaches this handler on old code (VersionError below).
       if (event.oldVersion < 1) request.result.createObjectStore(STORE);
@@ -107,10 +108,21 @@ function openDatabase(name: string): Promise<IDBDatabase> {
   });
 }
 
-export function createIdbStateCell(name: string): StateCell {
+export interface IdbCellOptions {
+  /**
+   * Checked INSIDE the readwrite transaction, before the put (S8-01): a transition that was queued behind other IndexedDB work and only
+   * executes after retirement must abort instead of writing. Once the put is issued the transaction is past this check, so a committed
+   * transition always reports committed (the promise resolves on the transaction's `complete`).
+   */
+  isFenced?: () => boolean;
+  /** Test seam: an IndexedDB factory (defaults to the global one). */
+  factory?: IDBFactory;
+}
+
+export function createIdbStateCell(name: string, options: IdbCellOptions = {}): StateCell {
   let connection: Promise<IDBDatabase> | null = null;
   const db = (): Promise<IDBDatabase> => {
-    connection ??= openDatabase(name).then((opened) => {
+    connection ??= openDatabase(name, options.factory).then((opened) => {
       opened.onversionchange = () => { opened.close(); connection = null; };
       opened.onclose = () => { connection = null; };
       return opened;
@@ -149,6 +161,7 @@ export function createIdbStateCell(name: string): StateCell {
         const request = store.get(KEY);
         request.onsuccess = () => {
           try {
+            if (options.isFenced?.()) throw retiredError(); // execution-time fence: abort before any put, nothing changed
             const { next, result } = fn(request.result);
             outcome = { result };
             if (next !== null) store.put(next, KEY);
@@ -165,8 +178,8 @@ export function createIdbStateCell(name: string): StateCell {
   };
 }
 
-export function createRoleStore(dbName: string = ROLE_DB_NAME): RoleStore {
-  return createRoleStoreFromCell(createIdbStateCell(dbName));
+export function createRoleStore(dbName: string = ROLE_DB_NAME, options: IdbCellOptions = { isFenced: isPageRetired }): RoleStore {
+  return createRoleStoreFromCell(createIdbStateCell(dbName, options));
 }
 
 let singleton: RoleStore | undefined;

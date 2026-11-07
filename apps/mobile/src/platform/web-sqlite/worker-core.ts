@@ -49,7 +49,7 @@ export interface WorkerEnv {
 }
 
 export interface CoreOptions {
-  boot(fault: FaultSpec | undefined): Promise<WorkerEnv>;
+  boot(fault: FaultSpec | undefined, bootOptions?: { budgetMs?: number; attemptTimeoutMs?: number }): Promise<WorkerEnv>;
   post(message: WorkerMessage, transfer?: Transferable[]): void;
   yieldToLoop(): Promise<void>;
   /** Only true in DEV builds / tests: enables the `fault` and `exportFile` ops. */
@@ -98,6 +98,9 @@ export class SqlWorkerCore {
     this.now = options.now ?? (() => performance.now());
   }
 
+  /** Request whose SYNCHRONOUS segment is running right now (set around `dispatch`'s sync prefix only); tags SQLite progress heartbeats. */
+  private executing: number | null = null;
+
   /** Entry point for every incoming request message. Never throws. */
   async handle(request: RequestEnvelope): Promise<void> {
     const started = this.now();
@@ -108,7 +111,19 @@ export class SqlWorkerCore {
           throw new WebStorageError('STALE_SESSION', 'The storage session changed; reopen storage', { retryable: false });
         }
       }
-      const payload = await this.dispatch(request);
+      if (request.op === 'init' || request.op === 'open' || request.op === 'reopen') {
+        // S8-02: this request is executing NOW (it may have waited behind a long synchronous statement): its deadline starts here.
+        try { this.options.post({ kind: 'started', sessionId: request.sessionId, requestId: request.requestId }); } catch { /* a liveness hint */ }
+      }
+      const previous = this.executing;
+      this.executing = request.requestId;
+      let running: Promise<unknown>;
+      try {
+        running = this.dispatch(request); // every synchronous SQLite call of this request happens inside this call
+      } finally {
+        this.executing = previous;
+      }
+      const payload = await running;
       this.options.post({ kind: 'response', protocol: PROTOCOL, sessionId: request.sessionId, requestId: request.requestId, ok: true, payload, timings: { execMs: this.now() - started } });
     } catch (error) {
       const e = this.toWire(error, request);
@@ -182,7 +197,10 @@ export class SqlWorkerCore {
       if (this.options.dev && payload.fault) this.faults = { ...payload.fault };
       this.sessionId = request.sessionId;
       try {
-        this.env = await this.options.boot(this.options.dev ? this.faults : undefined);
+        this.env = await this.options.boot(this.options.dev ? this.faults : undefined, {
+          ...(payload.bootBudgetMs !== undefined ? { budgetMs: payload.bootBudgetMs } : {}),
+          ...(payload.bootAttemptTimeoutMs !== undefined ? { attemptTimeoutMs: payload.bootAttemptTimeoutMs } : {})
+        });
       } catch (error) {
         this.sessionId = null;
         this.initPromise = null;
@@ -251,7 +269,7 @@ export class SqlWorkerCore {
       if (at - this.lastHeartbeatAt >= everyMs) {
         this.lastHeartbeatAt = at;
         try {
-          this.options.post({ kind: 'heartbeat', sessionId });
+          this.options.post({ kind: 'heartbeat', sessionId, ...(this.executing !== null ? { requestId: this.executing } : {}) });
         } catch {
           /* a failed liveness hint must never abort the statement */
         }

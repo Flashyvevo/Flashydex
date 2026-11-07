@@ -129,43 +129,49 @@ describe('S7-03: pool boot retry bounds each attempt', () => {
     expect(POOL_BOOT_ATTEMPT_TIMEOUT_MS).toBe(8_000);
   });
 
-  it('a hung single attempt is abandoned as a transient INIT_FAILED; the next (forced) attempt still happens and succeeds within the budget', async () => {
-    const contexts: { attempt: number; force: boolean }[] = [];
-    let t = 0;
-    const result = await withPoolOpenRetry(
-      (ctx) => {
-        contexts.push(ctx);
-        return ctx.attempt === 1 ? new Promise<string>(() => undefined) : Promise.resolve('pool');
-      },
-      { attemptTimeoutMs: 20, random: () => 0.5, now: () => t, sleep: async (ms) => { t += ms; } }
-    );
-    expect(result).toBe('pool');
-    expect(contexts).toEqual([{ attempt: 1, force: false }, { attempt: 2, force: true }]);
+  // S8-03: the earlier versions of the next three tests modelled a NON-caching initializer (a second call returned a fresh promise).
+  // The pinned initializer caches the pending promise, so a hung attempt cannot be retried in-worker: it fails `hung` and the CLIENT discards the worker.
+  // The cache-faithful coverage (single acquisition, late resolve ignored, clipping, client-supervised fresh worker) lives in client-fix-l.test.ts.
+  it('a hung single attempt is a transient INIT_FAILED record flagged `hung` (never retried in the same worker)', async () => {
+    let calls = 0;
+    const failure = await withPoolOpenRetry(
+      () => { calls += 1; return new Promise<string>(() => undefined); },
+      { attemptTimeoutMs: 20, random: () => 0.5, sleep: async () => undefined }
+    ).catch((e: unknown) => e);
+    expect(failure).toMatchObject({ name: 'PoolOpenFailure', hung: true });
+    expect(calls).toBe(1);
+    expect((failure as { attempts: { code: string; force: boolean }[] }).attempts).toMatchObject([{ attempt: 1, force: false, code: 'INIT_FAILED' }]);
   });
 
-  it('every attempt hanging -> PoolOpenFailure with one INIT_FAILED record per attempt (budget still enforced)', async () => {
+  it('a hung attempt after settled failures reports every attempt, the hung one last (budget still enforced)', async () => {
     let t = 0;
-    const failure = await withPoolOpenRetry(() => new Promise<string>(() => undefined), {
-      attemptTimeoutMs: 10, budgetMs: 1_000, random: () => 0.5, now: () => t, sleep: async (ms) => { t += ms; }
-    }).catch((e: unknown) => e);
-    expect(failure).toMatchObject({ name: 'PoolOpenFailure', exhausted: true });
+    let call = 0;
+    const failure = await withPoolOpenRetry(
+      () => (++call < 3 ? Promise.reject(Object.assign(new Error('busy'), { name: 'NoModificationAllowedError' })) : new Promise<string>(() => undefined)),
+      { attemptTimeoutMs: 10, budgetMs: 100_000, random: () => 0.5, now: () => t, sleep: async (ms) => { t += ms; } }
+    ).catch((e: unknown) => e);
+    expect(failure).toMatchObject({ name: 'PoolOpenFailure', hung: true });
     const attempts = (failure as { attempts: { code: string; force: boolean }[] }).attempts;
-    expect(attempts.length).toBeGreaterThan(2);
-    expect(attempts.every((a) => a.code === 'INIT_FAILED')).toBe(true);
-    expect(attempts[0]?.force).toBe(false);
-    expect(attempts[1]?.force).toBe(true);
+    expect(attempts).toHaveLength(3);
+    expect(attempts.map((a) => a.force)).toEqual([false, true, true]);
+    expect(attempts[2]?.code).toBe('INIT_FAILED');
   });
 
-  it('installPoolWithRetry: a hung install is re-issued with forceReinitIfPreviouslyFailed', async () => {
+  it('installPoolWithRetry: a hung install is NOT re-issued (the cached pending promise cannot be replaced); the late resolve never reserves', async () => {
     const seen: (true | undefined)[] = [];
-    const util = { reserveMinimumCapacity: async () => 1 };
-    const out = await installPoolWithRetry(
-      (options) => { seen.push(options.forceReinitIfPreviouslyFailed); return seen.length === 1 ? new Promise<typeof util>(() => undefined) : Promise.resolve(util); },
+    let reserves = 0;
+    let finish!: (u: { reserveMinimumCapacity: () => Promise<number> }) => void;
+    const util = { reserveMinimumCapacity: async () => { reserves += 1; return 1; } };
+    const failure = await installPoolWithRetry(
+      (options) => { seen.push(options.forceReinitIfPreviouslyFailed); return new Promise<typeof util>((resolve) => { finish = resolve; }); },
       { name: 'n', directory: '/d', initialCapacity: 6 },
       { attemptTimeoutMs: 15, random: () => 0.5, sleep: async () => undefined }
-    );
-    expect(out).toBe(util);
-    expect(seen).toEqual([undefined, true]);
+    ).catch((e: unknown) => e);
+    expect(failure).toMatchObject({ hung: true });
+    expect(seen).toEqual([undefined]);
+    finish(util);
+    await sleep(10);
+    expect(reserves).toBe(0);
   });
 });
 

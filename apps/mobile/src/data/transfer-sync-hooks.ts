@@ -1,4 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import type {
   BackupCapabilities, BackupCreate, ById, DomainError, ExportInput, FileRef, ImportCommit, ImportCommitResult, ImportDryRun, ImportReport, Input,
   PickInput, RestoreCommit, RestoreDryRun, Services, ShareInput, SyncDto, SyncStart
@@ -8,6 +9,7 @@ import { useServices, useServicesIfReady } from './context';
 import { invalidateAll, invalidatePersonal, keys } from './keys';
 import { platform } from '../platform/app-platform';
 import { useReportBackgroundJob } from '../lib/handoff';
+import { jobRegistry } from '../platform/web-storage/job-registry';
 
 /* ------------------------------------------------------------------------------------------ sync (secondary refresh path) */
 /** Latest sync run; polls every second while it is queued/running. */
@@ -29,6 +31,14 @@ export function useActiveSync() {
   useReportBackgroundJob(running, 'A catalog refresh is running.', () => {
     if (services && active && active.status !== 'cancel_requested') void services.sync.cancel({ id: active.id }).catch(() => undefined);
   });
+  // S8-01: the handoff's job fence cancels a sync that has no durable effect yet (it then awaits the lease release either way).
+  const cancelRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    cancelRef.current = () => {
+      if (services && active && active.status !== 'cancel_requested') void services.sync.cancel({ id: active.id }).catch(() => undefined);
+    };
+  });
+  useEffect(() => (running ? jobRegistry.registerCanceller('sync', () => cancelRef.current()) : undefined), [running]);
   return query;
 }
 export function useStartSync() {

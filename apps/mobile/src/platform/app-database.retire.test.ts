@@ -56,6 +56,7 @@ vi.mock('./pack-install/web-port', () => ({
   })
 }));
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e as { code?: string }).code ?? String(e));
 
 async function load() {
@@ -173,5 +174,42 @@ describe('S7-01: app-database retirement fence', () => {
     expect(releaseSpy).not.toHaveBeenCalled();
     expect(db.isStorageRetired()).toBe(true);
     expect(await code(db.prepareStorage())).toBe('RETIRED');
+  });
+
+  it('S8-01 retireStorage() with an admitted job: the job fence is up at once, the job may still use storage, the page fence/close/lock wait for it to settle', async () => {
+    const db = await load();
+    const { jobRegistry } = await import('./web-storage/job-registry');
+    const lock = await import('./instance-lock');
+    const releaseSpy = vi.spyOn(lock, 'releaseWriterLock');
+    await db.prepareStorage();
+    const job = jobRegistry.begin('uninstall');
+    const done = db.retireStorage({ jobSettleMs: 5_000 });
+    expect(jobRegistry.fenced).toBe(true); // no NEW job from here on
+    expect(await code(Promise.resolve().then(() => jobRegistry.begin('install')))).toBe('RETIRED');
+    await sleep(40);
+    expect(db.isStorageRetired()).toBe(false); // the admitted job's own storage calls must still work
+    await expect(db.prepareStorage()).resolves.toBeDefined();
+    expect(calls.closePath).toEqual([]);
+    expect(releaseSpy).not.toHaveBeenCalled();
+    job.settle();
+    await done;
+    expect(db.isStorageRetired()).toBe(true);
+    expect(calls.closePath).toEqual(['/user/u-aaaaaa01.db', '/catalog-en/g-aaaaaa01.db']);
+    expect(calls.shutdown).toBe(1);
+    expect(releaseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('S8-01 retireStorage() whose job never settles within the bound: BUSY, lock NOT released, nothing closed, page NOT retired', async () => {
+    const db = await load();
+    const { jobRegistry } = await import('./web-storage/job-registry');
+    const lock = await import('./instance-lock');
+    const releaseSpy = vi.spyOn(lock, 'releaseWriterLock');
+    await db.prepareStorage();
+    jobRegistry.begin('uninstall');
+    await expect(db.retireStorage({ jobSettleMs: 30 })).rejects.toMatchObject({ code: 'BUSY' });
+    expect(releaseSpy).not.toHaveBeenCalled();
+    expect(calls.closePath).toEqual([]);
+    expect(calls.shutdown).toBe(0);
+    expect(db.isStorageRetired()).toBe(false);
   });
 });
