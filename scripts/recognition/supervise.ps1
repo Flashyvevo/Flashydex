@@ -24,7 +24,8 @@ while ($true) {
     # serve.sh output -> serve.log (stdout+stderr; contains request metadata only, never image content)
     $p = Start-Process -FilePath $Bash -ArgumentList @('-lc', "exec ./$script >> services/recognition/data/logs/serve.log 2>&1") -WorkingDirectory $root -WindowStyle Hidden -PassThru
   } else {
-    $p = Start-Process -FilePath $Bash -ArgumentList @('-lc', "exec ./$script") -WorkingDirectory $root -WindowStyle Hidden -PassThru
+    $tunnelPs = Join-Path $root 'scripts\recognition\tunnel.ps1'
+    $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $tunnelPs, '-Root', $root) -WorkingDirectory $root -WindowStyle Hidden -PassThru
   }
   Pop-Location
   $p.WaitForExit()

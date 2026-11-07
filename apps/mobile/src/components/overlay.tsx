@@ -203,6 +203,8 @@ function SheetInner({ title, onClose, leading = 'Cancel', trailing, footer, chil
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (isWide) return;
+    // Taps on the header's own buttons must not start a drag: pointer capture would retarget the click away from the button.
+    if ((e.target as HTMLElement).closest('button, a, input, [role=button]')) return;
     drag.current = { startY: e.clientY, t: performance.now(), active: true, crossed: false };
     setDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);

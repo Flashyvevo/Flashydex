@@ -88,4 +88,6 @@ def is_plausible_card(points: np.ndarray, frame_area: float) -> bool:
     if area_fraction < constants.DETECT_MIN_AREA_FRACTION:
         return False
     ratio = aspect_ratio(points)
+    if ratio > 1.0:  # card lying sideways in the photo; rectify() turns it upright
+        ratio = 1.0 / ratio
     return constants.CARD_ASPECT_MIN <= ratio <= constants.CARD_ASPECT_MAX

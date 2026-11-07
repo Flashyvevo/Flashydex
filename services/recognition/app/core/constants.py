@@ -18,6 +18,8 @@ DETECT_MIN_AREA_FRACTION = 0.05
 CARD_ASPECT_MIN = 0.55
 CARD_ASPECT_MAX = 0.85
 INGEST_MAX_SIDE = 2000
+# A detected quad covering less than this fraction of a card-shaped frame also gets the whole frame tried.
+WHOLE_FRAME_TRY_BELOW = 0.985
 DETECT_MAX_SIDE = 960
 CANNY_MEDIAN_LO = 0.66
 CANNY_MEDIAN_HI = 1.33
@@ -64,8 +66,17 @@ WEIGHT_EMBED_FULL = 0.40
 WEIGHT_EMBED_ART = 0.30
 WEIGHT_HASH = 0.20
 WEIGHT_SYMBOL = 0.10
+# Hash can only raise the fused score above the embedding-only score (see fusion.fuse_raw).
+HASH_BOOST_ONLY = True
 OCR_BOOST = 0.5
-OCR_PENALTY = 0.4
+OCR_PENALTY = 0.0  # disagreement is not evidence: OCR misreads are common at card-strip resolution (see report)
+# Skip waiting for OCR when the visual fit is at least this high and no runner-up could be boosted past it.
+OCR_SKIP_FIT = 0.90
+# OCR below this confidence (or with no digits read) is ignored entirely: neutral, not 0.0.
+OCR_MIN_CONFIDENCE = 0.0
+# When the best embed+hash fit of the upright hypotheses is below this, also try the card
+# turned 180 degrees (and, for landscape frames without a quad, 90/270 frame rotations).
+ROTATE_RETRY_BELOW = 0.80
 CONFIDENT_THRESHOLD = 0.80
 CONFIDENT_MARGIN = 0.10
 UNCERTAIN_THRESHOLD = 0.50

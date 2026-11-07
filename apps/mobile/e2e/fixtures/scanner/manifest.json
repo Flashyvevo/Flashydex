@@ -1,0 +1,182 @@
+[
+  {
+    "id": "swsh3-19",
+    "name": "Charizard V",
+    "file": "swsh3-19__ref.jpg",
+    "transform": "ref"
+  },
+  {
+    "id": "swsh3-19",
+    "name": "Charizard V",
+    "file": "swsh3-19__rot90.jpg",
+    "transform": "rot90"
+  },
+  {
+    "id": "swsh3-19",
+    "name": "Charizard V",
+    "file": "swsh3-19__rot180.jpg",
+    "transform": "rot180"
+  },
+  {
+    "id": "swsh3-19",
+    "name": "Charizard V",
+    "file": "swsh3-19__glare.jpg",
+    "transform": "glare"
+  },
+  {
+    "id": "swsh3-19",
+    "name": "Charizard V",
+    "file": "swsh3-19__blur.jpg",
+    "transform": "blur"
+  },
+  {
+    "id": "swsh3-19",
+    "name": "Charizard V",
+    "file": "swsh3-19__sleeve.jpg",
+    "transform": "sleeve"
+  },
+  {
+    "id": "swsh3-20",
+    "name": "Charizard VMAX",
+    "file": "swsh3-20__ref.jpg",
+    "transform": "ref"
+  },
+  {
+    "id": "swsh3-20",
+    "name": "Charizard VMAX",
+    "file": "swsh3-20__rot90.jpg",
+    "transform": "rot90"
+  },
+  {
+    "id": "swsh3-20",
+    "name": "Charizard VMAX",
+    "file": "swsh3-20__rot180.jpg",
+    "transform": "rot180"
+  },
+  {
+    "id": "swsh3-20",
+    "name": "Charizard VMAX",
+    "file": "swsh3-20__glare.jpg",
+    "transform": "glare"
+  },
+  {
+    "id": "swsh3-20",
+    "name": "Charizard VMAX",
+    "file": "swsh3-20__blur.jpg",
+    "transform": "blur"
+  },
+  {
+    "id": "swsh3-20",
+    "name": "Charizard VMAX",
+    "file": "swsh3-20__sleeve.jpg",
+    "transform": "sleeve"
+  },
+  {
+    "id": "swsh3-136",
+    "name": "Furret",
+    "file": "swsh3-136__ref.jpg",
+    "transform": "ref"
+  },
+  {
+    "id": "swsh3-136",
+    "name": "Furret",
+    "file": "swsh3-136__rot90.jpg",
+    "transform": "rot90"
+  },
+  {
+    "id": "swsh3-136",
+    "name": "Furret",
+    "file": "swsh3-136__rot180.jpg",
+    "transform": "rot180"
+  },
+  {
+    "id": "swsh3-136",
+    "name": "Furret",
+    "file": "swsh3-136__glare.jpg",
+    "transform": "glare"
+  },
+  {
+    "id": "swsh3-136",
+    "name": "Furret",
+    "file": "swsh3-136__blur.jpg",
+    "transform": "blur"
+  },
+  {
+    "id": "swsh3-136",
+    "name": "Furret",
+    "file": "swsh3-136__sleeve.jpg",
+    "transform": "sleeve"
+  },
+  {
+    "id": "swsh3-33",
+    "name": "Dedenne",
+    "file": "swsh3-33__ref.jpg",
+    "transform": "ref"
+  },
+  {
+    "id": "swsh3-33",
+    "name": "Dedenne",
+    "file": "swsh3-33__rot90.jpg",
+    "transform": "rot90"
+  },
+  {
+    "id": "swsh3-33",
+    "name": "Dedenne",
+    "file": "swsh3-33__rot180.jpg",
+    "transform": "rot180"
+  },
+  {
+    "id": "swsh3-33",
+    "name": "Dedenne",
+    "file": "swsh3-33__glare.jpg",
+    "transform": "glare"
+  },
+  {
+    "id": "swsh3-33",
+    "name": "Dedenne",
+    "file": "swsh3-33__blur.jpg",
+    "transform": "blur"
+  },
+  {
+    "id": "swsh3-33",
+    "name": "Dedenne",
+    "file": "swsh3-33__sleeve.jpg",
+    "transform": "sleeve"
+  },
+  {
+    "id": "swsh3-84",
+    "name": "Rillaboom",
+    "file": "swsh3-84__ref.jpg",
+    "transform": "ref"
+  },
+  {
+    "id": "swsh3-84",
+    "name": "Rillaboom",
+    "file": "swsh3-84__rot90.jpg",
+    "transform": "rot90"
+  },
+  {
+    "id": "swsh3-84",
+    "name": "Rillaboom",
+    "file": "swsh3-84__rot180.jpg",
+    "transform": "rot180"
+  },
+  {
+    "id": "swsh3-84",
+    "name": "Rillaboom",
+    "file": "swsh3-84__glare.jpg",
+    "transform": "glare"
+  },
+  {
+    "id": "swsh3-84",
+    "name": "Rillaboom",
+    "file": "swsh3-84__blur.jpg",
+    "transform": "blur"
+  },
+  {
+    "id": "swsh3-84",
+    "name": "Rillaboom",
+    "file": "swsh3-84__sleeve.jpg",
+    "transform": "sleeve"
+  }
+]

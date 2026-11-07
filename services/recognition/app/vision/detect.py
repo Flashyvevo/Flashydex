@@ -34,14 +34,47 @@ def _edges(channel: np.ndarray) -> np.ndarray:
     return cv2.dilate(edged, np.ones((3, 3), np.uint8), iterations=1)
 
 
-def _search(channel: np.ndarray, frame_area: float) -> np.ndarray | None:
-    contours, _ = cv2.findContours(_edges(channel), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    ranked = sorted(contours, key=cv2.contourArea, reverse=True)[:_MAX_CONTOURS]
-    for contour in ranked:
-        quad = _quad_from_contour(contour)
-        if quad is not None and geometry.is_plausible_card(quad, frame_area):
-            return quad
-    return None
+def _edges_smooth(channel: np.ndarray) -> np.ndarray:
+    """Heavily smoothed edge map with closing: survives grain / wood texture that fragments the card outline."""
+    blurred = cv2.GaussianBlur(channel, (0, 0), 2.5)
+    median = float(np.median(blurred))
+    lower = int(max(0.0, 0.66 * median * 0.6))
+    upper = int(min(255.0, max(lower + 10, 1.33 * median * 0.6)))
+    edged = cv2.Canny(blurred, lower, upper)
+    return cv2.morphologyEx(edged, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
+
+
+_EDGE_VARIANTS = (_edges, _edges_smooth)
+_CARD_ASPECT = 0.716  # 63 x 88 mm
+
+
+def _score_quad(quad: np.ndarray, contour_area: float, frame_area: float) -> float:
+    """Card-likeness: big, aspect near 63:88, contour fills its quad (a clean rectangle)."""
+    area = geometry.polygon_area(quad)
+    if area <= 0:
+        return 0.0
+    ratio = geometry.aspect_ratio(quad)
+    if ratio > 1.0:
+        ratio = 1.0 / ratio
+    aspect_fit = float(np.exp(-(((ratio - _CARD_ASPECT) / 0.09) ** 2)))
+    fill = min(1.0, contour_area / area / 0.9)
+    return min(area / frame_area, 0.9) * aspect_fit * fill
+
+
+def _search(channel: np.ndarray, frame_area: float) -> tuple[np.ndarray, float] | None:
+    """Best-scoring plausible quad over the edge-map variants, or ``None``."""
+    best: tuple[np.ndarray, float] | None = None
+    for variant in _EDGE_VARIANTS:
+        contours, _ = cv2.findContours(variant(channel), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        ranked = sorted(contours, key=cv2.contourArea, reverse=True)[:_MAX_CONTOURS]
+        for contour in ranked:
+            quad = _quad_from_contour(contour)
+            if quad is None or not geometry.is_plausible_card(quad, frame_area):
+                continue
+            score = _score_quad(quad, cv2.contourArea(contour), frame_area)
+            if best is None or score > best[1]:
+                best = (quad, score)
+    return best
 
 
 def detect_card_quad(image_rgb: np.ndarray) -> np.ndarray | None:
@@ -50,10 +83,13 @@ def detect_card_quad(image_rgb: np.ndarray) -> np.ndarray | None:
     scale = image_rgb.shape[1] / float(working.shape[1])
     height, width = working.shape[:2]
     frame_area = float(height * width)
+    best: tuple[np.ndarray, float] | None = None
     for channel in (to_gray(working), to_saturation(working)):
-        quad = _search(channel, frame_area)
-        if quad is not None:
-            return geometry.order_corners(quad * scale)
+        found = _search(channel, frame_area)
+        if found is not None and (best is None or found[1] > best[1]):
+            best = found
+    if best is not None:
+        return geometry.order_corners(best[0] * scale)
     logger.debug("no plausible card quad (working frame %dx%d)", width, height)
     return None
 

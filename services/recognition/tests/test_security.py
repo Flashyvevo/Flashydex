@@ -91,7 +91,7 @@ def test_cors_headers_on_error_responses():
     # 415 for allowlisted origin carries ACAO + readable body
     r = post(c, b"not an image", {"Origin": GOOD, **PROXY})
     assert r.status_code == 415 and r.headers["access-control-allow-origin"] == GOOD
-    assert r.json()["error"]["code"] == "UNSUPPORTED_IMAGE_TYPE"
+    assert r.json()["error"]["code"] == "UNSUPPORTED_IMAGE"
     # 413
     big = b"\xff\xd8\xff" + b"0" * (8 * 1024 * 1024 + 300_000)
     r = post(c, big, {"Origin": GOOD, **PROXY})
@@ -158,7 +158,7 @@ def test_streamed_chunked_body_over_limit_413():
         yield b"\r\n--b--\r\n"
 
     r = c.post("/v1/identify", content=chunks(), headers={"Content-Type": "multipart/form-data; boundary=b"})
-    assert r.status_code == 413 and r.json()["error"]["code"] == "IMAGE_TOO_LARGE"
+    assert r.status_code == 413 and r.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
 
 
 def test_content_length_over_limit_413():
@@ -168,10 +168,12 @@ def test_content_length_over_limit_413():
     assert r.status_code in (413, 400)
 
 
-def test_heic_unsupported_code():
+def test_heic_accepted_when_pillow_heif_present():
+    from app.vision.imaging import heif_available
+
+    assert heif_available()  # pinned in requirements.txt
     heic = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00heicmif1"
-    r = post(client(), heic)
-    assert r.status_code == 415 and r.json()["error"]["code"] == "HEIC_UNSUPPORTED"
+    assert post(client(), heic).status_code == 200  # sniffed as HEIC (fake recognizer ignores the payload)
 
 
 def test_invalid_lang_code():

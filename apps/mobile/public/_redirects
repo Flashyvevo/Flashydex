@@ -1,3 +1,7 @@
+# API rewrites must precede the SPA fallback.
+/api/identify              /.netlify/functions/identify          200
+/api/recognizer/health     /.netlify/functions/recognizer-health 200
+
 # SPA navigation fallback. Netlify applies this after matching static files.
 # Reference: https://docs.netlify.com/manage/routing/redirects/rewrites-proxies/
 /*    /index.html   200

@@ -47,8 +47,8 @@ class OcrAgreement:
 def ocr_agreement(ocr: OcrObservation | None, numbers: np.ndarray, official: np.ndarray,
                   totals: np.ndarray) -> OcrAgreement | None:
     """Per-row OCR consistency. ``None`` when OCR carries no usable number."""
-    if ocr is None or not ocr.is_useful or ocr.confidence <= 0:
-        return None
+    if ocr is None or not ocr.is_useful or ocr.confidence < constants.OCR_MIN_CONFIDENCE:
+        return None  # nothing (trustworthy) read -> neutral: no boost, no penalty, no 0.0 signal
     number_ok = numbers == ocr.number
     if ocr.number_total:
         total_ok = (official == ocr.number_total) | (totals == ocr.number_total) | (
@@ -66,12 +66,21 @@ def ocr_agreement(ocr: OcrObservation | None, numbers: np.ndarray, official: np.
 
 
 def fuse_raw(signals: dict[str, np.ndarray], ocr: OcrAgreement | None) -> np.ndarray:
-    """Weighted mean over the present signals, times the OCR factor. Shape ``(N,)``."""
+    """Weighted mean over the present signals, times the OCR factor. Shape ``(N,)``.
+
+    With ``HASH_BOOST_ONLY`` the perceptual hash can only *raise* a card's score above its
+    embedding-only score: a photo that is not pixel-aligned with the reference (every real photo)
+    scores ~0 on the hash even for the right card, which must not drag it down.
+    """
     present = [name for name in signals if name in SIGNAL_WEIGHTS]
     denom = sum(SIGNAL_WEIGHTS[n] for n in present)
     if not present or denom <= 0:
         raise ValueError("no signals to fuse")
     raw = sum(SIGNAL_WEIGHTS[n] * signals[n] for n in present) / denom
+    if constants.HASH_BOOST_ONLY and "hash" in present and len(present) > 1:
+        others = [n for n in present if n != "hash"]
+        embed_only = sum(SIGNAL_WEIGHTS[n] * signals[n] for n in others) / sum(SIGNAL_WEIGHTS[n] for n in others)
+        raw = np.maximum(raw, embed_only)
     if ocr is not None:
         raw = raw * ocr.factor
     return np.asarray(raw, dtype=np.float32)

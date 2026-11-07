@@ -47,13 +47,15 @@ const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-/** Add-confirm sheet (UX §7.3). Nothing is written until "Add to collection". */
-export function AddConfirmSheet({ target, onClose, onAddAnother }: { target: AddTarget | null; onClose: () => void; onAddAnother?: () => void }) {
+export type AddedInfo = { ids: string[]; qty: number; owned: number; name: string; setName: string | null; label: string };
+
+/** Add-confirm sheet (UX §7.3). Nothing is written until "Add to collection". `suggestedVariant` pre-selects a variant only when the catalog lists it; `onAdded` fires after the durable commit. */
+export function AddConfirmSheet({ target, onClose, onAddAnother, suggestedVariant, onAdded }: { target: AddTarget | null; onClose: () => void; onAddAnother?: () => void; suggestedVariant?: Variant | null; onAdded?: (added: AddedInfo) => void }) {
   if (!target) return null;
-  return <ConfirmInner key={target.kind === 'catalog' ? `${target.language}:${target.cardId}` : target.id} target={target} onClose={onClose} onAddAnother={onAddAnother} />;
+  return <ConfirmInner key={target.kind === 'catalog' ? `${target.language}:${target.cardId}` : target.id} target={target} onClose={onClose} onAddAnother={onAddAnother} suggestedVariant={suggestedVariant ?? null} onAdded={onAdded} />;
 }
 
-function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; onClose: () => void; onAddAnother?: () => void }) {
+function ConfirmInner({ target, onClose, onAddAnother, suggestedVariant, onAdded }: { target: AddTarget; onClose: () => void; onAddAnother?: () => void; suggestedVariant: Variant | null; onAdded?: (added: AddedInfo) => void }) {
   const navigate = useNavigate();
   const toast = useToast();
   const settings = useSettings();
@@ -82,7 +84,7 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
     const session = readAddSession();
     const pre = preselectVariant(info.available);
     return {
-      variant: target.kind === 'custom' ? 'normal' : pre.variant,
+      variant: target.kind === 'custom' ? 'normal' : suggestedVariant && info.available.includes(suggestedVariant) ? suggestedVariant : pre.variant,
       variantDetail: '',
       otherOpen: false,
       condition: session.keep.condition ? ((session.condition as Condition | null) ?? null) : null,
@@ -168,6 +170,7 @@ function ConfirmInner({ target, onClose, onAddAnother }: { target: AddTarget; on
         message: `Added ${info.name}${info.setName ? ` · ${info.setName}` : ''}`,
         action: { label: 'View', onClick: () => void view() }
       });
+      onAdded?.({ ids: result.copies.map((c) => c.id), qty: result.created, owned, name: info.name, setName: info.setName ?? null, label });
     } catch (e) {
       haptic('error');
       setError(e);

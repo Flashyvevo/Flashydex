@@ -42,6 +42,14 @@ def _cmd_index_status(_: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_index_verify(args: argparse.Namespace, settings: Settings) -> int:
+    from app.index.verify import verify
+
+    report = verify(settings, [Path(p) for p in args.catalog_db])
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0 if report["ok"] else 1
+
+
 def _cmd_model_fetch(_: argparse.Namespace, settings: Settings) -> int:
     from app.index.build import ensure_model
 
@@ -79,6 +87,15 @@ def _cmd_eval(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_eval_m2(args: argparse.Namespace, settings: Settings) -> int:
+    from app.eval import TRANSFORMS, run_m2
+
+    transforms = tuple(args.transforms.split(",")) if args.transforms else TRANSFORMS
+    summary = run_m2(settings, args.en, args.ja, args.out, seed=args.seed, transforms=transforms)
+    print(json.dumps(summary["perTransform"], indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="flashydex-recognition")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -92,6 +109,10 @@ def main(argv: list[str] | None = None) -> int:
                        help="cache-only worker K of N (run N processes, then a final unsharded run assembles)")
     build.set_defaults(func=_cmd_index_build)
     index.add_parser("status").set_defaults(func=_cmd_index_status)
+    verify_p = index.add_parser("verify", help="check every indexed card id exists in the catalog DB(s)")
+    verify_p.add_argument("--catalog-db", action="append", required=True, metavar="PATH",
+                          help="catalog-<lang>-<version>.db (repeat for each language)")
+    verify_p.set_defaults(func=_cmd_index_verify)
 
     sub.add_parser("model").add_subparsers(dest="model_cmd", required=True).add_parser(
         "fetch").set_defaults(func=_cmd_model_fetch)
@@ -108,6 +129,14 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--lang", default="en")
     ev.add_argument("--n", type=int, default=200)
     ev.set_defaults(func=_cmd_eval)
+
+    m2 = sub.add_parser("eval-m2", help="M2 transform eval (reference/rot/skew/blur/glare/jpeg/1600px photo)")
+    m2.add_argument("--en", type=int, default=300)
+    m2.add_argument("--ja", type=int, default=100)
+    m2.add_argument("--seed", type=int, default=11)
+    m2.add_argument("--transforms", default="")
+    m2.add_argument("--out", default="data/logs/eval-m2.json")
+    m2.set_defaults(func=_cmd_eval_m2)
 
     args = parser.parse_args(argv)
     settings = Settings.from_env()

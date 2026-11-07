@@ -54,6 +54,14 @@ export default defineConfig({
   // @sqlite.org/sqlite-wasm resolves sqlite3.wasm relative to its own module URL; pre-bundling breaks that (Stage F prerequisite).
   optimizeDeps: { exclude: ['jeep-sqlite', '@sqlite.org/sqlite-wasm'] },
   worker: { format: 'es' },
+  server: {
+    proxy: {
+      // Recognition service (services/recognition, loopback :8900). Production uses Netlify functions at the same paths.
+      // The service only accepts allowlisted Origins or Origin-less loopback calls; the dev proxy is the latter, so drop the browser's Origin.
+      '/api/identify': { target: 'http://127.0.0.1:8900', changeOrigin: true, rewrite: () => '/v1/identify', configure: (p) => p.on('proxyReq', (req) => req.removeHeader('origin')) },
+      '/api/recognizer/health': { target: 'http://127.0.0.1:8900', changeOrigin: true, rewrite: () => '/v1/health', configure: (p) => p.on('proxyReq', (req) => req.removeHeader('origin')) }
+    }
+  },
   resolve: {
     alias: { '@': resolve(__dirname, './src') }
   },

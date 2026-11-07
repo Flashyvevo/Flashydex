@@ -53,6 +53,16 @@ class Recognizer:
             ocr = None
         return cls(index, embedder, ocr)
 
+    def warm_up(self) -> None:
+        """One dummy embed (and OCR pass) so the first real request does not pay ORT's lazy init."""
+        size = constants.EMBED_INPUT_SIZE
+        self.embedder.embed_tensors(np.zeros((2, 3, size, size), dtype=np.float32))
+        if self.ocr is not None:
+            try:
+                self.ocr.read_text(np.full((64, constants.CARD_WIDTH_PX, 3), 255, dtype=np.uint8))
+            except Exception:  # noqa: BLE001 - OCR is optional
+                logger.exception("ocr warm-up failed")
+
     # -- public ---------------------------------------------------------------------------
     def identify_bytes(self, data: bytes, *, lang: str = "any", max_candidates: int = 3) -> dict:
         t0 = time.perf_counter()
@@ -88,8 +98,9 @@ class Recognizer:
         # search can lock onto an inner frame. When the quad covers well under the frame but
         # the frame itself is card-shaped, also try the whole frame and keep the better fit.
         hypotheses = [("quad" if quad is not None else "centre", primary)]
-        if quad is not None and self._ambiguous_quad(image, quad):
-            hypotheses.append(("whole", rectify.center_crop_to_card(image)))
+        whole = self._whole_frame_card(image, quad)
+        if whole is not None:
+            hypotheses.append(("whole", whole))
         t = lap("rectify", t)
 
         # 2. OCR (thread, single hypothesis) || hashes + embeddings ------------------------
@@ -101,9 +112,14 @@ class Recognizer:
                       if self.ocr is not None and len(hypotheses) == 1 else None)
         chosen_label, card, sims = "", primary, {}
         best_top = float("-inf")
-        for label, candidate_card in hypotheses:
+
+        prepare_ms = 0.0
+
+        def score_hypothesis(label: str, candidate_card: np.ndarray) -> None:
+            nonlocal chosen_label, card, sims, best_top, prepare_ms
+            t_prep = time.perf_counter()
             tensors = prepare_card(candidate_card)
-            t = lap("prepare", t) if label == hypotheses[0][0] else t
+            prepare_ms += (time.perf_counter() - t_prep) * 1000
             emb = self.embedder.embed_tensors(np.stack([tensors.full, tensors.art]))
             hyp_sims = {
                 "emb_full": fusion.rescale(cosine_scores(index.emb_full, emb[0]), constants.EMBED_COS_FLOOR),
@@ -115,11 +131,31 @@ class Recognizer:
             top = float(raw0.max() if mask is None else np.where(mask, raw0, -1.0).max())
             if top > best_top:
                 best_top, chosen_label, card, sims = top, label, candidate_card, hyp_sims
-        t = lap("embed", t)
-        timing["hypotheses"] = float(len(hypotheses))
+
+        for label, candidate_card in hypotheses:
+            score_hypothesis(label, candidate_card)
+        n_hypotheses = len(hypotheses)
+        fit_upright = best_top
+        if best_top < constants.ROTATE_RETRY_BELOW:
+            # Upside-down / sideways cards: embeddings are not rotation invariant.
+            retries = [("rot180", np.ascontiguousarray(np.rot90(card, 2)))]
+            h, w = image.shape[:2]
+            if quad is None and w / h > 1.1:
+                retries += [("rot90", rectify.center_crop_to_card(np.ascontiguousarray(np.rot90(image, 1)))),
+                            ("rot270", rectify.center_crop_to_card(np.ascontiguousarray(np.rot90(image, 3))))]
+            for label, candidate_card in retries:
+                score_hypothesis(label, candidate_card)
+                n_hypotheses += 1
+        t = lap("embed", t)  # all hypotheses: prepare + ORT + scoring (prepare alone is reported separately)
+        timing["prepare"] = prepare_ms
+        timing["hypotheses"] = float(n_hypotheses)
 
         ocr_obs: OcrObservation | None = None
-        if ocr_future is not None:
+        if self._visually_decisive(fusion.fuse_raw(sims, None), mask):
+            # OCR is boost-only; it cannot reorder a clear visual winner, so do not wait for it
+            # (a thread already started on the primary card just finishes in the background).
+            timing["ocrSkipped"] = 1.0
+        elif ocr_future is not None and card is primary:
             ocr_obs, timing["ocr"] = ocr_future.result()
         elif self.ocr is not None:
             ocr_obs, timing["ocr"] = self._timed_ocr(card)
@@ -144,16 +180,36 @@ class Recognizer:
         top_conf = float(conf[0]) if conf.size else 0.0
         return self._response(status, top_conf, candidates, timing, index, detection={
             "quadFound": quad is not None,
-            "fallback": "none" if quad is not None and chosen_label == "quad" else "centre"},
+            "fallback": "none" if quad is not None and chosen_label in ("quad", "rot180") else "centre",
+            "hypothesis": chosen_label, "fitUpright": round(fit_upright, 4), "fit": round(best_top, 4)},
             ocr=ocr_obs)
 
     @staticmethod
-    def _ambiguous_quad(image: np.ndarray, quad: np.ndarray) -> bool:
+    def _visually_decisive(raw: np.ndarray, mask: np.ndarray | None) -> bool:
+        """Top visual fit is high and the runner-up is too far behind for an OCR boost to overtake it."""
+        scores = raw if mask is None else np.where(mask, raw, -np.inf)
+        if scores.size < 2:
+            return False
+        top2 = np.partition(scores, -2)[-2:]
+        runner, top = float(top2[0]), float(top2[1])
+        return top >= constants.OCR_SKIP_FIT and max(runner, 0.0) * (1.0 + constants.OCR_BOOST) <= top
+
+    @staticmethod
+    def _whole_frame_card(image: np.ndarray, quad: np.ndarray | None) -> np.ndarray | None:
+        """The whole frame as a card, when the frame itself is card-shaped (either orientation).
+
+        A tightly cropped card (screenshot / flat scan) has no outer edge, so the contour search can
+        lock onto an inner or skewed outline; the frame is then the better rectification. Phone photos
+        (3:4, 2:3) are not card-shaped and never take this path. A sideways frame is turned upright.
+        """
         from app.vision import geometry
 
         h, w = image.shape[:2]
-        frame_fraction = geometry.polygon_area(quad) / float(h * w)
-        return frame_fraction < 0.9 and 0.62 <= w / h <= 0.80
+        if not 0.69 <= min(w, h) / max(w, h) <= 0.74:
+            return None
+        if quad is not None and geometry.polygon_area(quad) / float(h * w) >= constants.WHOLE_FRAME_TRY_BELOW:
+            return None
+        return rectify.center_crop_to_card(image if w <= h else np.ascontiguousarray(np.rot90(image, 1)))
 
     # -- helpers --------------------------------------------------------------------------
     def _timed_ocr(self, card: np.ndarray) -> tuple[OcrObservation, float]:

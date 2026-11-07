@@ -2,8 +2,7 @@ import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { Home, LayoutGrid, Layers, ScanLine, Settings as SettingsIcon, Plus, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useIsWide } from '../lib/hooks';
-import { BottomSheet } from './overlay';
-import { LinkButton, Button, cx } from './ui';
+import { LinkButton, cx } from './ui';
 import { SidebarCatalogStatus, SyncPill } from './sync';
 
 /** Keeps `--ps-keyboard-inset` current and reports whether the on-screen keyboard is open. */
@@ -49,37 +48,9 @@ function useTabTap() {
   };
 }
 
-export function ScanSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const navigate = useNavigate();
-  return (
-    <BottomSheet open={open} title="Scanner" titleHidden leading="Close" onClose={onClose} testId="scan-sheet">
-      <div className="flex flex-col items-center gap-3 pb-2 pt-4 text-center">
-        <ScanLine size={56} strokeWidth={1.25} className="text-fg-subtle" aria-hidden />
-        <h3 className="text-h3 font-semibold">Camera scanning is coming</h3>
-        <p className="max-w-[34ch] text-body text-fg-muted">Scanning arrives in a later update. For now, find cards by name or number — it takes a few seconds.</p>
-        <Button
-          variant="primary"
-          full
-          data-testid="scan-sheet-add"
-          onClick={() => {
-            onClose();
-            void navigate({ to: '/add' });
-          }}
-        >
-          Add a card by search
-        </Button>
-        <Button variant="text" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-    </BottomSheet>
-  );
-}
-
 export function TabBar({ hidden }: { hidden: boolean }) {
   const { pathname } = useLocation();
   const tap = useTabTap();
-  const [scanOpen, setScanOpen] = useState(false);
   if (hidden) return null;
   const [home, collection, sets, settings] = TABS as [TabDef, TabDef, TabDef, TabDef];
   const item = (t: TabDef) => {
@@ -118,26 +89,23 @@ export function TabBar({ hidden }: { hidden: boolean }) {
           {item(home)}
           {item(collection)}
           <div className="relative flex min-h-(--ps-tap-lg) flex-1 flex-col items-center justify-center">
-            <button
-              type="button"
+            <Link
+              to="/scan"
               data-testid="tab-scan"
-              aria-disabled="true"
-              aria-label="Scan, coming in a later update"
-              onClick={() => setScanOpen(true)}
-              className="absolute left-1/2 flex size-(--ps-scan-fab) -translate-x-1/2 items-center justify-center rounded-full bg-surface-3 text-fg-disabled shadow-scan"
+              aria-label="Scan a card"
+              className="absolute left-1/2 flex size-(--ps-scan-fab) -translate-x-1/2 items-center justify-center rounded-full bg-accent text-on-accent shadow-scan active:scale-(--ps-press-scale)"
               style={{ top: 'calc(var(--ps-scan-raise) * -1)' }}
             >
               <ScanLine size={26} aria-hidden />
-            </button>
-            <span aria-hidden data-testid="tab-scan-label" className="absolute inset-x-0 bottom-0.5 text-center text-tab font-semibold leading-none text-fg-subtle">
-              Soon
+            </Link>
+            <span aria-hidden data-testid="tab-scan-label" className="absolute inset-x-0 bottom-0.5 text-center text-tab font-semibold leading-none text-chrome-accent">
+              Scan
             </span>
           </div>
           {item(sets)}
           {item(settings)}
         </div>
       </nav>
-      <ScanSheet open={scanOpen} onClose={() => setScanOpen(false)} />
     </>
   );
 }
@@ -145,7 +113,6 @@ export function TabBar({ hidden }: { hidden: boolean }) {
 export function Sidebar() {
   const { pathname } = useLocation();
   const tap = useTabTap();
-  const [scanOpen, setScanOpen] = useState(false);
   const wide = useIsWide();
   if (!wide) return null;
   return (
@@ -174,23 +141,21 @@ export function Sidebar() {
             </Link>
           );
         })}
-        <button
-          type="button"
-          aria-disabled="true"
-          aria-label="Scan, coming in a later update"
-          onClick={() => setScanOpen(true)}
-          className="flex min-h-(--ps-tap) items-center gap-3 rounded-md px-3 text-body font-medium text-fg-disabled"
+        <Link
+          to="/scan"
+          data-testid="side-tab-scan"
+          aria-current={pathname.startsWith('/scan') ? 'page' : undefined}
+          aria-label="Scan a card"
+          className="flex min-h-(--ps-tap) items-center gap-3 rounded-md px-3 text-body font-medium text-accent-fg"
         >
           <ScanLine size={20} aria-hidden />
           <span className="flex-1 text-left">Scan</span>
-          <span className="text-micro text-fg-subtle">Soon</span>
-        </button>
+        </Link>
       </nav>
       <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
         <SidebarCatalogStatus />
         <SyncPill inline />
       </div>
-      <ScanSheet open={scanOpen} onClose={() => setScanOpen(false)} />
     </aside>
   );
 }

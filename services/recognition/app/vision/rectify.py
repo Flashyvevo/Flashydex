@@ -31,6 +31,10 @@ def rectify(image_rgb: np.ndarray, quad: np.ndarray) -> np.ndarray:
         The rectified card as a ``(CARD_HEIGHT_PX, CARD_WIDTH_PX, 3)`` RGB array.
     """
     source = geometry.order_corners(quad)
+    if geometry.aspect_ratio(source) > 1.0:
+        # Sideways card: make the long edges the vertical ones (a 90 degree turn; whether the
+        # result is upright or upside-down is settled by the pipeline's 180 degree hypothesis).
+        source = np.roll(source, -1, axis=0)
     dest = np.array(
         [[0, 0], [_CANON_W - 1, 0], [_CANON_W - 1, _CANON_H - 1], [0, _CANON_H - 1]],
         dtype=np.float32,

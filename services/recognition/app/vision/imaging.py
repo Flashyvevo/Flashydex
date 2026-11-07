@@ -9,10 +9,26 @@ nothing downstream has to remember that.
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+# ISO-BMFF ``ftyp`` major brands accepted as HEIC/HEIF (iPhone photos). AVIF is deliberately not listed.
+HEIC_BRANDS = (b"heic", b"heix", b"mif1", b"msf1")
+
+
+@functools.cache
+def heif_available() -> bool:
+    """True when ``pillow-heif`` imports and its Pillow opener registers (HEIC decode works)."""
+    try:
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+    except Exception:  # noqa: BLE001 - optional dependency
+        return False
+    return True
 
 
 def load_image(path: str | Path) -> np.ndarray:
@@ -120,6 +136,7 @@ def decode_upload(data: bytes) -> np.ndarray:
 
     from PIL import Image, ImageOps
 
+    heif_available()  # registers the HEIC opener once, if pillow-heif is installed
     try:
         with Image.open(io.BytesIO(data)) as pil:
             pil.load()

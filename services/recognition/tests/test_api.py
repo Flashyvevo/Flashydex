@@ -77,16 +77,17 @@ def test_validation_errors():
     assert post(c, JPG, max_candidates="6").status_code == 400
     assert post(c, b"").status_code == 400
     r = post(c, b"not an image at all")
-    assert r.status_code == 415 and r.json()["error"]["code"] == "UNSUPPORTED_IMAGE_TYPE"
-    heic = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00heicmif1"
-    r = post(c, heic)
-    assert r.status_code == 415 and r.json()["error"]["code"] == "HEIC_UNSUPPORTED"
+    assert r.status_code == 415 and r.json()["error"]["code"] == "UNSUPPORTED_IMAGE"
+    avif = b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00avifmif1"  # not decodable here -> 415
+    r = post(c, avif)
+    assert r.status_code == 415 and r.json()["error"] == {
+        "code": "UNSUPPORTED_IMAGE", "message": r.json()["error"]["message"], "retryable": False}
 
 
 def test_size_cap_8mb():
     big = b"\xff\xd8\xff" + b"0" * (constants.MAX_UPLOAD_BYTES + 200_000)
     r = post(client(), big)
-    assert r.status_code == 413 and r.json()["error"]["code"] == "IMAGE_TOO_LARGE"
+    assert r.status_code == 413 and r.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
 
 
 def test_token_is_admin_alternative_to_origin():
@@ -141,4 +142,4 @@ def test_index_not_ready_and_health():
 
 def test_busy_when_slots_exhausted():
     r = post(client(max_concurrent=0), JPG)
-    assert r.status_code == 503 and r.json()["error"]["code"] == "BUSY"
+    assert r.status_code == 503 and r.json()["error"]["code"] == "RECOGNIZER_BUSY"

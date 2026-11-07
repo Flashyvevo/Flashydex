@@ -10,6 +10,10 @@
 [build.environment]
   NODE_VERSION = "22"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 [context.production]
   command = "npm ci && npm run build --workspace=@flashydex/mobile"
   publish = "apps/mobile/dist"

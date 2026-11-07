@@ -1574,3 +1574,40 @@ New web-only surfaces (all plain copy, no claim the browser did not make; 390 ×
 - **Install banner** (`install-banner`): in-flow at the top of tab content (never fixed, never over the tab bar). iOS: Share → Add to Home Screen → open from the icon. Android with install event: Install button; otherwise menu steps. Hidden when standalone; dismiss snoozes 14 days (controller).
 - **Update toast** (`update-toast`): "Update ready" + Restart / Later, above the tab bar. Restart refuses during a catalog download/import/restore, asks before discarding a dirty form, then shows a full-screen "Restarting to update…" block (no new writes) while the SQL worker shuts down.
 - **Settings → Diagnostics** (`/settings/diagnostics`, linked from Data and About): adapter/VFS/SQLite version, origin/standalone, lock, persist + quota, pool, catalog refs, last pack metrics, image cache, WASM + heap numbers, all `fdx:*` timings, last error code; Copy diagnostics (JSON). No personal data.
+
+## Milestone 2 — Scan screen (2026-11)
+
+**Route:** `/scan` (modal route, no tab bar). Entry points: the centre tab (`tab-scan`, lime 60 × 60 circle, label "Scan" under it, `aria-label` "Scan a card") and a sidebar entry on wide layouts. The old ScanSheet is gone.
+
+**Capture (landing):** heading "Scan a card" and four actions, all ≥ 44 px tall: Take Photo (`scan-take`, hidden `<input type=file capture=environment>`), Choose from Library (`scan-choose`, same input without `capture`), Search Manually (→ `/add`), Browse by Set (→ `/sets`). Both inputs use `accept="image/jpeg,image/png,image/webp"` — never `image/heic` and never `image/*` — so iOS transcodes HEIC to JPEG. A one-shot health check shows a non-blocking "Scanner offline" banner; manual add is never blocked.
+
+**Pipeline:** pick file → keep the `File` → `<img>` decode (no `createImageBitmap`, iOS bug 237895) → canvas resize to a 1600 px long edge → JPEG q0.85 → same-origin `POST /api/identify` (multipart, no Authorization, 12 s timeout, cancellable).
+
+**States (`data-testid`):**
+- preparing / analyzing (`scan-analyzing`, "Analyzing card…", Cancel `scan-cancel`)
+- match (`scan-match`): art 63:88, name, number/total, set, Confirm (`scan-confirm`) opens the normal add sheet; "Wrong card" shows the other candidates. A variant hint pre-selects a variant only at ≥ 0.6 and only if the catalog lists it.
+- candidates (`scan-candidates`): "We found a few possibilities", tiles labelled "Name — number/total — NN%", never auto-selected; 1 column at 375, 2 columns at ≥ 390
+- no_match / no_card (`scan-no-match`): "We couldn't confidently identify this card."
+- failure (`scan-failure`, `data-failure`): too_large, unsupported_image (HEIC: "Choose a JPEG, or switch Camera → Formats → Most Compatible"), busy, rate_limited ("N seconds"), offline, timeout, bad_response, unknown. Each offers Try Another Photo, Search Manually, Browse by Set, plus Try again when retryable.
+- missing (`scan-missing`): language catalog not installed → "Install <language> catalog"; card not in the installed catalog → "This card isn't in your catalog yet — check for a newer catalog in Settings". Both offer Search Manually.
+- added (`scan-added`): "Added to collection", Scan Another (re-opens the camera input, stays on `/scan`), View Card, Undo.
+
+**Sheet fix:** `BottomSheet` header no longer starts a drag (pointer capture) when the pointerdown lands on a button, so Cancel/Close work with touch, mouse and Escape.
+
+**Measurements (Playwright mobile project, mocked recognizer):**
+
+| viewport | /scan height after add | Take Photo | match art | candidate tiles | centre tab |
+| --- | --- | --- | --- | --- | --- |
+| 375 × 812 | 812 (no scroll) | 343 × 48 | 260 × 363 | 3 stacked 343 × 525 | 60 × 60, label under |
+| 390 × 844 | 844 | 358 × 48 | 260 × 363 | 2-up 173 × 308 | 60 × 60 |
+| 430 × 932 | 932 | 398 × 48 | 260 × 363 | 2-up 193 × 336 | 60 × 60 |
+
+`scrollWidth ≤ innerWidth` and every button/link ≥ 44 px are asserted at every state.
+
+**iOS caveats (`.agent/research/ios-camera.md`, unverified on a device):**
+- `capture=environment` should open the rear camera directly; a restricted `accept` is what makes iOS hand over JPEG rather than HEIC. Settings → Camera → Formats does not change what the page receives.
+- A standalone (Home Screen) PWA can be killed while the camera is up; the page reloads and the pick is lost. Nothing is stored until the user confirms.
+- Do not use `getUserMedia` in standalone (WebKit bugs 282327, 215884); not used.
+- Safari tab and Home Screen app have separate storage; scanning from one does not show in the other.
+- HEIC that still reaches the page and fails to decode shows the "Most Compatible" copy.
+- Real-photo accuracy, camera behaviour and the tunnel path need the owner's iPhone steps (ios-camera.md "Owner test steps").

@@ -22,11 +22,11 @@ export const RecognitionSignals = z.object({
   symbol: Unit.nullable()
 });
 
-/** Heuristic hints only (single still photo): never auto-commit a variant from these. */
+/** Heuristic hints only (single still photo): never auto-commit a variant from these. The service sends null for hints it cannot judge. */
 export const RecognitionVariantHints = z.object({
-  reverseHolo: Unit.optional(),
-  firstEdition: Unit.optional(),
-  stamp: Unit.optional()
+  reverseHolo: Unit.nullish(),
+  firstEdition: Unit.nullish(),
+  stamp: Unit.nullish()
 });
 
 export const RecognitionCandidate = z.object({
@@ -60,11 +60,21 @@ export const RecognitionResponse = z.object({
 });
 export type RecognitionResponse = z.infer<typeof RecognitionResponse>;
 
+/** Codes the service itself emits (`.agent/m2-contract.md`); legacy codes kept for older consumers. */
 export const RecognitionErrorCode = z.enum([
-  'UNAUTHORIZED', 'RATE_LIMITED', 'IMAGE_TOO_LARGE', 'INVALID_IMAGE', 'INVALID_LANG', 'INVALID_MAX_CANDIDATES',
-  'UNSUPPORTED_IMAGE_TYPE', 'HEIC_UNSUPPORTED', 'INDEX_NOT_READY', 'MODEL_MISSING', 'BUSY'
+  'UNAUTHORIZED', 'RATE_LIMITED', 'RECOGNIZER_BUSY', 'PAYLOAD_TOO_LARGE', 'UNSUPPORTED_IMAGE',
+  'INVALID_IMAGE', 'INVALID_LANG', 'INVALID_MAX_CANDIDATES', 'INVALID_REQUEST', 'INDEX_NOT_READY', 'MODEL_MISSING',
+  'ORIGIN_NOT_ALLOWED', 'HTTP_ERROR',
+  // legacy (pre-M2) spellings
+  'IMAGE_TOO_LARGE', 'UNSUPPORTED_IMAGE_TYPE', 'HEIC_UNSUPPORTED', 'BUSY'
 ]);
-export const RecognitionError = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
+/** Codes the Netlify proxy adds on top (service never sends them). */
+export const RecognitionProxyErrorCode = z.enum(['RECOGNIZER_OFFLINE', 'RECOGNIZER_TIMEOUT']);
+/** Every service error: `{ error: { code, message, retryable } }` (`retryable` optional only for pre-M2 servers). */
+export const RecognitionError = z.object({
+  error: z.object({ code: z.string(), message: z.string(), retryable: z.boolean().optional() })
+});
+export type RecognitionError = z.infer<typeof RecognitionError>;
 
 export const RecognitionHealth = z.object({
   status: z.enum(['ok', 'degraded']),
@@ -80,8 +90,17 @@ export const RecognitionHealth = z.object({
     total: z.number().int(),
     version: z.string().nullable()
   }),
-  error: z.string().nullable()
+  error: z.string().nullable(),
+  /** M2 additions (optional for older servers). `ready` = both indexes loaded AND model warmed. */
+  ready: z.boolean().optional(),
+  warm: z.boolean().optional(),
+  counts: z.record(z.string(), z.number().int()).optional(),
+  catalogVersion: z.string().nullable().optional(),
+  indexVersion: z.string().nullable().optional(),
+  uptimeSec: z.number().optional(),
+  lastIdentifyMs: z.number().nullable().optional()
 });
+export type RecognitionHealth = z.infer<typeof RecognitionHealth>;
 
 /** Draft 2020-12 JSON Schema of the identify response (same generator options as json-schema.ts). */
 export const recognitionResponseJsonSchema = (): Record<string, unknown> => ({

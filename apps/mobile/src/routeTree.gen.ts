@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ModalRouteImport } from './routes/_modal'
 import { Route as TabsRouteImport } from './routes/_tabs'
 import { Route as ModalAddRouteImport } from './routes/_modal/add'
+import { Route as ModalScanRouteImport } from './routes/_modal/scan'
 import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
 import { Route as DevPackTestRouteImport } from './routes/dev/pack-test'
 import { Route as DevStorageScreensRouteImport } from './routes/dev/storage-screens'
@@ -46,6 +47,11 @@ const TabsRoute = TabsRouteImport.update({
 const ModalAddRoute = ModalAddRouteImport.update({
   id: '/add',
   path: '/add',
+  getParentRoute: () => ModalRoute,
+} as any)
+const ModalScanRoute = ModalScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
   getParentRoute: () => ModalRoute,
 } as any)
 const TabsIndexRoute = TabsIndexRouteImport.update({
@@ -162,6 +168,7 @@ const TabsSetsLanguageSetIdRoute = TabsSetsLanguageSetIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof TabsIndexRoute
   '/add': typeof ModalAddRoute
+  '/scan': typeof ModalScanRoute
   '/dev/pack-test': typeof DevPackTestRoute
   '/dev/storage-screens': typeof DevStorageScreensRoute
   '/custom-cards/new': typeof ModalCustomCardsNewRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof TabsIndexRoute
   '/add': typeof ModalAddRoute
+  '/scan': typeof ModalScanRoute
   '/dev/pack-test': typeof DevPackTestRoute
   '/dev/storage-screens': typeof DevStorageScreensRoute
   '/custom-cards/new': typeof ModalCustomCardsNewRoute
@@ -214,6 +222,7 @@ export interface FileRoutesById {
   '/_modal': typeof ModalRouteWithChildren
   '/_tabs': typeof TabsRouteWithChildren
   '/_modal/add': typeof ModalAddRoute
+  '/_modal/scan': typeof ModalScanRoute
   '/dev/pack-test': typeof DevPackTestRoute
   '/dev/storage-screens': typeof DevStorageScreensRoute
   '/_tabs/': typeof TabsIndexRoute
@@ -242,6 +251,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/add'
+    | '/scan'
     | '/dev/pack-test'
     | '/dev/storage-screens'
     | '/custom-cards/new'
@@ -267,6 +277,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/add'
+    | '/scan'
     | '/dev/pack-test'
     | '/dev/storage-screens'
     | '/custom-cards/new'
@@ -293,6 +304,7 @@ export interface FileRouteTypes {
     | '/_modal'
     | '/_tabs'
     | '/_modal/add'
+    | '/_modal/scan'
     | '/dev/pack-test'
     | '/dev/storage-screens'
     | '/_tabs/'
@@ -345,6 +357,13 @@ declare module '@tanstack/react-router' {
       path: '/add'
       fullPath: '/add'
       preLoaderRoute: typeof ModalAddRouteImport
+      parentRoute: typeof ModalRoute
+    }
+    '/_modal/scan': {
+      id: '/_modal/scan'
+      path: '/scan'
+      fullPath: '/scan'
+      preLoaderRoute: typeof ModalScanRouteImport
       parentRoute: typeof ModalRoute
     }
     '/_tabs/': {
@@ -506,6 +525,7 @@ declare module '@tanstack/react-router' {
 
 interface ModalRouteChildren {
   ModalAddRoute: typeof ModalAddRoute
+  ModalScanRoute: typeof ModalScanRoute
   ModalCustomCardsNewRoute: typeof ModalCustomCardsNewRoute
   ModalWelcomeLanguagesRoute: typeof ModalWelcomeLanguagesRoute
   ModalWelcomeNoticeRoute: typeof ModalWelcomeNoticeRoute
@@ -515,6 +535,7 @@ interface ModalRouteChildren {
 
 const ModalRouteChildren: ModalRouteChildren = {
   ModalAddRoute: ModalAddRoute,
+  ModalScanRoute: ModalScanRoute,
   ModalCustomCardsNewRoute: ModalCustomCardsNewRoute,
   ModalWelcomeLanguagesRoute: ModalWelcomeLanguagesRoute,
   ModalWelcomeNoticeRoute: ModalWelcomeNoticeRoute,
