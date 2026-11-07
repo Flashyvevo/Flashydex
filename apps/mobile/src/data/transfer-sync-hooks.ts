@@ -7,12 +7,13 @@ import { ValidationError } from '@flashydex/core';
 import { useServices, useServicesIfReady } from './context';
 import { invalidateAll, invalidatePersonal, keys } from './keys';
 import { platform } from '../platform/app-platform';
+import { useReportBackgroundJob } from '../lib/handoff';
 
 /* ------------------------------------------------------------------------------------------ sync (secondary refresh path) */
 /** Latest sync run; polls every second while it is queued/running. */
 export function useActiveSync() {
   const services = useServicesIfReady();
-  return useQuery<SyncDto | null, DomainError>({
+  const query = useQuery<SyncDto | null, DomainError>({
     queryKey: keys.sync(),
     enabled: services !== null,
     placeholderData: keepPreviousData,
@@ -22,6 +23,13 @@ export function useActiveSync() {
     },
     queryFn: async () => (await (services as NonNullable<typeof services>).sync.list({ limit: 1 })).data[0] ?? null
   });
+  // S7-01: an active network refresh/sync is a background job: the update handoff waits for it (busy registry) and cancels it before storage is retired.
+  const active = query.data;
+  const running = active?.status === 'queued' || active?.status === 'running' || active?.status === 'cancel_requested';
+  useReportBackgroundJob(running, 'A catalog refresh is running.', () => {
+    if (services && active && active.status !== 'cancel_requested') void services.sync.cancel({ id: active.id }).catch(() => undefined);
+  });
+  return query;
 }
 export function useStartSync() {
   const services = useServices();

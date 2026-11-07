@@ -1,4 +1,4 @@
-import { useEffect, useId, useSyncExternalStore } from 'react';
+import { useEffect, useId, useRef, useSyncExternalStore } from 'react';
 
 /**
  * Update handoff coordination (WEB-STORAGE §7, W13). Tiny module-level store so any form can register dirtiness and any
@@ -6,6 +6,8 @@ import { useEffect, useId, useSyncExternalStore } from 'react';
  */
 const dirty = new Set<string>();
 const busy = new Map<string, string>();
+const cancels = new Map<string, () => void>();
+let nextJobId = 1;
 const listeners = new Set<() => void>();
 let writesBlocked = false;
 
@@ -50,6 +52,65 @@ export function useReportBusy(active: boolean, message: string): void {
   }, [active, message, id]);
 }
 
+/**
+ * S7-01: a background job that keeps working on its own (network refresh, sync) registers here with the SAME busy registry (so an update
+ * restart waits for it) plus a `cancel` the retirement calls (abort signal / service cancel) before it closes storage. `cancel` must be
+ * idempotent and must not throw; the job unregisters (effect cleanup) once it really stopped.
+ */
+export function useReportBackgroundJob(active: boolean, message: string, cancel: () => void): void {
+  const id = useId();
+  const cancelRef = useRef(cancel);
+  useEffect(() => { cancelRef.current = cancel; });
+  useEffect(() => {
+    if (!active) return;
+    busy.set(id, message);
+    cancels.set(id, () => cancelRef.current());
+    emit();
+    return () => { busy.delete(id); cancels.delete(id); emit(); };
+  }, [active, message, id]);
+}
+
+/** Non-hook registration for jobs outside React (tests, services). Returns the unregister function. */
+export function registerBackgroundJob(message: string, cancel: () => void): () => void {
+  const id = `job-${nextJobId++}`;
+  busy.set(id, message);
+  cancels.set(id, cancel);
+  emit();
+  return () => { busy.delete(id); cancels.delete(id); emit(); };
+}
+
+/**
+ * Retirement step: ask every registered background job to cancel, then wait (bounded) until none is registered any more. Resolves true when
+ * quiet, false on timeout (the storage fence is already up, so a straggler's next storage call rejects RETIRED rather than reopening anything).
+ */
+export function quiesceBackgroundJobs(timeoutMs: number): Promise<boolean> {
+  for (const cancel of [...cancels.values()]) {
+    try { cancel(); } catch { /* a failing cancel must not block the handoff */ }
+  }
+  if (busy.size === 0) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const done = (value: boolean) => { clearTimeout(timer); listeners.delete(check); resolve(value); };
+    const check = () => { if (busy.size === 0) done(true); };
+    const timer = setTimeout(() => done(busy.size === 0), timeoutMs);
+    listeners.add(check);
+  });
+}
+
+/* ──────────────── terminal storage retirement (S7-01) ──────────────── */
+
+export interface RetireStorageOptions {
+  /** Cancel + wait for background jobs (bounded). Runs AFTER the fence is up, BEFORE anything is closed. */
+  quiesce?: () => Promise<unknown>;
+  /** Wraps one close step with a timeout / error message (handoff passes its HandoffError timeout). */
+  step?: <T>(promise: Promise<T>, what: string) => Promise<T>;
+}
+let registeredRetirement: ((options: RetireStorageOptions) => Promise<void>) | null = null;
+/** app-database.ts registers its `retireStorage` here at load, so handoff.ts needs no import of the storage layer. Returns an unregister (tests). */
+export function registerStorageRetirement(fn: (options: RetireStorageOptions) => Promise<void>): () => void {
+  registeredRetirement = fn;
+  return () => { if (registeredRetirement === fn) registeredRetirement = null; };
+}
+
 /* ──────────────── update handoff controller (S5-04) ──────────────── */
 
 export type HandoffFailure = { message: string; /** the app is still usable (gate reopened) */ recoverable: boolean; offerReload: boolean };
@@ -76,6 +137,8 @@ export function dismissHandoffFailure(): void {
 
 export const HANDOFF_DRAIN_TIMEOUT_MS = 10_000;
 export const HANDOFF_CLOSE_TIMEOUT_MS = 10_000;
+/** How long the retirement waits for cancelled background jobs (sync / network refresh) to unregister. */
+export const HANDOFF_JOB_QUIESCE_MS = 3_000;
 
 export interface HandoffDeps {
   /** The page's write gate (web-storage/write-gate.ts). */
@@ -91,6 +154,9 @@ export interface HandoffDeps {
   /** A catalog install / restore / import / sync is running right now. */
   busyReason(): string | null;
   setBlocked(on: boolean): void;
+  /** Terminal retirement (app-database `retireStorage`). When omitted, the registered one is used; when none is registered the close deps above run. */
+  retireStorage?(options: RetireStorageOptions): Promise<void>;
+  jobQuiesceMs?: number;
   drainTimeoutMs?: number;
   closeTimeoutMs?: number;
 }
@@ -138,11 +204,19 @@ export async function prepareUpdateHandoff(deps: HandoffDeps): Promise<void> {
   committed = true;
   try {
     const closeMs = deps.closeTimeoutMs ?? HANDOFF_CLOSE_TIMEOUT_MS;
-    for (const path of await deps.listOpenPaths()) await withTimeout(deps.closePath(path, { drain: true }), closeMs, 'Closing your collection');
-    await withTimeout(deps.shutdownClient(), closeMs, 'Stopping storage');
-    // Only now - every handle closed, worker terminated, admissions permanently invalid - may another tab become the writer.
-    // A failure above deliberately does NOT release: a worker may still hold handles, so the lock stays until the reload.
-    await deps.releaseWriterLock?.();
+    const quiesce = () => quiesceBackgroundJobs(deps.jobQuiesceMs ?? HANDOFF_JOB_QUIESCE_MS);
+    const retire = deps.retireStorage ?? registeredRetirement;
+    if (retire) {
+      // S7-01: ONE terminal retirement = fence (sync, before any await) -> quiesce jobs -> close every path -> terminate worker -> release the lock.
+      await retire({ quiesce, step: (promise, what) => withTimeout(promise, closeMs, what) });
+    } else {
+      await quiesce(); // no storage layer registered (unit tests / native): still cancel + wait for background jobs
+      for (const path of await deps.listOpenPaths()) await withTimeout(deps.closePath(path, { drain: true }), closeMs, 'Closing your collection');
+      await withTimeout(deps.shutdownClient(), closeMs, 'Stopping storage');
+      // Only now - every handle closed, worker terminated, admissions permanently invalid - may another tab become the writer.
+      // A failure above deliberately does NOT release: a worker may still hold handles, so the lock stays until the reload.
+      await deps.releaseWriterLock?.();
+    }
   } catch (error) {
     throw error instanceof HandoffError ? new HandoffError(error.message, false, true) : new HandoffError('Storage could not be closed cleanly.', false, true);
   }

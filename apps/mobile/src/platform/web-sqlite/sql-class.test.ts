@@ -120,3 +120,67 @@ describe('write gate with the shared classifier (S6-05)', () => {
     expect(gate.pending()).toBe(0);
   });
 });
+
+describe('classifySql tokenizer (S7-02)', () => {
+  const SOL = ["WITH x AS (SELECT '--') INSERT INTO t VALUES(1)", 'PRAGMA "user_version" = 99', '; INSERT INTO t VALUES(1)'];
+
+  it('Sol strings classify as write', () => {
+    for (const sql of SOL) expect(kind(sql), sql).toBe('write');
+  });
+
+  it('comment-like text inside quoted tokens does not hide or fake anything', () => {
+    expect(kind("WITH x AS (SELECT '--') SELECT * FROM x")).toBe('read');
+    expect(kind("WITH x AS (SELECT '/*') SELECT '*/' FROM x")).toBe('read');
+    expect(kind('WITH x AS (SELECT "--" FROM t) SELECT * FROM x')).toBe('read');
+    expect(kind("WITH x AS (SELECT 'it''s --') INSERT INTO t VALUES(1)")).toBe('write');
+    expect(kind('WITH x AS (SELECT [a--b] FROM t) UPDATE t SET a = 1')).toBe('write');
+    expect(kind('WITH x AS (SELECT `a--b` FROM t) SELECT * FROM x')).toBe('read');
+    expect(kind('WITH x AS (SELECT 1) /* c */ INSERT INTO t VALUES(1)')).toBe('write');
+    expect(kind('WITH x AS (SELECT 1) -- INSERT\n SELECT * FROM x')).toBe('read');
+  });
+
+  it('leading semicolons / whitespace / comments are skipped before the verb', () => {
+    for (const lead of [';', ' ; ;', '/* a */;', '-- x\n;\n']) {
+      expect(kind(`${lead} INSERT INTO t VALUES(1)`), lead).toBe('write');
+      expect(kind(`${lead} SELECT 1`), lead).toBe('read');
+      expect(classifySql(`${lead} BEGIN`).kind).toBe('begin');
+      expect(classifySql(`${lead} SAVEPOINT a`)).toEqual({ kind: 'savepoint', name: 'a' });
+    }
+  });
+
+  it('quoted / schema-qualified PRAGMA names classify like bare ones', () => {
+    expect(kind('PRAGMA "user_version" = 99')).toBe('write');
+    expect(kind('PRAGMA [user_version]=1')).toBe('write');
+    expect(kind('PRAGMA `user_version`(3)')).toBe('write');
+    expect(kind("PRAGMA 'user_version' = 3")).toBe('write');
+    expect(kind('PRAGMA main."user_version" = 99')).toBe('write');
+    expect(kind('PRAGMA "main"."user_version" = 99')).toBe('write');
+    expect(kind('PRAGMA "user_version"')).toBe('read');
+    expect(kind('PRAGMA "table_info"(t)')).toBe('read');
+    expect(kind('PRAGMA "foreign_keys" = ON')).toBe('read'); // intentional connection-local policy, quoted or not
+    expect(kind('PRAGMA "optimize"')).toBe('write');
+  });
+
+  it('anything the tokenizer cannot classify confidently is a write', () => {
+    for (const sql of ["SELECT 'unterminated", 'PRAGMA "user_version = 1', 'PRAGMA = 1', 'PRAGMA', '(SELECT 1)', '1', "WITH x AS (SELECT 'oops) INSERT INTO t VALUES(1)", 'SAVEPOINT', 'RELEASE']) {
+      expect(isMutationKind(kind(sql)), sql).toBe(true);
+    }
+  });
+
+  it('empty / comment-only input stays a read (nothing executes)', () => {
+    expect(kind('')).toBe('read');
+    expect(kind('-- nothing')).toBe('read');
+    expect(kind(' ; ')).toBe('read');
+  });
+
+  it('closed gate refuses all three Sol spellings and still admits the read CTE', async () => {
+    const gate = createWriteGate();
+    const { driver, calls } = recordingDriver();
+    const wrapped = gate.wrap(driver);
+    gate.close();
+    for (const sql of SOL) await expect(wrapped.proxy(sql, [], 'run'), sql).rejects.toMatchObject({ name: 'MaintenanceError' });
+    expect(calls).toEqual([]);
+    await wrapped.proxy("WITH x AS (SELECT '--') SELECT * FROM x", [], 'all');
+    expect(calls).toHaveLength(1);
+  });
+});

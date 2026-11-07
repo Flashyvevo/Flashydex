@@ -10,9 +10,61 @@ import { NATIVE_CATALOG_WRITES } from './pack-install/native-store';
 import { createWebInstallPort } from './pack-install/web-port';
 import type { StoragePrepareProgress, StoragePrepareResult } from './web-storage/contract';
 import { setWebRuntime } from './web-storage/runtime';
-import { writeGate } from './web-storage/write-gate';
+import { __resetPageRetiredForTests, isPageRetired, isRetiredError, retiredError, retirePage, writeGate } from './web-storage/write-gate';
+import { isWriterLockReleased, releaseWriterLock } from './instance-lock';
+import { registerStorageRetirement, type RetireStorageOptions } from '../lib/handoff';
 
 const isWeb = () => Capacitor.getPlatform() === 'web';
+
+/* ──────────────────────────────────────────────── terminal retirement (S7-01) ──────────────────────────────────────────────── */
+/**
+ * Set at the point of no return of an update handoff and NEVER cleared (the page reloads). Distinct from the recoverable shutdown/reopen
+ * cycle: once set, every factory below (prepareStorage, createUserDriver, catalogSource.open/openWritable, the install port's stage /
+ * validation) and every SQL-client entry point rejects `WebStorageError('RETIRED')` - checked before AND after each await, read-only
+ * paths and queued opens included - so a retired page can never re-acquire the pool the new page legitimately owns.
+ */
+const isRetired = (): boolean => isPageRetired() || isWriterLockReleased();
+const assertNotRetired = (): void => {
+  if (isRetired()) throw retiredError();
+};
+
+/** Synchronous, idempotent: raises the page-wide fence (the SQL client and every factory below consult it). */
+export function fenceStorage(): void {
+  retirePage();
+}
+export const isStorageRetired = (): boolean => isRetired();
+
+/** A handle opened by a call that was retired while awaiting: close it, then refuse. */
+async function refuseIfRetired<T extends SqlDriver | null>(driver: T): Promise<T> {
+  if (!isRetired()) return driver;
+  await Promise.resolve(driver?.close()).catch(() => undefined);
+  throw retiredError();
+}
+
+/**
+ * Terminal retirement for the update handoff: (1) fence (synchronous, before the first await), (2) quiesce/cancel background jobs,
+ * (3) close every open path with drain, (4) terminate the worker, (5) release the origin-wide writer lock. A failure before (5)
+ * deliberately does NOT release the lock (a worker may still hold SAHs); the fence stays up regardless.
+ */
+export async function retireStorage(options: RetireStorageOptions = {}): Promise<void> {
+  fenceStorage();
+  await options.quiesce?.();
+  const step = options.step ?? (<T,>(promise: Promise<T>) => promise);
+  if (isWeb()) {
+    const { getWebSqliteClient } = await import('./web-sqlite/client');
+    const client = getWebSqliteClient();
+    client.retire();
+    for (const open of (await client.stats()).openPaths) await step(client.closePath(open.path, { drain: true }), 'Closing your collection');
+    await step(client.shutdown(), 'Stopping storage');
+  }
+  await releaseWriterLock();
+}
+registerStorageRetirement(retireStorage);
+
+/** Test seam: a real page never un-retires. */
+export function __resetRetiredForTests(): void {
+  __resetPageRetiredForTests();
+}
 
 /**
  * DEV-ONLY legacy mode (`localStorage['fdx:dev-legacy-jeep'] === '1'`): the old jeep USER database, catalogs disabled. It exists to seed
@@ -32,6 +84,7 @@ const listeners = new Set<(progress: StoragePrepareProgress) => void>();
 let preparing: Promise<StoragePrepareResult> | null = null;
 
 async function runPrepare(): Promise<StoragePrepareResult> {
+  assertNotRetired();
   if (!isWeb()) return { kind: 'native' };
   if (devLegacy()) return { kind: 'legacy-dev' };
   const emit = (progress: StoragePrepareProgress) => { for (const listener of listeners) listener(progress); };
@@ -39,34 +92,44 @@ async function runPrepare(): Promise<StoragePrepareResult> {
   const [{ getWebSqliteClient, ensureUserDatabase }, { getRoleStore }, { reconcileWebStaging }, { listStagingJobs, removeStagingJob }] = await Promise.all([
     import('./web-sqlite'), import('./web-storage/role-store'), import('./web-storage/reconcile'), import('./web-storage/opfs-staging')
   ]);
+  assertNotRetired();
   emit({ phase: 'starting-worker' });
   const client = getWebSqliteClient();
   const info = await client.init();
+  assertNotRetired();
   emit({ phase: 'opening-pool' });
   const roles = getRoleStore();
   const user = await ensureUserDatabase({ client, roles, onProgress: emit });
+  assertNotRetired();
   setWebRuntime({ client, roles });
   try {
     // Interrupted-install cleanup. Role metadata corruption already surfaced above (never reset); anything else must not block boot.
     await reconcileWebStaging({ client, roles, stagingJobs: { list: listStagingJobs, remove: removeStagingJob } });
   } catch (error) {
     if ((error as { code?: string }).code === 'METADATA_CORRUPT') throw error;
+    if (isRetiredError(error)) throw error;
     console.warn('[fdx] staging reconciliation failed; retrying at the next start', error);
   }
+  assertNotRetired();
   return { kind: 'web', user, info };
 }
 
 /**
  * Bootstrap calls this AFTER the writer lock is granted and BEFORE `createUserDriver()`. Memoized (one run per page; a failed run is not
  * cached, so a retry re-runs it). `createUserDriver()` and the catalog source await it themselves when bootstrap did not.
+ * Once the page is retired (S7-01) it rejects RETIRED even when the memoized run already succeeded.
  */
 export function prepareStorage(onProgress?: (progress: StoragePrepareProgress) => void): Promise<StoragePrepareResult> {
+  if (isRetired()) return Promise.reject(retiredError());
   if (onProgress) listeners.add(onProgress);
   preparing ??= runPrepare().catch((error: unknown) => {
     preparing = null;
     throw error;
   });
-  return preparing;
+  return preparing.then((result) => {
+    assertNotRetired();
+    return result;
+  });
 }
 
 /**
@@ -76,8 +139,11 @@ export function prepareStorage(onProgress?: (progress: StoragePrepareProgress) =
  *  - DEV legacy (`fdx:dev-legacy-jeep`): the old jeep path below, no `reopen` (R02: jeep's close would write the failed snapshot back).
  */
 export async function createUserDriver(): Promise<SqlDriver> {
+  assertNotRetired();
   const prepared = await prepareStorage();
+  assertNotRetired();
   const driver = prepared.kind === 'web' ? await openWebUserDriver(prepared.user.path) : await openLegacyOrNativeUserDriver(prepared.kind === 'legacy-dev');
+  await refuseIfRetired(driver);
   return writeGate.wrap(withDevDelay(driver)); // update-handoff gate under every service mutation: web-storage/write-gate.ts
 }
 
@@ -128,8 +194,11 @@ export const catalogSource: CatalogSource = {
   async open(language) {
     if (isWeb()) {
       if (devLegacy()) return null;
+      assertNotRetired();
       await prepareStorage();
-      return gated(await getWebCatalogStorage().openCatalogDriver(language, 'ro'));
+      assertNotRetired();
+      const driver = await getWebCatalogStorage().openCatalogDriver(language, 'ro');
+      return gated(await refuseIfRetired(driver));
     }
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const connection = await openCatalogDb(language);
@@ -142,8 +211,11 @@ export const catalogSource: CatalogSource = {
   async openWritable(language) {
     if (!catalogWrites()) return null;
     if (isWeb()) {
+      assertNotRetired();
       await prepareStorage();
-      return gated(await getWebCatalogStorage().openCatalogDriver(language, 'rw'));
+      assertNotRetired();
+      const driver = await getWebCatalogStorage().openCatalogDriver(language, 'rw');
+      return gated(await refuseIfRetired(driver));
     }
     if ((await getCatalogStorage().activeRef(language)) === null) return null;
     const handle = await openCatalogDbWritable(language);
@@ -175,12 +247,24 @@ export function createInstallPort(): CatalogInstallPort {
   const fetchManifest: CatalogInstallPort['fetchManifest'] = (input, signal) => fetchManifestText({ maxBytes: Math.min(input.maxBytes, MANIFEST_MAX_BYTES) }, signal);
   if (isWeb()) {
     const port = createWebInstallPort(getWebCatalogStorage(), { allowDevUrls: import.meta.env.DEV, fetchManifest, enabled: () => !devLegacy() });
-    // Catalog operations need the prepared runtime; bootstrap prepares first, but never rely on that ordering.
-    const ready = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => { await prepareStorage(); return fn(...args); };
+    // Catalog operations need the prepared runtime; bootstrap prepares first, but never rely on that ordering. A retired page (S7-01) refuses
+    // BEFORE touching storage and, for the operations that only stage bytes or hand out a handle, again after the await (a handle is closed first).
+    // Operations that move roles (activate / restore / discard / remove) are NOT rejected after the fact: their durable effect already happened.
+    const ready = <A extends unknown[], R>(fn: (...args: A) => Promise<R>, afterCheck = false) => async (...args: A): Promise<R> => {
+      assertNotRetired();
+      await prepareStorage();
+      assertNotRetired();
+      const result = await fn(...args);
+      if (afterCheck && isRetired()) {
+        await Promise.resolve((result as { close?: () => unknown } | null)?.close?.()).catch(() => undefined);
+        throw retiredError();
+      }
+      return result;
+    };
     return {
       ...port,
-      stage: ready(port.stage),
-      openForValidation: ready(port.openForValidation),
+      stage: ready(port.stage, true),
+      openForValidation: ready(port.openForValidation, true),
       activate: ready(port.activate),
       restorePrevious: ready(port.restorePrevious),
       discardPrevious: ready(port.discardPrevious),

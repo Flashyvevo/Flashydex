@@ -9,6 +9,7 @@ import {
   type WebSqliteStats, type WebStorageErrorCode
 } from '../web-storage/contract';
 import { classifySql, isMutationKind } from './sql-class';
+import { isPageRetired, retiredError } from '../web-storage/write-gate';
 import {
   fromWire, POOL_BOOT_BUDGET_MS, PROTOCOL, type BatchPayload, type BatchResult, type FaultSpec, type ImportResult, type InitResult, type OpenResult, type ProxyMethod,
   type RequestEnvelope, type StatsResult, type WireError, type WorkerMessage
@@ -60,6 +61,9 @@ export interface WebSqliteClientInternal extends WebSqliteClient {
   __messageStats(reset?: boolean): MessageStats;
   /** Superset of `WebSqliteClient.closePath` (Stage F fix-i seam): `drain` lets an open transaction finish first. */
   closePath(path: PoolPath, options?: ClosePathOptions): Promise<void>;
+  /** S7-01: terminal handoff retirement. Never starts a worker / opens / reopens / imports again (RETIRED); open handles may still finish and close. */
+  retire(): void;
+  readonly isRetired: boolean;
 }
 
 export function defaultWorkerFactory(): WorkerLike {
@@ -67,6 +71,8 @@ export function defaultWorkerFactory(): WorkerLike {
 }
 
 const DEFAULT_CACHE_KIB = { user: 2048, catalog: 4096, validation: 32768 } as const;
+/** An init/open/reopen deadline kept alive ONLY by untagged worker heartbeats gives up after this many deadline lengths (S7-03). */
+const DEADLINE_HEARTBEAT_CAP_FACTOR = 6;
 
 class RemoteError extends WebStorageError {
   constructor(wire: WireError) {
@@ -187,6 +193,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   private readonly physicals = new Map<PoolPath, Physical>();
   private readonly importing = new Set<PoolPath>();
   private lastError: { code: WebStorageErrorCode; at: string } | null = null;
+  private retired = false;
   private workerStartedAt = 0;
   private readyResolve: (() => void) | null = null;
   private readyReject: ((error: unknown) => void) | null = null;
@@ -195,7 +202,26 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   constructor(private readonly options: WebSqliteClientOptions = {}) {}
 
   // ───────────────────────── session ─────────────────────────
+  /**
+   * S7-01: terminal retirement (update handoff). After this the client never starts a worker, opens, reopens, imports or lists again -
+   * every such entry point rejects RETIRED before AND after each await. Handles that are already open keep working until the handoff
+   * closes them (an admitted transaction must be able to COMMIT), and `closePath` / `shutdown` stay usable for exactly that.
+   * The page-wide fence (`retirePage()` in web-storage/write-gate.ts) retires every client, including one created later.
+   */
+  retire(): void {
+    this.retired = true;
+  }
+
+  get isRetired(): boolean {
+    return this.retired || isPageRetired();
+  }
+
+  private assertLive(): void {
+    if (this.isRetired) throw retiredError();
+  }
+
   init(): Promise<WebSqliteInitInfo> {
+    if (this.isRetired) return Promise.reject(retiredError()); // even when a session is already cached
     this.initPromise ??= this.startSession().catch((error) => {
       this.initPromise = null;
       this.teardownWorker();
@@ -205,6 +231,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   }
 
   private async startSession(): Promise<WebSqliteInitInfo> {
+    this.assertLive();
     const factory = this.options.workerFactory ?? defaultWorkerFactory;
     let worker: WorkerLike;
     try {
@@ -233,9 +260,11 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     } finally {
       clearTimeout(timer);
     }
+    this.assertLive(); // retired while the worker was booting: never ask it to acquire the pool (init's catch tears the worker down)
     const workerReadyMs = performance.now() - this.workerStartedAt;
     mark('fdx:web-worker-ready');
     const result = (await this.send('init', { protocol: PROTOCOL, ...(import.meta.env.DEV && this.options.fault ? { fault: this.options.fault } : {}) }, { deadlineMs: this.initDeadlineMs }).promise) as InitResult;
+    this.assertLive(); // retired while the pool was being acquired: do not hand out a session
     mark('fdx:web-pool-ready');
     return {
       packageVersion: SQLITE_WASM_PACKAGE_VERSION,
@@ -265,8 +294,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
 
   private onMessage(source: WorkerLike, message: WorkerMessage): void {
     if (source !== this.worker) return; // a message from a worker we already discarded
-    this.lastHeardAt = performance.now();
-    this.touchDeadlines(); // ANY message (reply, ping reply, progress, heartbeat) is proof of life: silence, not elapsed time, is what a deadline measures
+    this.lastHeardAt = performance.now(); // ANY message (reply, ping reply, progress, heartbeat, error) is proof the worker's event loop is alive: LIVENESS only
     this.msgStats.messages += 1;
     this.msgStats.maxBufferBytes = Math.max(this.msgStats.maxBufferBytes, maxBufferBytes(message));
     if (message.kind === 'ready') {
@@ -274,11 +302,17 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
       this.readyResolve = null;
       return;
     }
-    if (message.kind === 'heartbeat') return;
+    // S7-03: an init/open/reopen deadline measures progress of THAT request. Ping replies, STALE_SESSION errors and other requests' replies
+    // do not extend it; only a worker-internal SQLite heartbeat (bounded by a hard cap) or a progress message tagged with its own id does.
+    if (message.kind === 'heartbeat') {
+      this.touchDeadlines('heartbeat');
+      return;
+    }
     if (message.sessionId !== this.sessionId) return;
     const pending = this.pending.get(message.requestId);
     if (!pending) return;
     if (message.kind === 'progress') {
+      this.restartDeadline(message.requestId);
       pending.onProgress?.(message.bytes);
       return;
     }
@@ -357,7 +391,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
    * A deadline-bound request (init/open/reopen) is declared dead after `ms` of SILENCE from the worker (any message resets it) while the
    * page is visible. A hidden page pauses every deadline (its timers/workers are throttled) and restarts them in full when it is visible again.
    */
-  private readonly deadlines = new Map<number, { ms: number; timer: ReturnType<typeof setTimeout> | null; fire: () => void }>();
+  private readonly deadlines = new Map<number, { ms: number; capMs: number; startedAt: number; timer: ReturnType<typeof setTimeout> | null; fire: () => void }>();
   private visibilityBound = false;
 
   private pageHidden(): boolean {
@@ -365,7 +399,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   }
 
   private armDeadline(worker: WorkerLike, id: number, op: string, ms: number): void {
-    this.deadlines.set(id, { ms, timer: null, fire: () => this.onDeadline(worker, id, op) });
+    this.deadlines.set(id, { ms, capMs: ms * DEADLINE_HEARTBEAT_CAP_FACTOR, startedAt: performance.now(), timer: null, fire: () => this.onDeadline(worker, id, op) });
     this.bindVisibility();
     this.restartDeadline(id);
   }
@@ -383,8 +417,16 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     this.deadlines.delete(id);
   }
 
-  private touchDeadlines(): void {
-    for (const id of [...this.deadlines.keys()]) this.restartDeadline(id);
+  /**
+   * 'visibility': hidden clears and visible re-arms in full. 'heartbeat': extends every pending deadline, but never past `capMs` since the
+   * request started (a worker looping heartbeats inside one statement cannot hold an init/open open forever).
+   */
+  private touchDeadlines(reason: 'visibility' | 'heartbeat'): void {
+    const now = performance.now();
+    for (const [id, entry] of [...this.deadlines.entries()]) {
+      if (reason === 'heartbeat' && now - entry.startedAt >= entry.capMs) continue;
+      this.restartDeadline(id);
+    }
   }
 
   private bindVisibility(): void {
@@ -392,7 +434,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     this.visibilityBound = true;
     document.addEventListener('visibilitychange', () => {
       this.lastHeardAt = performance.now();
-      this.touchDeadlines(); // hidden: timers are cleared and not re-armed; visible: re-armed in full
+      this.touchDeadlines('visibility'); // hidden: timers are cleared and not re-armed; visible: re-armed in full
     });
   }
 
@@ -452,8 +494,10 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   // ───────────────────────── drivers ─────────────────────────
   async driver(path: PoolPath, label: string, options: OpenDriverOptions): Promise<SqlDriver> {
     assertPoolPath(path);
+    this.assertLive();
     if (this.importing.has(path)) throw new WebStorageError('BUSY', 'That path is being imported', { retryable: true });
     await this.init();
+    this.assertLive();
     let physical = this.physicals.get(path);
     if (physical?.closing || physical?.draining) throw new WebStorageError('BUSY', 'That path is closing', { retryable: true });
     if (!physical) {
@@ -462,6 +506,11 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
         draining: false, latched: null, settled: [], owner: null, queue: [], pumping: false, wrappers: new Set()
       };
       const result = await this.request<OpenResult>('open', { path, mode: options.mode, create: options.create, role: options.role, cacheKiB: physical.cacheKiB }, undefined, this.requestDeadlineMs);
+      if (this.isRetired) {
+        // retired while the open was in flight: the worker now holds a handle nobody owns - close it and refuse
+        await this.request('close', {}, result.dbId).catch(() => undefined);
+        throw retiredError();
+      }
       physical.dbId = result.dbId;
       const raced = this.physicals.get(path);
       if (raced) {
@@ -472,11 +521,14 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     } else if (options.mode === 'rw' && physical.mode === 'ro') {
       const upgrade = physical;
       await this.enqueueControl(upgrade, null, false, async () => {
+        this.assertLive();
         const result = await this.request<OpenResult>('reopen', { mode: 'rw' }, upgrade.dbId as number, this.requestDeadlineMs);
         upgrade.dbId = result.dbId;
         upgrade.mode = 'rw';
+        this.assertLive();
       });
     }
+    this.assertLive();
     const wrapper = new LogicalDriver(label, physical, this, options.mode);
     if (physical.latched && options.mode === 'rw') wrapper.latched = physical.latched; // a latch belongs to the connection, not to one handle
     physical.wrappers.add(wrapper);
@@ -621,14 +673,18 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   }
 
   async reopenPhysical(physical: Physical, wrapper: LogicalDriver): Promise<void> {
+    this.assertLive();
     if (wrapper.invalid) throw new WebStorageError('STALE_SESSION', 'This storage handle was closed');
     await this.enqueueControl(physical, wrapper, true, () => this.reopenInner(physical));
+    this.assertLive();
     physical.latched = null;
     for (const w of physical.wrappers) w.latched = null;
   }
 
   private async reopenInner(physical: Physical): Promise<void> {
+    this.assertLive();
     await this.init(); // a new worker/session after a crash; storage is re-probed, never wiped
+    this.assertLive();
     if (physical.dbId !== null && !physical.stale) {
       const result = await this.request<OpenResult>('reopen', {}, physical.dbId, this.requestDeadlineMs);
       physical.dbId = result.dbId;
@@ -638,6 +694,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     }
     physical.stale = false;
     physical.owner = null;
+    this.assertLive(); // the handle stays recorded on the physical so the handoff's close sequence still closes it
   }
 
   /** Resolves once no transaction is open on the path, nothing is queued or running, and no committed statement still awaits its barrier. */
@@ -712,6 +769,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
 
   // ───────────────────────── import ─────────────────────────
   async importFromStaging(input: ImportFromStagingInput): Promise<ImportFromStagingResult> {
+    this.assertLive();
     if (!CATALOG_PATH_RE.test(input.target)) throw new WebStorageError('INVALID_PATH', 'Imports target a catalog path');
     if (!input.source?.job || !input.source?.name) throw new WebStorageError('INVALID_PATH', 'Missing staging reference');
     if (!Number.isInteger(input.expectedBytes) || input.expectedBytes <= 0) throw new WebStorageError('INTEGRITY', 'Invalid expected size');
@@ -721,6 +779,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   }
 
   async importBytes(target: PoolPath, bytes: Uint8Array, expectedSha256: string): Promise<ImportResult> {
+    this.assertLive();
     if (!USER_PATH_RE.test(target)) throw new WebStorageError('INVALID_PATH', 'Byte imports are only for the one-time USER migration');
     // Transferred, not copied: the caller's array is detached afterwards, so the legacy bytes are released on this side.
     const own = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
@@ -729,6 +788,7 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
 
   private async runImport(target: PoolPath, op: 'stageImport' | 'importBytes', payload: unknown, signal?: AbortSignal, onProgress?: (n: number) => void, transfer?: Transferable[]): Promise<ImportResult> {
     await this.init();
+    this.assertLive();
     if (this.physicals.has(target) || this.importing.has(target)) throw new WebStorageError('BUSY', 'That path is open or already being imported', { retryable: true });
     this.importing.add(target);
     const sent = this.send(op, payload, { onProgress, transfer });
@@ -745,18 +805,24 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
   // ───────────────────────── housekeeping ─────────────────────────
   async unlink(path: PoolPath): Promise<boolean> {
     assertPoolPath(path);
+    this.assertLive();
     if (this.physicals.has(path) || this.importing.has(path)) throw new WebStorageError('BUSY', 'The file is open or being imported', { retryable: true });
     await this.init();
+    this.assertLive();
     return ((await this.request<{ removed: boolean }>('unlink', { path })).removed);
   }
 
   async listFiles(): Promise<PoolPath[]> {
+    this.assertLive();
     await this.init();
+    this.assertLive();
     return (await this.request<{ files: string[] }>('list', {})).files;
   }
 
   async ensureCapacity(minFreeSlots: number): Promise<{ capacity: number; fileCount: number }> {
+    this.assertLive();
     await this.init();
+    this.assertLive();
     return this.request('ensureCapacity', { minFreeSlots });
   }
 

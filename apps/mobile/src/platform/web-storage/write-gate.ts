@@ -1,5 +1,26 @@
 import { MaintenanceError, type SqlDriver } from '@flashydex/core';
 import { classifySql } from '../web-sqlite/sql-class';
+import { WebStorageError, type WebStorageErrorCode } from './contract';
+
+/**
+ * Terminal update-handoff retirement (S7-01). `RETIRED` is not (yet) in contract.ts's closed `WebStorageErrorCode` union (frozen), so it is
+ * cast here, in ONE place; every retirement fence in the app throws exactly this error.
+ */
+export const RETIRED_CODE = 'RETIRED' as WebStorageErrorCode;
+export const retiredError = (): WebStorageError =>
+  new WebStorageError(RETIRED_CODE, 'This FlashyDex page was retired for an update; reload to continue', { commitState: 'not_started' });
+export const isRetiredError = (error: unknown): boolean => (error as { code?: unknown } | null)?.code === RETIRED_CODE;
+
+/**
+ * The page-wide retirement fence (S7-01): set once, synchronously, at the handoff's point of no return and never cleared (the page
+ * reloads). Lives here - a tiny static module both the SQL client and the app factories already depend on - so every consumer sees it
+ * the instant it is raised, whichever module graph loaded first.
+ */
+let pageRetired = false;
+export const retirePage = (): void => { pageRetired = true; };
+export const isPageRetired = (): boolean => pageRetired;
+/** Test seam only. */
+export const __resetPageRetiredForTests = (): void => { pageRetired = false; };
 
 /**
  * Update-handoff write gate (WEB-STORAGE §7, W13, Sol S5-04). Wraps every SqlDriver the app hands to core (user + catalog), so it sits

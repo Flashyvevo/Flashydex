@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWriteGate } from '../platform/web-storage/write-gate';
-import { getHandoffUi, HandoffError, isHandoffCommitted, prepareUpdateHandoff, runUpdateHandoff, dismissHandoffFailure, resetHandoffUi, type HandoffDeps } from './handoff';
+import { busyReason, getHandoffUi, HandoffError, registerBackgroundJob, isHandoffCommitted, prepareUpdateHandoff, runUpdateHandoff, dismissHandoffFailure, resetHandoffUi, type HandoffDeps } from './handoff';
 
 function fakeDriver(log: string[] = []) {
   return {
@@ -205,5 +205,67 @@ describe('write gate: COMMIT -> afterCommit gap', () => {
     expect(gate.pending()).toBe(1);
     await driver.afterCommit!();
     expect(gate.pending()).toBe(0);
+  });
+});
+
+describe('S7-01: terminal retirement inside the handoff', () => {
+  it('calls the retirement (fence) at the point of no return, AFTER the drain, and it replaces the deps close sequence', async () => {
+    const order: string[] = [];
+    const { d } = deps({
+      retireStorage: async ({ quiesce }) => { order.push('fence'); await quiesce?.(); order.push('close-all'); order.push('release'); },
+      listOpenPaths: async () => { order.push('listOpenPaths'); return []; },
+      shutdownClient: async () => { order.push('deps.stop'); }
+    });
+    await prepareUpdateHandoff(d);
+    expect(order).toEqual(['fence', 'close-all', 'release']);
+    expect(isHandoffCommitted()).toBe(true);
+    resetHandoffUi();
+  });
+
+  it('a recoverable pre-drain refusal (busy job) never raises the fence', async () => {
+    const retireStorage = vi.fn(async () => undefined);
+    const { d } = deps({ retireStorage, busyReason: () => 'A catalog download is running.' });
+    await expect(prepareUpdateHandoff(d)).rejects.toMatchObject({ recoverable: true });
+    expect(retireStorage).not.toHaveBeenCalled();
+  });
+
+  it('activation-failure path still retires and releases (storage closed, Reload offered)', async () => {
+    const calls: string[] = [];
+    const { d } = deps({ retireStorage: async () => { calls.push('retire+release'); } });
+    await runUpdateHandoff(d, async (prepare) => { await prepare(); }, () => 'No update is waiting');
+    expect(calls).toEqual(['retire+release']);
+    expect(getHandoffUi()).toMatchObject({ phase: 'failed', failure: { recoverable: false, offerReload: true } });
+    resetHandoffUi();
+  });
+
+  it('quiesce cancels registered background jobs and waits (bounded) until they unregister, before any close step', async () => {
+    const order: string[] = [];
+    let unregister: () => void = () => undefined;
+    unregister = registerBackgroundJob('A catalog refresh is running.', () => { order.push('cancel'); setTimeout(() => { order.push('stopped'); unregister(); }, 15); });
+    const { d } = deps({
+      busyReason: () => null, // the job appeared after the early busy checks (it registered while the gate was closing)
+      retireStorage: async ({ quiesce }) => { order.push('fence'); await quiesce?.(); order.push('close'); }
+    });
+    await prepareUpdateHandoff(d);
+    expect(order).toEqual(['fence', 'cancel', 'stopped', 'close']);
+    expect(busyReason()).toBeNull();
+    resetHandoffUi();
+  });
+
+  it('a job that never stops does not hang the handoff: quiesce times out and the close still runs', async () => {
+    const unregister = registerBackgroundJob('stuck', () => undefined);
+    const closed = vi.fn();
+    const { d } = deps({ jobQuiesceMs: 30, retireStorage: async ({ quiesce }) => { expect(await quiesce?.()).toBe(false); closed(); } });
+    await prepareUpdateHandoff(d);
+    expect(closed).toHaveBeenCalled();
+    unregister();
+    resetHandoffUi();
+  });
+
+  it('without a registered/injected retirement the old close sequence still runs after job quiescence', async () => {
+    const { d, calls } = deps();
+    await prepareUpdateHandoff(d);
+    expect(calls.filter((c) => /closePath|shutdown|release/.test(c))).toEqual(['closePath:/user/u-1.db:true', 'closePath:/catalog-en/g-1.db:true', 'shutdown', 'release']);
+    resetHandoffUi();
   });
 });
