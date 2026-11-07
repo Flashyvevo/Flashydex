@@ -162,8 +162,11 @@ class Recognizer:
         agreement = fusion.ocr_agreement(ocr_obs, index.numbers, index.official, index.totals)
 
         raw = fusion.fuse_raw(sims, agreement)
-        order, conf = fusion.rank(raw, mask, max_candidates)
+        # The match/margin decision must always see at least the top-2 eligible rows, whatever the
+        # caller's response limit is; only then is the response sliced.
+        order, conf = fusion.rank(raw, mask, max(max_candidates, fusion.DECISION_ROWS))
         status = fusion.decide(conf)
+        order, conf = order[:max_candidates], conf[:max_candidates]
         t = lap("fuse", t)
 
         # 3. variants on the winner only -----------------------------------------------------

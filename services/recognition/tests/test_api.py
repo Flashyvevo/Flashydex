@@ -90,13 +90,14 @@ def test_size_cap_8mb():
     assert r.status_code == 413 and r.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
 
 
-def test_token_is_admin_alternative_to_origin():
+def test_token_is_required_for_proxied_requests():
     c = client(token="s3cret")
     proxied = {"CF-Connecting-IP": "203.0.113.9"}
     assert post(c, JPG, {**proxied, "Authorization": "Bearer nope"}).status_code == 401
-    assert post(c, JPG, {**proxied}).status_code == 403
+    assert post(c, JPG, {**proxied}).status_code == 401
+    assert post(c, JPG, {**proxied, "Origin": ORIGIN}).status_code == 401
     assert post(c, JPG, {**proxied, "Authorization": "Bearer s3cret"}).status_code == 200
-    assert c.get("/v1/health", headers=proxied).status_code == 403
+    assert c.get("/v1/health", headers=proxied).status_code == 401
     assert c.get("/v1/health", headers={**proxied, "Authorization": "Bearer s3cret"}).status_code == 200
     assert c.get("/health", headers=proxied).status_code == 200  # liveness stays open
 

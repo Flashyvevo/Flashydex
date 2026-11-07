@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { detectImageType, fitWithin, jpegExifOrientation, shouldSkipReencode } from './prepare';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { detectImageType, fitWithin, jpegExifOrientation, prepareImage } from './prepare';
 
 const bytes = (...n: number[]) => new Uint8Array(n);
 const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0));
@@ -36,20 +36,65 @@ describe('fitWithin', () => {
   });
 });
 
-describe('shouldSkipReencode', () => {
-  const base = { type: 'jpeg' as const, width: 1200, height: 900, bytes: 400_000 };
-  it('small jpeg is sent unchanged', () => expect(shouldSkipReencode(base)).toBe(true));
-  it('too many pixels / too many bytes / not jpeg → re-encode', () => {
-    expect(shouldSkipReencode({ ...base, width: 1601 })).toBe(false);
-    expect(shouldSkipReencode({ ...base, bytes: 1.5 * 1024 * 1024 + 1 })).toBe(false);
-    expect(shouldSkipReencode({ ...base, type: 'png' })).toBe(false);
-    expect(shouldSkipReencode({ ...base, type: 'heic' })).toBe(false);
+describe('prepareImage always re-encodes (S10-05)', () => {
+  const ENCODED = new Blob(['re-encoded-pixels-no-exif'], { type: 'image/jpeg' });
+  let drawn: Array<[number, number]> = [];
+  let imageDims = { w: 1200, h: 900 };
+  let decodeRejects = false;
+
+  beforeEach(() => {
+    drawn = [];
+    vi.stubGlobal('OffscreenCanvas', undefined);
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      decoding = '';
+      get naturalWidth() { return imageDims.w; }
+      get naturalHeight() { return imageDims.h; }
+      set src(_: string) { queueMicrotask(() => this.onload?.()); }
+      decode() { return decodeRejects ? Promise.reject(new Error('EncodingError')) : Promise.resolve(); }
+    }
+    vi.stubGlobal('Image', FakeImage);
+    const realCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      if (tag !== 'canvas') return realCreate(tag);
+      return {
+        width: 0,
+        height: 0,
+        getContext: () => ({ fillRect: () => undefined, drawImage: (_s: unknown, _x: number, _y: number, w: number, h: number) => drawn.push([w, h]), set fillStyle(_v: string) {} }),
+        toBlob: (cb: (b: Blob | null) => void) => cb(ENCODED),
+      } as unknown as HTMLCanvasElement;
+    }) as typeof document.createElement);
   });
-  it('exactly at the limits is skipped', () => expect(shouldSkipReencode({ ...base, width: 1600, bytes: 1.5 * 1024 * 1024 })).toBe(true));
-  it('non-default EXIF orientation forces re-encode', () => {
-    expect(shouldSkipReencode({ ...base, orientation: 6 })).toBe(false);
-    expect(shouldSkipReencode({ ...base, orientation: 1 })).toBe(true);
-    expect(shouldSkipReencode({ ...base, orientation: null })).toBe(true);
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    decodeRejects = false;
+    imageDims = { w: 1200, h: 900 };
+  });
+
+  const smallJpeg = () => new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 4, 0, 0, 0xff, 0xd9])], 'p.jpg', { type: 'image/jpeg' });
+
+  it('a small upright JPEG is NOT sent unchanged', async () => {
+    const file = smallJpeg();
+    const out = await prepareImage(file);
+    expect(out.reencoded).toBe(true);
+    expect(out.blob).toBe(ENCODED);
+    expect(out.blob).not.toBe(file);
+    expect(out.originalBytes).toBe(file.size);
+    expect(drawn).toEqual([[1200, 900]]); // upright EXIF-applied dimensions, no resize
+  });
+  it('downscales a large photo to the 1600 px long edge', async () => {
+    imageDims = { w: 4000, h: 3000 };
+    await prepareImage(smallJpeg());
+    expect(drawn).toEqual([[1600, 1200]]);
+  });
+  it('tolerates an img.decode() rejection after a successful load (iOS Safari)', async () => {
+    decodeRejects = true;
+    const out = await prepareImage(smallJpeg());
+    expect(out.reencoded).toBe(true);
   });
 });
 

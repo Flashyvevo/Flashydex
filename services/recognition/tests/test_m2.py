@@ -142,10 +142,10 @@ def test_client_ip_header_is_ignored_or_rejected_without_bearer():
     c = sec_client(token="tok", rate_per_min=2)
     # no bearer, no Origin: proxy-header rule rejects it
     r = post(c, JPG, _ip(1))
-    assert r.status_code == 403 and r.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"
-    # allowed Origin but no bearer: header must not mint a fresh rate-limit budget
+    assert r.status_code == 401 and r.json()["error"]["code"] == "UNAUTHORIZED"
+    # allowed Origin but no bearer: never authorized, so the header cannot mint a rate-limit budget
     codes = [post(c, JPG, {"Origin": GOOD, **_ip(i)}).status_code for i in range(3)]
-    assert codes == [200, 200, 429]
+    assert codes == [401, 401, 401]
     # wrong bearer: 401 regardless of the header
     assert post(c, JPG, {"Authorization": "Bearer nope", **_ip(1)}).status_code == 401
 

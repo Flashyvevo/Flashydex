@@ -25,49 +25,73 @@ def sec_client(**kw):
     return TestClient(create_app(settings, FakeRecognizer()), client=(peer, 50000))
 
 
+TOK = "tok"
+BEARER = {"Authorization": "Bearer tok"}
+PREVIEW = "https://deploy-preview-12--flashydex.netlify.app"
+
+
 @pytest.mark.parametrize(
     ("headers", "peer", "expected", "code"),
     [
-        ({}, "127.0.0.1", 200, None),  # local curl / CLI / tests
-        (PROXY, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),  # tunnel, no origin
-        ({"X-Forwarded-For": "1.2.3.4"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({"CF-Ray": "abc"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({"Forwarded": "for=1.2.3.4"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({}, "192.168.1.9", 403, "ORIGIN_NOT_ALLOWED"),  # non-loopback peer, no origin
-        ({**PROXY, "Origin": "https://evil.example"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
+        ({}, "127.0.0.1", 200, None),  # direct loopback, no proxy headers (DEV / CLI / tests)
+        ({"Origin": "http://127.0.0.1:3201"}, "127.0.0.1", 200, None),  # dev proxy keeps the browser Origin
         ({"Origin": "https://evil.example"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({**PROXY, "Origin": GOOD}, "127.0.0.1", 200, None),
-        ({**PROXY, "Origin": "https://deploy-preview-12--flashydex.netlify.app"}, "127.0.0.1", 200, None),
-        ({**PROXY, "Origin": "https://main--flashydex.netlify.app"}, "127.0.0.1", 200, None),
-        ({**PROXY, "Origin": "https://evil--flashydex.netlify.app.evil.com"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({**PROXY, "Origin": "https://flashydex.netlify.app.evil.com"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({"Origin": "https://10.0.0.4:3200"}, "10.0.0.4", 200, None),
-        ({"Origin": "http://127.0.0.1:3201"}, "127.0.0.1", 200, None),
-        ({**PROXY, "Origin": GOOD, "Sec-Fetch-Site": "none"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({**PROXY, "Origin": GOOD, "Sec-Fetch-Mode": "navigate"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
-        ({**PROXY, "Origin": GOOD, "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"}, "127.0.0.1", 200, None),
         ({"Sec-Fetch-Site": "none"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
+        ({"Sec-Fetch-Mode": "navigate"}, "127.0.0.1", 403, "ORIGIN_NOT_ALLOWED"),
+        # tunneled / proxied / non-loopback WITHOUT a bearer: always 401, Origin never authorizes
+        (PROXY, "127.0.0.1", 401, "UNAUTHORIZED"),
+        ({"X-Forwarded-For": "1.2.3.4"}, "127.0.0.1", 401, "UNAUTHORIZED"),
+        ({"CF-Ray": "abc"}, "127.0.0.1", 401, "UNAUTHORIZED"),
+        ({"Forwarded": "for=1.2.3.4"}, "127.0.0.1", 401, "UNAUTHORIZED"),
+        ({}, "192.168.1.9", 401, "UNAUTHORIZED"),
+        ({"Origin": GOOD}, "192.168.1.9", 401, "UNAUTHORIZED"),
+        ({"Origin": "https://10.0.0.4:3200"}, "10.0.0.4", 401, "UNAUTHORIZED"),
+        ({**PROXY, "Origin": GOOD}, "127.0.0.1", 401, "UNAUTHORIZED"),  # missing token + allowed Origin
+        ({**PROXY, "Origin": PREVIEW}, "127.0.0.1", 401, "UNAUTHORIZED"),  # missing token + preview Origin
+        ({**PROXY, "Origin": "https://main--flashydex.netlify.app"}, "127.0.0.1", 401, "UNAUTHORIZED"),
+        ({"CF-Connecting-IP": "198.51.100.7", "X-Forwarded-For": "198.51.100.7", "Origin": GOOD},
+         "127.0.0.1", 401, "UNAUTHORIZED"),  # forged proxy identity + Origin
+        ({"X-FDX-Client-IP": "198.51.100.7", "Origin": GOOD}, "127.0.0.1", 401, "UNAUTHORIZED"),
+        ({**PROXY, "Origin": "https://evil.example"}, "127.0.0.1", 401, "UNAUTHORIZED"),
+        # valid bearer: 200 for tunnel traffic, with or without Origin
+        ({**PROXY, **BEARER}, "127.0.0.1", 200, None),
+        ({**PROXY, **BEARER, "Origin": GOOD}, "127.0.0.1", 200, None),
+        ({**BEARER}, "192.168.1.9", 200, None),
+        # wrong bearer: 401 even with an allowed Origin
+        ({**PROXY, "Authorization": "Bearer wrong", "Origin": GOOD}, "127.0.0.1", 401, "UNAUTHORIZED"),
+        ({**PROXY, "Authorization": "Basic dG9r"}, "127.0.0.1", 401, "UNAUTHORIZED"),
     ],
 )
-def test_origin_gate_matrix(headers, peer, expected, code):
-    r = post(sec_client(peer=peer), JPG, headers)
+def test_auth_gate_matrix(headers, peer, expected, code):
+    """Same outcome whether or not a token is configured, except bearer rows (need a token)."""
+    r = post(sec_client(token=TOK, peer=peer), JPG, headers)
     assert r.status_code == expected, r.text
     if code:
         assert r.json()["error"]["code"] == code
+    if expected == 401:
+        assert r.headers.get("www-authenticate") == "Bearer"
+
+
+def test_tokenless_dev_service_still_rejects_proxied_requests():
+    c = sec_client(peer="127.0.0.1")  # no token configured: DEV only
+    assert post(c, JPG, {**PROXY, "Origin": GOOD}).status_code == 401
+    assert post(c, JPG).status_code == 200
 
 
 def test_gate_applies_to_all_v1_but_not_liveness():
-    c = sec_client()
-    assert c.get("/v1/health", headers=PROXY).status_code == 403
-    assert c.get("/v1/index/manifest", headers=PROXY).status_code == 403
+    c = sec_client(token=TOK)
+    assert c.get("/v1/health", headers=PROXY).status_code == 401
+    assert c.get("/v1/health", headers={**PROXY, "Origin": GOOD}).status_code == 401
+    assert c.get("/v1/index/manifest", headers={**PROXY, "Origin": GOOD}).status_code == 401
     assert c.get("/health", headers=PROXY).status_code == 200
-    assert c.get("/v1/health", headers={**PROXY, "Origin": GOOD}).status_code == 200
+    assert c.get("/v1/health", headers={**PROXY, **BEARER}).status_code == 200
 
 
-def test_valid_token_bypasses_origin_but_bad_token_is_401():
+def test_valid_token_is_required_and_bad_token_is_401():
     c = sec_client(token="tok", peer="127.0.0.1")
     assert post(c, JPG, {**PROXY, "Authorization": "Bearer tok"}).status_code == 200
     assert post(c, JPG, {**PROXY, "Authorization": "Bearer wrong"}).status_code == 401
+    assert post(c, JPG, {**PROXY, "Origin": GOOD}).status_code == 401
 
 
 def test_env_overrides_for_origins(monkeypatch):
@@ -87,25 +111,25 @@ def test_default_allowlist_contents():
 
 
 def test_cors_headers_on_error_responses():
-    c = sec_client()
+    c = sec_client(token=TOK)
     # 415 for allowlisted origin carries ACAO + readable body
-    r = post(c, b"not an image", {"Origin": GOOD, **PROXY})
+    r = post(c, b"not an image", {"Origin": GOOD, **PROXY, **BEARER})
     assert r.status_code == 415 and r.headers["access-control-allow-origin"] == GOOD
     assert r.json()["error"]["code"] == "UNSUPPORTED_IMAGE"
     # 413
     big = b"\xff\xd8\xff" + b"0" * (8 * 1024 * 1024 + 300_000)
-    r = post(c, big, {"Origin": GOOD, **PROXY})
+    r = post(c, big, {"Origin": GOOD, **PROXY, **BEARER})
     assert r.status_code == 413 and r.headers["access-control-allow-origin"] == GOOD
     # 503 INDEX_NOT_READY
     from fastapi.testclient import TestClient
 
-    nc = TestClient(create_app(Settings(), FakeRecognizer(ready=False)), client=("127.0.0.1", 1))
-    r = post(nc, JPG, {"Origin": GOOD, **PROXY})
+    nc = TestClient(create_app(Settings(token=TOK), FakeRecognizer(ready=False)), client=("127.0.0.1", 1))
+    r = post(nc, JPG, {"Origin": GOOD, **PROXY, **BEARER})
     assert r.status_code == 503 and r.headers["access-control-allow-origin"] == GOOD
     # 429 exposes Retry-After
-    lc = sec_client(rate_per_min=1)
-    post(lc, JPG, {"Origin": GOOD, **PROXY})
-    r = post(lc, JPG, {"Origin": GOOD, **PROXY})
+    lc = sec_client(rate_per_min=1, token=TOK)
+    post(lc, JPG, {"Origin": GOOD, **PROXY, **BEARER})
+    r = post(lc, JPG, {"Origin": GOOD, **PROXY, **BEARER})
     assert r.status_code == 429 and r.headers["access-control-allow-origin"] == GOOD
     assert int(r.headers["retry-after"]) >= 1
     # preflight from a deploy preview succeeds, from evil does not
@@ -115,24 +139,24 @@ def test_cors_headers_on_error_responses():
     bad = c.options("/v1/identify", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
     assert "access-control-allow-origin" not in bad.headers
     # 403 for a disallowed origin carries NO CORS header (browser cannot read it, by design)
-    r = post(c, JPG, {"Origin": "https://evil.example"})
+    r = post(sec_client(), JPG, {"Origin": "https://evil.example"})
     assert r.status_code == 403 and "access-control-allow-origin" not in r.headers
 
 
 def test_rate_limit_per_client_and_retry_after():
-    c = sec_client(rate_per_min=3)
-    hdr = {"Origin": GOOD, "CF-Connecting-IP": "198.51.100.1"}
+    c = sec_client(rate_per_min=3, token=TOK)
+    hdr = {**BEARER, "Origin": GOOD, "CF-Connecting-IP": "198.51.100.1"}
     codes = [post(c, JPG, hdr).status_code for _ in range(4)]
     assert codes == [200, 200, 200, 429]
     r = post(c, JPG, hdr)
     assert r.json()["error"]["code"] == "RATE_LIMITED" and int(r.headers["retry-after"]) >= 1
     # a different client (different CF-Connecting-IP via loopback peer) has its own budget
-    assert post(c, JPG, {"Origin": GOOD, "CF-Connecting-IP": "198.51.100.2"}).status_code == 200
+    assert post(c, JPG, {**BEARER, "Origin": GOOD, "CF-Connecting-IP": "198.51.100.2"}).status_code == 200
 
 
 def test_rate_limit_global_and_daily():
-    c = sec_client(rate_global_per_hour=4)
-    codes = [post(c, JPG, {"Origin": GOOD, "CF-Connecting-IP": f"198.51.100.{i}"}).status_code for i in range(6)]
+    c = sec_client(rate_global_per_hour=4, token=TOK)
+    codes = [post(c, JPG, {**BEARER, "Origin": GOOD, "CF-Connecting-IP": f"198.51.100.{i}"}).status_code for i in range(6)]
     assert codes == [200, 200, 200, 200, 429, 429]
     limiter = RateLimiter(30, 5, 600)
     assert all(limiter.check("a", now=float(i) * 100) is None for i in range(5))
@@ -142,8 +166,8 @@ def test_rate_limit_global_and_daily():
 
 def test_x_forwarded_for_not_trusted_from_non_loopback_peer():
     # peer is not loopback: spoofed CF-Connecting-IP must not give a fresh budget
-    c = sec_client(rate_per_min=2, peer="10.0.0.4")
-    codes = [post(c, JPG, {"Origin": "https://10.0.0.4:3200", "CF-Connecting-IP": f"9.9.9.{i}",
+    c = sec_client(rate_per_min=2, peer="10.0.0.4", token=TOK)
+    codes = [post(c, JPG, {**BEARER, "Origin": "https://10.0.0.4:3200", "CF-Connecting-IP": f"9.9.9.{i}",
                            "X-Forwarded-For": f"8.8.8.{i}"}).status_code for i in range(3)]
     assert codes == [200, 200, 429]
 
@@ -208,11 +232,11 @@ def test_uploads_stay_in_memory_and_logs_are_clean(caplog, monkeypatch):
     rollovers: list[int] = []
     orig = tf.SpooledTemporaryFile.rollover
     monkeypatch.setattr(tf.SpooledTemporaryFile, "rollover", lambda self: (rollovers.append(1), orig(self))[1])
-    c = sec_client()
+    c = sec_client(token=TOK)
     before = snapshot()
     with caplog.at_level(logging.DEBUG):
         for _ in range(5):
-            r = post(c, big, {"Origin": GOOD, **PROXY}, lang="en")
+            r = post(c, big, {"Origin": GOOD, **PROXY, **BEARER}, lang="en")
             assert r.status_code == 200
     after = snapshot()
     # other processes (index build, other tests) may create small temp files concurrently; an image spill is >1 MB

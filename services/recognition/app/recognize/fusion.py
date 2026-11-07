@@ -86,8 +86,13 @@ def fuse_raw(signals: dict[str, np.ndarray], ocr: OcrAgreement | None) -> np.nda
     return np.asarray(raw, dtype=np.float32)
 
 
+DECISION_ROWS = 2  # `decide` needs the runner-up; callers must rank at least this many rows
+
+
 def rank(raw: np.ndarray, mask: np.ndarray | None, top_k: int) -> tuple[np.ndarray, np.ndarray]:
     """Top-k row indices (best first) among ``mask`` and their confidences (pokeum normalisation).
+
+    Pass ``top_k >= DECISION_ROWS`` whenever the result feeds ``decide``; slice afterwards.
 
     ``confidence_i = raw_i / raw_top * min(raw_top, 1)``: absolute quality for the top card,
     relative standing for runners-up (which is what the margin rule needs).

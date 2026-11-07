@@ -243,7 +243,7 @@ def create_app(settings: Settings | None = None, recognizer: Recognizer | None =
         return JSONResponse(error_body("INVALID_REQUEST", f"invalid or missing field: {fields}"), status_code=422)
 
     def auth(request: Request) -> None:
-        """Gate for /v1/*: valid bearer (admin) OR allowlisted Origin OR direct loopback without proxy headers."""
+        """Gate for /v1/*: valid bearer OR direct loopback without proxy headers (Origin never authorizes)."""
         header = request.headers.get("authorization", "")
         if settings.token and header:
             supplied = header[7:] if header.lower().startswith("bearer ") else ""
@@ -251,15 +251,14 @@ def create_app(settings: Settings | None = None, recognizer: Recognizer | None =
                 request.state.bearer_ok = True
                 return
             raise ApiError(401, "UNAUTHORIZED", "missing or invalid bearer token", {"WWW-Authenticate": "Bearer"})
+        # Origin is CORS browser policy only and never authorizes: anything proxied/tunneled or
+        # non-loopback needs the bearer.
+        if any(h in request.headers for h in _PROXY_HEADERS) or not is_loopback_peer(request):
+            raise ApiError(401, "UNAUTHORIZED", "missing or invalid bearer token", {"WWW-Authenticate": "Bearer"})
         origin = request.headers.get("origin", "")
-        if origin:
-            if not settings.origin_allowed(origin):
-                raise ApiError(403, "ORIGIN_NOT_ALLOWED", "this origin may not use the recognition service")
-        else:
-            proxied = any(h in request.headers for h in _PROXY_HEADERS)
-            if proxied or not is_loopback_peer(request):
-                raise ApiError(403, "ORIGIN_NOT_ALLOWED", "requests must come from an allowed web origin")
-        # Browsers always send Sec-Fetch-*; a typed URL / link navigation is not a fetch from our app.
+        if origin and not settings.origin_allowed(origin):
+            raise ApiError(403, "ORIGIN_NOT_ALLOWED", "this origin may not use the recognition service")
+        # A typed URL / link navigation is not a fetch from our app.
         if request.headers.get("sec-fetch-mode", "").lower() == "navigate" or (
                 request.method == "POST" and request.headers.get("sec-fetch-site", "").lower() == "none"):
             raise ApiError(403, "ORIGIN_NOT_ALLOWED", "navigation requests are not accepted")

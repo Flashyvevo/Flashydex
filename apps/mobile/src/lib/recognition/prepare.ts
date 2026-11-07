@@ -2,7 +2,6 @@
 
 export const MAX_EDGE = 1600;
 export const JPEG_QUALITY = 0.85;
-export const SKIP_REENCODE_BYTES = 1.5 * 1024 * 1024;
 
 export type ImageType = 'jpeg' | 'png' | 'webp' | 'heic' | 'unknown';
 
@@ -61,12 +60,8 @@ export function fitWithin(width: number, height: number, max = MAX_EDGE): { widt
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), scale };
 }
 
-/** Already-small JPEGs are sent unchanged (no generational loss); a non-default EXIF orientation forces a re-encode so pixels are upright. */
-export function shouldSkipReencode(i: { type: ImageType; width: number; height: number; bytes: number; orientation?: number | null }): boolean {
-  return i.type === 'jpeg' && Math.max(i.width, i.height) <= MAX_EDGE && i.bytes <= SKIP_REENCODE_BYTES && (i.orientation ?? 1) === 1;
-}
-
-export type PreparedImage = { blob: Blob; width: number; height: number; originalBytes: number; bytes: number; ms: number; reencoded: boolean; type: ImageType };
+/** `reencoded` is always true: every photo goes through canvas so EXIF/GPS/device metadata never leaves the device. */
+export type PreparedImage = { blob: Blob; width: number; height: number; originalBytes: number; bytes: number; ms: number; reencoded: true; type: ImageType };
 
 export class PrepareError extends Error {
   readonly heic: boolean;
@@ -149,10 +144,8 @@ export async function prepareImage(file: Blob): Promise<PreparedImage> {
   }
   try {
     if (drawable.width < 1 || drawable.height < 1) throw new PrepareError(type === 'heic', 'size', `${drawable.width}x${drawable.height}`);
-    const skip = shouldSkipReencode({ type, width: drawable.width, height: drawable.height, bytes: file.size, orientation: jpegExifOrientation(head) });
-    if (skip) {
-      return { blob: file, width: drawable.width, height: drawable.height, originalBytes: file.size, bytes: file.size, ms: performance.now() - t0, reencoded: false, type };
-    }
+    // Always re-encode (never forward the original bytes): canvas output carries no EXIF/GPS, and the
+    // <img> decode above already applied EXIF orientation so the pixels are upright.
     const fit = fitWithin(drawable.width, drawable.height);
     const blob = await encodeJpeg(drawable.source, fit.width, fit.height);
     return { blob, width: fit.width, height: fit.height, originalBytes: file.size, bytes: blob.size, ms: performance.now() - t0, reencoded: true, type };
