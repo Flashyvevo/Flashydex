@@ -12,6 +12,7 @@ import { Fetcher } from './http';
 import { mergeManifest, readExistingManifest, validateManifest, type CatalogManifest, type ManifestEntry } from './manifest';
 import { loadCatalogMigrations, schemaFingerprint } from './migrations';
 import { TCGDEX_API } from './crawl';
+import { resolveSetArt } from './set-art';
 import { assertResumeCompatible, cacheConfigHash, commitImmutableArtifact, gitContentIdentity, hashSetIds, type RunBinding } from './run-guard';
 import { MAX_WINDOW_BYTES, ZSTD_LEVEL, compressFile, decompressFile, fileSize, sha256File } from './zstd';
 
@@ -155,6 +156,10 @@ async function main(): Promise<void> {
   const crawled = await crawl(fetcher, { language, sets: options.sets, cacheRoot: options.cacheDir, discoveryMaxAgeMs: options.resume ? undefined : 0, log });
   const symbolUrls = [...crawled.details.values()].map((d) => symbolUrl(d.symbol, language)).filter((u): u is string => u !== null);
   const missingAssets = options.checkAssets ? await checkAssetUrls(fetcher, symbolUrls, crawled.warnings) : new Set<string>();
+  // Logo fallbacks (alternate TCGdex files -> JA->EN twin -> symbol), each only after an HTTP 200 probe. Skipped with --no-asset-check.
+  const setArt = options.checkAssets && crawled.failures.length === 0
+    ? await resolveSetArt({ language, details: crawled.details, selectedSetIds: crawled.selectedSetIds, fetcher, warnings: crawled.warnings })
+    : undefined;
   const crawlMs = Math.round(performance.now() - crawlStarted);
   if (crawled.failures.length) {
     for (const failure of crawled.failures.slice(0, 20)) log(`FAILED ${failure.unit}: ${failure.error}`);
@@ -173,6 +178,8 @@ async function main(): Promise<void> {
   const index: CatalogSetIndexEntry[] = crawled.list.map((brief) => {
     const entry = mapSetIndexEntry(crawled.details.get(brief.id)!, { language, syncedAt: run.builtAt });
     if (entry.symbolUrl && missingAssets.has(entry.symbolUrl)) entry.symbolUrl = null;
+    const art = setArt?.get(entry.id);
+    if (art) entry.logoUrl = art.logoUrl; // unselected sets (--sets subset) keep their native logo
     return entry;
   }).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const setIndexPath = join(outDir, `set-index-${language}.json`);
@@ -184,7 +191,7 @@ async function main(): Promise<void> {
   const buildStarted = performance.now();
   const built = buildCatalogDb(`${dbPath}.part`, {
     language, version, builtAt: run.builtAt, cutoffAt: run.builtAt, builderVersion, details: crawled.details,
-    selectedSetIds: crawled.selectedSetIds, cards: crawled.cards, missingAssets, migrations
+    selectedSetIds: crawled.selectedSetIds, cards: crawled.cards, missingAssets, setArt, migrations
   });
   const verified = verifyCatalogDb(`${dbPath}.part`, { language, version, counts: built.counts, fingerprint });
   const buildMs = Math.round(performance.now() - buildStarted);
@@ -255,6 +262,7 @@ async function main(): Promise<void> {
     peakMemoryBytes: peakRssBytes,
     installedFootprintBytes: raw.bytes,
     counts: built.counts,
+    setLogoCoverage: built.setLogoCoverage,
     crawl: { ...fetcher.stats, finalConcurrency: fetcher.currentConcurrency, selectedSets: crawled.selectedSetIds.length, totalSetsInLanguage: crawled.list.length },
     sets: options.sets ?? null,
     warnings: [...crawled.warnings, ...built.warnings],

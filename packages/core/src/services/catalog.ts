@@ -211,6 +211,28 @@ export class CatalogRepo {
     return { ...summary, missingPreview: preview.map((r) => toSummary(r, owned.count.get(r.id) ?? 0)) };
   }
 
+  /**
+   * Read-only cover-card lookup for set tiles: the image base of each set's first card (collector order) that has an image.
+   * One statement per CHUNK sets; each set is a correlated LIMIT 1 over `cc_set_sort`, so cost is O(sets), not O(cards).
+   * Sets without a cached image map to null. Unknown ids are simply absent from the catalog and map to null.
+   */
+  async setCovers(language: Language, setIds: readonly string[]): Promise<Record<string, string | null>> {
+    return this.ctx.databases.consistentRead([language], async () => {
+      const out: Record<string, string | null> = Object.fromEntries(setIds.map((id) => [id, null]));
+      const db = await this.ctx.databases.catalog(language);
+      if (!db) return out;
+      for (const ids of chunk([...new Set(setIds)], CHUNK)) {
+        const rows = await db.rows(
+          `SELECT s.id, (SELECT c.image_url FROM catalog_cards c WHERE c.language = s.language AND c.set_id = s.id AND c.image_url IS NOT NULL ORDER BY c.local_id_sort ASC, c.id ASC LIMIT 1)
+           FROM catalog_sets s WHERE s.language = ? AND s.id IN (${placeholders(ids.length)})`,
+          [language, ...ids]
+        );
+        for (const r of rows) out[String(r[0])] = r[1] === null || r[1] === undefined ? null : String(r[1]);
+      }
+      return out;
+    });
+  }
+
   /** Cached cards that belong to the ACTIVE manifest of the set, local id order. */
   private async setCards(language: Language, db: Db, setId: string, ownership: 'all' | 'owned' | 'missing', duplicates?: boolean): Promise<CardRow[]> {
     const setRows = await db.select<{ raw: string }>({ raw: 'raw_json' }, 'FROM catalog_sets WHERE language = ? AND id = ?', [language, setId]);

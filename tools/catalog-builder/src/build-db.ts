@@ -6,6 +6,7 @@ import {
   mapCard, mapSet, type CatalogCardRow, type CatalogLanguage, type CatalogLatestPriceRow, type CatalogSetRow, type CatalogVariantRow,
   type RawCard, type RawSetDetail
 } from '@flashydex/core/catalog/tcgdex';
+import { computeSetLogoCoverage, type LogoSource, type SetArt, type SetLogoCoverage } from './set-art';
 import { applyCatalogMigrations, schemaFingerprint, type Migration } from './migrations';
 
 export interface PackCounts { sets: number; cards: number; variants: number; prices: number; unpublishedSets: number }
@@ -21,10 +22,12 @@ export interface BuildDbInput {
   cards: ReadonlyMap<string, RawCard>;
   /** Symbol URLs that returned 404 (nulled). */
   missingAssets: ReadonlySet<string>;
+  /** Resolved logo per set id (native/alternate/en-twin/symbol); absent = no logo. Omitted = native TCGdex logo only. */
+  setArt?: ReadonlyMap<string, SetArt>;
   migrations: readonly Migration[];
 }
 
-export interface BuildDbResult { counts: PackCounts; warnings: string[]; fingerprint: string }
+export interface BuildDbResult { counts: PackCounts; warnings: string[]; fingerprint: string; setLogoCoverage: SetLogoCoverage }
 
 const ALLOWED_TABLES = [catalogSets, catalogCards, catalogVariants, catalogLatestPrices, catalogMeta, schemaMigrations].map((t) => getTableConfig(t).name).sort();
 /**
@@ -50,14 +53,21 @@ export function buildCatalogDb(partPath: string, input: BuildDbInput): BuildDbRe
     applyCatalogMigrations(db, input.migrations, input.builtAt);
 
     const ctx = { language: input.language, syncedAt: input.cutoffAt };
+    const logoSources = new Map<string, LogoSource | null>();
     const setRows: CatalogSetRow[] = input.selectedSetIds.map((id) => {
       const row = mapSet(input.details.get(id)!, ctx);
       if (row.symbolUrl && input.missingAssets.has(row.symbolUrl)) {
         warnings.push(`set ${id}: symbol ${row.symbolUrl} returned 404 -> symbol_url NULL`);
         row.symbolUrl = null;
       }
+      const art = input.setArt ? input.setArt.get(id) ?? null : row.logoUrl ? { logoUrl: row.logoUrl, source: 'tcgdex' as const } : null;
+      row.logoUrl = art?.logoUrl ?? null;
+      logoSources.set(id, art?.source ?? null);
+      // Provenance lives in raw_json (no schema change): additive `logoSource` key.
+      row.rawJson = JSON.stringify({ ...(JSON.parse(row.rawJson) as Record<string, unknown>), logoSource: art?.source ?? null });
       return row;
     }).sort((a, b) => byString(a.id, b.id));
+    const setLogoCoverage = computeSetLogoCoverage(setRows.map((r) => ({ logoUrl: r.logoUrl, symbolUrl: r.symbolUrl, logoSource: logoSources.get(r.id) ?? null })));
 
     const cardRows: CatalogCardRow[] = [];
     const variantRows: CatalogVariantRow[] = [];
@@ -108,7 +118,7 @@ export function buildCatalogDb(partPath: string, input: BuildDbInput): BuildDbRe
 
     db.pragma('journal_mode = DELETE');
     db.exec('VACUUM');
-    return { counts, warnings, fingerprint };
+    return { counts, warnings, fingerprint, setLogoCoverage };
   } finally {
     db.close();
   }
