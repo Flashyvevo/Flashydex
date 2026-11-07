@@ -70,10 +70,14 @@ export type PreparedImage = { blob: Blob; width: number; height: number; origina
 
 export class PrepareError extends Error {
   readonly heic: boolean;
-  constructor(heic: boolean) {
+  /** Which step failed and the browser's own message — shown in the error body so phone failures are diagnosable. */
+  readonly reason: string;
+  constructor(heic: boolean, stage: 'decode' | 'size' | 'encode' = 'decode', cause?: unknown) {
+    const detail = cause instanceof Error ? cause.message : cause ? String(cause) : '';
     super(heic ? 'HEIC could not be decoded' : 'Image could not be decoded');
     this.name = 'PrepareError';
     this.heic = heic;
+    this.reason = `${stage}${detail ? `: ${detail}` : ''}`;
   }
 }
 
@@ -85,8 +89,19 @@ async function decode(blob: Blob): Promise<Drawable> {
   try {
     const img = new Image();
     img.decoding = 'async';
+    const loaded = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('image load failed'));
+    });
     img.src = url;
-    await img.decode();
+    await loaded;
+    // iOS Safari rejects decode() for large photos (and under memory pressure in standalone mode) even though the
+    // image has loaded and draws correctly, so a decode() rejection after a successful load is not an error.
+    try {
+      await img.decode();
+    } catch {
+      /* drawn from the loaded element below */
+    }
     // <img> applies EXIF orientation by default (image-orientation: from-image), so naturalWidth/Height are upright.
     return { source: img, width: img.naturalWidth, height: img.naturalHeight, close: () => URL.revokeObjectURL(url) };
   } catch (error) {
@@ -97,13 +112,18 @@ async function decode(blob: Blob): Promise<Drawable> {
 
 async function encodeJpeg(source: CanvasImageSource, width: number, height: number): Promise<Blob> {
   if (typeof OffscreenCanvas === 'function') {
-    const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(source, 0, 0, width, height);
-      return canvas.convertToBlob({ type: 'image/jpeg', quality: JPEG_QUALITY });
+    try {
+      const canvas = new OffscreenCanvas(width, height);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(source, 0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: JPEG_QUALITY });
+        if (blob.size > 0) return blob;
+      }
+    } catch {
+      /* fall back to a DOM canvas (Safari OffscreenCanvas quirks) */
     }
   }
   const canvas = document.createElement('canvas');
@@ -124,11 +144,11 @@ export async function prepareImage(file: Blob): Promise<PreparedImage> {
   let drawable: Drawable;
   try {
     drawable = await decode(file);
-  } catch {
-    throw new PrepareError(type === 'heic');
+  } catch (error) {
+    throw new PrepareError(type === 'heic', 'decode', error);
   }
   try {
-    if (drawable.width < 1 || drawable.height < 1) throw new PrepareError(type === 'heic');
+    if (drawable.width < 1 || drawable.height < 1) throw new PrepareError(type === 'heic', 'size', `${drawable.width}x${drawable.height}`);
     const skip = shouldSkipReencode({ type, width: drawable.width, height: drawable.height, bytes: file.size, orientation: jpegExifOrientation(head) });
     if (skip) {
       return { blob: file, width: drawable.width, height: drawable.height, originalBytes: file.size, bytes: file.size, ms: performance.now() - t0, reencoded: false, type };
@@ -138,7 +158,7 @@ export async function prepareImage(file: Blob): Promise<PreparedImage> {
     return { blob, width: fit.width, height: fit.height, originalBytes: file.size, bytes: blob.size, ms: performance.now() - t0, reencoded: true, type };
   } catch (error) {
     if (error instanceof PrepareError) throw error;
-    throw new PrepareError(type === 'heic');
+    throw new PrepareError(type === 'heic', 'encode', error);
   } finally {
     drawable.close();
   }

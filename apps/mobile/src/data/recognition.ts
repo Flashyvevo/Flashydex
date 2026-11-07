@@ -47,7 +47,7 @@ export function useScan(file: File | null): { state: ScanState; retry: () => voi
         }
       } catch (error) {
         if (ctl.signal.aborted) return;
-        if (error instanceof PrepareError) setState({ phase: 'failed', failure: { kind: 'unsupported_image', heic: error.heic, detail: 'unreadable' } });
+        if (error instanceof PrepareError) setState({ phase: 'failed', failure: { kind: 'unsupported_image', heic: error.heic, detail: 'unreadable', reason: error.reason } });
         else setState({ phase: 'failed', failure: { kind: 'unknown', status: 0, code: null, retryable: true } });
       }
     })();

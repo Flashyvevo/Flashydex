@@ -12,7 +12,7 @@ export type RecognitionFailure =
   | { kind: 'index_unavailable' }
   | { kind: 'model_unavailable' }
   | { kind: 'too_large' }
-  | { kind: 'unsupported_image'; heic: boolean; detail?: string }
+  | { kind: 'unsupported_image'; heic: boolean; detail?: string; reason?: string }
   | { kind: 'bad_response' }
   /** Any error code this client doesn't know (e.g. added by a newer service): handled generically. */
   | { kind: 'unknown'; status: number; code: string | null; retryable: boolean };

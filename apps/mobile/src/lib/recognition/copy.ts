@@ -64,7 +64,12 @@ export function failureCopy(f: RecognitionFailure): FailureCopy {
     case 'too_large':
       return { title: 'Photo too large', body: 'That photo is too large to send. Try another photo.', canRetry: false, showDiagnostics: false };
     case 'unsupported_image':
-      return { title: 'Photo couldn’t be read', body: f.heic ? COPY.heicHelp : f.detail === 'unreadable' ? COPY.unreadable : 'The scanner couldn’t read that photo. Try taking it again.', canRetry: false, showDiagnostics: false };
+      return {
+        title: 'Photo couldn’t be read',
+        body: `${f.heic ? COPY.heicHelp : f.detail === 'unreadable' ? COPY.unreadable : 'The scanner couldn’t read that photo. Try taking it again.'}${f.reason ? ` (${f.reason})` : ''}`,
+        canRetry: false,
+        showDiagnostics: false
+      };
     case 'bad_response':
       return { title: 'Scanner gave an unexpected answer', body: 'Something went wrong on the scanner’s side. Try again, or search instead.', canRetry: true, showDiagnostics: true };
     case 'unknown':
