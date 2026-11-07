@@ -132,17 +132,23 @@ export async function withPoolOpenRetry<T>(open: (context: PoolOpenContext) => P
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const started = now();
   const attempts: PoolBootAttempt[] = [];
+  // S9-02: an acquisition is never STARTED once the budget is gone (the worker already subtracted its module/probe time from `budgetMs`).
+  if (budget <= 0) throw new PoolOpenFailure(attempts, new WebStorageError('INIT_FAILED', 'The boot budget was used up before the storage pool could be acquired', { retryable: true }), true);
   for (let attempt = 1; ; attempt += 1) {
     const force = attempt > 1;
     let abandoned = false;
     const remaining = Math.max(1, budget - (now() - started));
+    const attemptLimit = options.attemptTimeoutMs ?? POOL_BOOT_ATTEMPT_TIMEOUT_MS;
+    // S9-01: exhaustion is decided by the CHOSEN budget, not by a real timer's fractional arrival: an attempt whose bound was clipped to
+    // the remaining budget (remaining <= its own limit) that hangs has, by construction, spent the whole budget.
+    const clippedByBudget = remaining <= attemptLimit;
     try {
-      return await boundedAttempt(() => open({ attempt, force, abandoned: () => abandoned }), Math.min(options.attemptTimeoutMs ?? POOL_BOOT_ATTEMPT_TIMEOUT_MS, remaining));
+      return await boundedAttempt(() => open({ attempt, force, abandoned: () => abandoned }), Math.min(attemptLimit, remaining));
     } catch (error) {
       abandoned = true; // a late settle of this attempt is ignored from here on
       const record: PoolBootAttempt = { attempt, force, ...describeError(error), elapsedMs: Math.round(now() - started) };
       attempts.push(record);
-      if (error instanceof AttemptHung) throw new PoolOpenFailure(attempts, error, now() - started >= budget, true);
+      if (error instanceof AttemptHung) throw new PoolOpenFailure(attempts, error, clippedByBudget || now() - started >= budget, true);
       if (!isTransientPoolOpenError(error)) throw new PoolOpenFailure(attempts, error, false);
       const delay = backoffDelayMs(attempt, options);
       if (now() - started + delay >= budget) throw new PoolOpenFailure(attempts, error, true);
@@ -150,6 +156,14 @@ export async function withPoolOpenRetry<T>(open: (context: PoolOpenContext) => P
       await sleep(delay);
     }
   }
+}
+
+/**
+ * S9-02: what is left of the ONE total boot budget after `spentMs` of worker-side startup (WASM module load + OPFS probe).
+ * `undefined` budget = no client budget supplied (the helper's own default applies). Result <= 0 means: do not start an acquisition.
+ */
+export function remainingBootBudgetMs(budgetMs: number | undefined, spentMs: number): number | undefined {
+  return budgetMs === undefined ? undefined : budgetMs - spentMs;
 }
 
 /** The `installOpfsSAHPoolVfs` options this app uses. `forceReinitIfPreviouslyFailed` only ever appears on retries. */

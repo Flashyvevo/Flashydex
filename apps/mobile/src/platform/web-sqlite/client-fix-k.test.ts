@@ -68,9 +68,14 @@ describe('S7-03: init/open/reopen have their OWN bounded deadline', () => {
     await client.init();
     const open = client.driver(USER, 'w', { mode: 'ro', create: false, role: 'validation' }).then(() => 'ok', (e: unknown) => (e as { code: string }).code);
     const started = Date.now();
-    const chatter = setInterval(() => { void client.listFiles(); }, 15);
-    const outcome = await open;
-    clearInterval(chatter);
+    // every chatter promise is caught (the worker is expected to die under it: WORKER_DIED/STALE_SESSION rejections are not the assertion), and the timer always stops
+    const chatter = setInterval(() => { client.listFiles().catch(() => undefined); }, 15);
+    let outcome: string;
+    try {
+      outcome = await open;
+    } finally {
+      clearInterval(chatter);
+    }
     expect(outcome).toBe('WORKER_DIED');
     expect(Date.now() - started).toBeLessThan(400);
     expect(w.terminated()).toBe(1);

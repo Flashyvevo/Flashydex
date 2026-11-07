@@ -7,8 +7,17 @@ import type { PoolBootAttempt } from './pool-boot-retry';
 
 export const PROTOCOL = WEB_STORAGE_PROTOCOL;
 
-/** Total elapsed budget for the worker's sahpool acquire retry (pool-boot-retry.ts); the client's init deadline must outlast it. */
+/**
+ * S9-02: ONE total ELAPSED boot budget, measured on the main thread from the start of `init()`. It covers EVERYTHING until the pool is
+ * usable: worker start + `ready`, every replacement worker's start (supervised boot), backoff sleeps between workers, the worker's WASM
+ * module load and ordinary-OPFS probe, and every pool-acquisition attempt. Each phase gets only what is LEFT: the client re-measures the
+ * remainder after `ready` and sends it as `InitPayload.bootBudgetMs`; the worker subtracts its own module/probe time before entering the pool
+ * retry (pool-boot-retry.ts); nothing starts an acquisition once the remainder is <= 0; a replacement worker inherits the remainder, never a
+ * fresh budget. Hidden-page policy is unchanged: request deadlines (not this elapsed budget) are paused while the page is hidden.
+ */
 export const POOL_BOOT_BUDGET_MS = 15_000;
+/** Extra time past the remaining budget the client waits for the worker's own (attempts-carrying) failure reply before declaring init silent. */
+export const POOL_BOOT_REPLY_GRACE_MS = 1_000;
 
 export type WorkerOp =
   | 'init'
@@ -60,6 +69,11 @@ export interface WireError {
   hung?: boolean;
   /** INIT_FAILED from the pool boot retry (S6-02): every failed acquire attempt with its cause and elapsed time. */
   attempts?: PoolBootAttempt[];
+  /** 1: the ONE total boot budget ran out (S9-02). */
+  exhausted?: boolean;
+  /** Worker-side startup phases consumed before pool acquisition (S9-02 diagnostics). */
+  moduleMs?: number;
+  probeMs?: number;
 }
 
 export interface Timings {
@@ -203,6 +217,7 @@ export function wireError(error: unknown): WireError {
   if (error instanceof WebStorageError) {
     const attempts = (error.details as { attempts?: PoolBootAttempt[] }).attempts;
     const hung = (error.details as { hung?: boolean }).hung === true;
+    const d = error.details as { exhausted?: boolean; moduleMs?: number; probeMs?: number };
     return {
       code: error.code,
       message: error.message,
@@ -210,6 +225,9 @@ export function wireError(error: unknown): WireError {
       retryable: error.details.retryable ?? false,
       commitState: error.details.commitState ?? 'not_started',
       ...(hung ? { hung: true } : {}),
+      ...(d.exhausted === true ? { exhausted: true } : {}),
+      ...(typeof d.moduleMs === 'number' ? { moduleMs: d.moduleMs } : {}),
+      ...(typeof d.probeMs === 'number' ? { probeMs: d.probeMs } : {}),
       ...(Array.isArray(attempts) ? { attempts: attempts.map(({ attempt, force, code, cause, elapsedMs }) => ({ attempt, force, code, cause, elapsedMs })) } : {})
     };
   }
@@ -217,7 +235,13 @@ export function wireError(error: unknown): WireError {
 }
 
 export function fromWire(error: WireError): WebStorageError {
-  const extra = { ...(error.attempts ? { attempts: error.attempts } : {}), ...(error.hung ? { hung: true } : {}) };
+  const extra = {
+    ...(error.attempts ? { attempts: error.attempts } : {}),
+    ...(error.hung ? { hung: true } : {}),
+    ...(error.exhausted ? { exhausted: true } : {}),
+    ...(typeof error.moduleMs === 'number' ? { moduleMs: error.moduleMs } : {}),
+    ...(typeof error.probeMs === 'number' ? { probeMs: error.probeMs } : {})
+  };
   return new WebStorageError(error.code, error.message, { commitState: error.commitState, retryable: error.retryable, sqliteCode: error.sqliteCode, ...extra });
 }
 

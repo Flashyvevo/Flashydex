@@ -10,7 +10,7 @@ import { createSHA256 } from 'hash-wasm';
 import { POOL_DIRECTORY, POOL_INITIAL_CAPACITY, POOL_VFS_NAME, PROBE_PATH_RE, STAGING_ROOT, WebStorageError } from '../web-storage/contract';
 import type { Oo1Db, Sqlite3Api } from './executor';
 import { PROTOCOL, type FaultSpec, type InitResult, type RequestEnvelope, type WorkerMessage } from './protocol';
-import { installPoolWithRetry, PoolOpenFailure } from './pool-boot-retry';
+import { installPoolWithRetry, PoolOpenFailure, remainingBootBudgetMs } from './pool-boot-retry';
 import { mapAnyError, SqlWorkerCore, type PoolLike, type Sha256, type StagingFile, type WorkerEnv } from './worker-core';
 
 const scope = self as unknown as {
@@ -111,23 +111,34 @@ async function boot(fault: FaultSpec | undefined, bootOptions: { budgetMs?: numb
   } catch (error) {
     throw new WebStorageError('INIT_FAILED', 'The SQLite WebAssembly module failed to load', { cause: error });
   }
+  const moduleMs = performance.now() - poolStarted;
   const probeStarted = performance.now();
   await probeOrdinaryOpfs();
   const probeOpfsMs = performance.now() - probeStarted;
   if (fault?.initFail === 'before-vfs') throw new WebStorageError('INIT_FAILED', 'Injected initialization failure');
 
+  // S9-02: `budgetMs` is what the client had LEFT of the ONE total boot budget when it sent init. This worker's own module-load + probe
+  // time is subtracted before the pool retry starts, and no acquisition is started once nothing is left (see POOL_BOOT_BUDGET_MS).
+  const poolBudgetMs = remainingBootBudgetMs(bootOptions.budgetMs, moduleMs + probeOpfsMs);
+  if (poolBudgetMs !== undefined && poolBudgetMs <= 0) {
+    throw new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', {
+      retryable: true, exhausted: true, moduleMs: Math.round(moduleMs), probeMs: Math.round(probeOpfsMs)
+    } as ConstructorParameters<typeof WebStorageError>[2]);
+  }
   let pool: PoolLike;
   try {
     // Transient right after a killed worker (handles still held): elapsed-budget retry that REALLY re-acquires (force after the first failure).
     const installer = (sqlite3 as unknown as { installOpfsSAHPoolVfs(options: object): Promise<PoolLike & { reserveMinimumCapacity(n: number): Promise<number> }> }).installOpfsSAHPoolVfs;
-    pool = await installPoolWithRetry((options) => installer.call(sqlite3, options), { name: POOL_VFS_NAME, directory: POOL_DIRECTORY, initialCapacity: POOL_INITIAL_CAPACITY }, bootOptions);
+    pool = await installPoolWithRetry((options) => installer.call(sqlite3, options), { name: POOL_VFS_NAME, directory: POOL_DIRECTORY, initialCapacity: POOL_INITIAL_CAPACITY }, { ...bootOptions, ...(poolBudgetMs !== undefined ? { budgetMs: poolBudgetMs } : {}) });
   } catch (error) {
     const last = error instanceof PoolOpenFailure ? error.lastError : error;
     const mapped = mapAnyError(last, 'INIT_FAILED');
     if (mapped.code === 'QUOTA' || mapped.code === 'CAPACITY') throw mapped;
     throw new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', {
       cause: last,
-      ...(error instanceof PoolOpenFailure ? { attempts: error.attempts, ...(error.hung ? { hung: true } : {}) } : {})
+      moduleMs: Math.round(moduleMs),
+      probeMs: Math.round(probeOpfsMs),
+      ...(error instanceof PoolOpenFailure ? { attempts: error.attempts, ...(error.hung ? { hung: true } : {}), ...(error.exhausted ? { exhausted: true } : {}) } : {})
     } as ConstructorParameters<typeof WebStorageError>[2]);
   }
   if (fault?.initFail === 'after-vfs') throw new WebStorageError('INIT_FAILED', 'Injected initialization failure');

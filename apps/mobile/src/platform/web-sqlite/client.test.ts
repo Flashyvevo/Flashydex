@@ -374,9 +374,25 @@ describe('importFromStaging', () => {
     stage(file);
     const user = await client.driver(USER, 'w', rw);
     await user.proxy('create table log(n integer)', [], 'run');
-    await client.__setFault({ chunkDelayMs: 10 });
+    // Deterministic interleave (S9-01): gate the import supplier on a promise the WRITER releases. After the 2nd chunk the import cannot
+    // continue until >= MIN_INTERLEAVED USER transactions have committed, so those commits are provably between chunks (no timing involved).
+    const MIN_INTERLEAVED = 3;
     let stop = false;
     let written = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let chunksServed = 0;
+    let writtenWhenGated = -1;
+    const pool = h.pool as unknown as { importDb(name: string, supplier: () => Promise<Uint8Array | ArrayBuffer | undefined>): Promise<number> };
+    const originalImportDb = pool.importDb.bind(pool);
+    pool.importDb = (name, supplier) => originalImportDb(name, async () => {
+      const chunk = await supplier();
+      if (chunk !== undefined) {
+        chunksServed += 1;
+        if (chunksServed === 2) { await gate; writtenWhenGated = written; }
+      }
+      return chunk;
+    });
     const writer = (async () => {
       while (!stop) {
         await user.proxy('BEGIN IMMEDIATE', [], 'run');
@@ -384,13 +400,21 @@ describe('importFromStaging', () => {
         await user.proxy('COMMIT', [], 'run');
         await user.afterCommit?.();
         written += 1;
+        if (written >= MIN_INTERLEAVED) release();
       }
     })();
-    const result = await client.importFromStaging({ source: { job: 'job12345', name: 'catalog.db.part' }, target: CAT, expectedBytes: file.length, expectedSha256: sha(file) });
-    stop = true;
-    await writer;
-    expect(result.sha256).toBe(sha(file));
-    expect(written).toBeGreaterThan(2);
+    try {
+      const result = await client.importFromStaging({ source: { job: 'job12345', name: 'catalog.db.part' }, target: CAT, expectedBytes: file.length, expectedSha256: sha(file) });
+      expect(result.sha256).toBe(sha(file));
+    } finally {
+      stop = true;
+      release();
+      await writer;
+      pool.importDb = originalImportDb;
+    }
+    expect(chunksServed).toBeGreaterThan(2); // the import really was chunked and was held between chunks
+    expect(writtenWhenGated).toBeGreaterThanOrEqual(MIN_INTERLEAVED); // those USER commits happened while the import was mid-flight
+    expect(written).toBeGreaterThanOrEqual(MIN_INTERLEAVED);
     expect(await user.proxy('select count(*) from log', [], 'get')).toEqual({ rows: [written] });
     expect(await user.proxy('PRAGMA integrity_check', [], 'get')).toEqual({ rows: ['ok'] });
   });

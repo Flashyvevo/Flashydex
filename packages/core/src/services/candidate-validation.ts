@@ -1,9 +1,24 @@
 import { CATALOG_SCHEMA_OBJECTS, CATALOG_SCHEMA_FINGERPRINT } from '../db/catalog-fingerprint.generated';
 import { CATALOG_SCHEMA_VERSION } from '../db/catalog-schema';
+import { CATALOG_MIGRATIONS } from '../db/migrations.generated';
+import { migrationChecksum } from '../db/migrator';
+import { sha256Hex } from '../catalog/sha256';
 import type { SqlDriver } from '../db/sql';
 import { CatalogError } from '../errors';
 
 export { CATALOG_SCHEMA_FINGERPRINT };
+
+/** The bundled catalog chain as receipts: `version` + SHA-256 of the CRLF-normalised .sql (the same value the migrator and the builder write). */
+const BUNDLED_RECEIPTS: readonly { version: string; checksum: string }[] = [...CATALOG_MIGRATIONS]
+  .sort((a, b) => a.version.localeCompare(b.version))
+  .map((file) => ({ version: file.version, checksum: migrationChecksum(file) }));
+
+/**
+ * Fingerprint of the exact bundled catalog chain, ported 1:1 from tools/catalog-builder/src/migrations.ts `schemaFingerprint`:
+ * SHA-256 over `version:checksum\n` lines. This is the value the builder stores in `catalog_meta.schema_fingerprint`
+ * (NOT `CATALOG_SCHEMA_FINGERPRINT`, which hashes the sqlite_master object list).
+ */
+export const CATALOG_CHAIN_FINGERPRINT: string = sha256Hex(BUNDLED_RECEIPTS.map((m) => `${m.version}:${m.checksum}\n`).join(''));
 
 export interface CatalogCounts { sets: number; cards: number; variants: number; prices: number; unpublishedSets: number }
 
@@ -38,16 +53,30 @@ export async function checkSchema(driver: SqlDriver): Promise<void> {
   for (const key of expected.keys()) if (!seen.has(key)) throw bad('The catalog schema is incomplete');
 }
 
-/** catalog_meta: exactly one row; language/version/schema must match what was expected. */
+/** catalog_meta: exactly one row; language/version/schema must match what was expected. Then the migration receipts + chain fingerprint (S5-09). */
 export async function checkMeta(driver: SqlDriver, expected: { language: string; version: string }): Promise<{ schemaVersion: number }> {
-  const meta = await rows(driver, 'SELECT language, version, schema_version FROM catalog_meta');
+  const meta = await rows(driver, 'SELECT language, version, schema_version, schema_fingerprint FROM catalog_meta');
   if (meta.length !== 1) throw bad('catalog_meta is missing or duplicated');
-  const [language, version, schema] = meta[0] as [unknown, unknown, unknown];
+  const [language, version, schema, fingerprint] = meta[0] as [unknown, unknown, unknown, unknown];
   if (language !== expected.language || version !== expected.version) throw bad('catalog_meta does not match the manifest');
   const schemaVersion = Number(schema);
   if (schemaVersion > CATALOG_SCHEMA_VERSION) throw new CatalogError('APP_UPDATE_REQUIRED', 'Catalog schema is newer than this app supports');
   if (schemaVersion !== CATALOG_SCHEMA_VERSION) throw bad('Catalog schema version is not supported');
+  await checkReceipts(driver);
+  if (fingerprint !== CATALOG_CHAIN_FINGERPRINT) throw bad('The catalog schema fingerprint does not match this app');
   return { schemaVersion };
+}
+
+/**
+ * S5-09: the VALUES of `schema_migrations` (version + checksum, in order) must equal the bundled catalog chain exactly. A receipt chain that
+ * extends the bundled one with the bundled prefix intact was built by a newer app -> APP_UPDATE_REQUIRED; anything else -> PACK_INVALID.
+ */
+export async function checkReceipts(driver: SqlDriver): Promise<void> {
+  const found = await rows(driver, 'SELECT version, checksum FROM schema_migrations ORDER BY version');
+  const bundled = BUNDLED_RECEIPTS;
+  const prefixMatches = bundled.every((want, i) => found[i] !== undefined && String(found[i]![0]) === want.version && String(found[i]![1]) === want.checksum);
+  if (!prefixMatches) throw bad('The catalog migration receipts do not match this app');
+  if (found.length > bundled.length) throw new CatalogError('APP_UPDATE_REQUIRED', 'Catalog schema is newer than this app supports');
 }
 
 export async function readCounts(driver: SqlDriver): Promise<CatalogCounts> {

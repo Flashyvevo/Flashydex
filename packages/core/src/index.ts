@@ -13,7 +13,7 @@ export { timed } from './perf';
 export type { CollectionCardGroup } from './services/collection-list';
 export type { PackEntry, PackStageResult, PackDiskState, PackInstallProgress } from './services/catalog-install';
 export { validateManifestSemantics, parseManifestText, isCalendarVersion, compareVersions, MANIFEST_MAX_BYTES } from './services/manifest-validation';
-export { validateCatalogCandidate, validateActiveCatalog, CATALOG_SCHEMA_FINGERPRINT } from './services/candidate-validation';
+export { validateCatalogCandidate, validateActiveCatalog, CATALOG_SCHEMA_FINGERPRINT, CATALOG_CHAIN_FINGERPRINT } from './services/candidate-validation';
 export { WorkCoordinator, type WorkKind, type WorkLease } from './db/coordinator';
 export { hydrateOwned } from './services/owned-read';
 export { parseArchive, DEFAULT_LIMITS as FDX_DEFAULT_LIMITS, type FdxLimits, type ParsedBackup } from './backup/archive';

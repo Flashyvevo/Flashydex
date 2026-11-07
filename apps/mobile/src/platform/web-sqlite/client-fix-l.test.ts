@@ -1,7 +1,7 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createWebSqliteClient, type WorkerLike } from './client';
-import { installPoolWithRetry, withPoolOpenRetry } from './pool-boot-retry';
+import { installPoolWithRetry, remainingBootBudgetMs, withPoolOpenRetry } from './pool-boot-retry';
 import { PROTOCOL, type InitPayload, type RequestEnvelope, type WorkerMessage } from './protocol';
 
 /** Fix-l: S8-02 (executor-aware deadlines) and S8-03 (hung pool acquisition = discard the worker). */
@@ -13,7 +13,7 @@ const OPENED = { dbId: 1, pragmas: {} };
 
 type Script = (request: RequestEnvelope, post: (message: WorkerMessage) => void, worker: number, openIndex: number) => void;
 
-function fakeWorkers(script: Script): { factory: () => WorkerLike; terminated: () => number; created: () => number } {
+function fakeWorkers(script: Script, readyDelayMs = 0): { factory: () => WorkerLike; terminated: () => number; created: () => number } {
   let terminated = 0;
   let created = 0;
   let opens = 0;
@@ -23,7 +23,8 @@ function fakeWorkers(script: Script): { factory: () => WorkerLike; terminated: (
     let dead = false;
     const listeners: ((e: { data: unknown }) => void)[] = [];
     const post = (message: WorkerMessage) => { setTimeout(() => { if (!dead) for (const l of listeners) l({ data: message }); }, 0); };
-    queueMicrotask(() => post({ kind: 'ready', protocol: PROTOCOL }));
+    if (readyDelayMs > 0) setTimeout(() => post({ kind: 'ready', protocol: PROTOCOL }), readyDelayMs);
+    else queueMicrotask(() => post({ kind: 'ready', protocol: PROTOCOL }));
     return {
       postMessage: (message) => {
         const request = message as RequestEnvelope;
@@ -208,12 +209,57 @@ describe('S8-03: hung pool acquisition (cache-faithful initializer model)', () =
     expect(c.state.reserves).toBe(1);
   });
 
-  it('every attempt is clipped to the remaining total budget: a hung attempt cannot run 8 s past a 60 ms budget', async () => {
+  it('every attempt is clipped to the remaining total budget: a hung attempt cannot run 8 s past a 60 ms budget (fake monotonic clock)', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = cachingInstaller();
+      const pending = installPoolWithRetry((o) => c.install(o, () => 'hang'), base, { budgetMs: 60, attemptTimeoutMs: 8_000, random: () => 0.5, now: () => Date.now() }).catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(59);
+      expect(c.state.calls).toBe(1); // still inside the budget: the attempt is still pending, not given up on early
+      await vi.advanceTimersByTimeAsync(1); // exactly the chosen budget
+      const failure = await pending;
+      expect(failure).toMatchObject({ name: 'PoolOpenFailure', hung: true, exhausted: true });
+      expect((failure as { attempts: { elapsedMs: number }[] }).attempts[0]?.elapsedMs).toBe(60);
+      expect(c.state.calls).toBe(1); // nothing was started after exhaustion
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('exhaustion is defined by the chosen budget, not the clock\'s fractional arrival: a clipped attempt that hangs is exhausted even if the monotonic clock reads 59.4 of 60', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = cachingInstaller();
+      let clock = 0;
+      const pending = installPoolWithRetry((o) => c.install(o, () => 'hang'), base, { budgetMs: 60, attemptTimeoutMs: 8_000, now: () => clock }).catch((e: unknown) => e);
+      clock = 59.4;
+      await vi.advanceTimersByTimeAsync(60);
+      expect(await pending).toMatchObject({ hung: true, exhausted: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a hung attempt that used its OWN (shorter) limit inside a larger budget is hung but NOT exhausted', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = cachingInstaller();
+      const pending = installPoolWithRetry((o) => c.install(o, () => 'hang'), base, { budgetMs: 1_000, attemptTimeoutMs: 20, now: () => Date.now() }).catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(await pending).toMatchObject({ hung: true, exhausted: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('S9-02: no acquisition is started once the budget is gone (worker-side remainder <= 0), and the worker subtracts its module/probe time', async () => {
+    expect(remainingBootBudgetMs(undefined, 500)).toBeUndefined();
+    expect(remainingBootBudgetMs(1_000, 300 + 150)).toBe(550);
+    expect(remainingBootBudgetMs(1_000, 1_200)).toBeLessThanOrEqual(0);
     const c = cachingInstaller();
-    const t0 = Date.now();
-    const failure = await installPoolWithRetry((o) => c.install(o, () => 'hang'), base, { budgetMs: 60, attemptTimeoutMs: 8_000, random: () => 0.5 }).catch((e: unknown) => e);
-    expect(failure).toMatchObject({ name: 'PoolOpenFailure', hung: true, exhausted: true });
-    expect(Date.now() - t0).toBeLessThan(400);
+    const failure = await installPoolWithRetry((o) => c.install(o, () => 'ok'), base, { budgetMs: remainingBootBudgetMs(1_000, 1_200)! }).catch((e: unknown) => e);
+    expect(failure).toMatchObject({ name: 'PoolOpenFailure', exhausted: true });
+    expect(c.state.calls).toBe(0);
   });
 
   it('withPoolOpenRetry hands the attempt an abandoned() flag that flips once the attempt was given up', async () => {
@@ -289,5 +335,115 @@ describe('S8-03: the client supervises the boot (terminate + fresh worker for a 
     const client = createWebSqliteClient({ workerFactory: w.factory, bootBudgetMs: 5_000, bootBackoff: { ...fast, sleep: async () => { client.retire(); } } });
     expect(await code(client.init())).toBe('RETIRED');
     expect(w.created()).toBe(1);
+  });
+});
+
+/* ───────────── S9-02: ONE elapsed boot budget (fake clock) ───────────── */
+describe('S9-02: the boot budget is ONE total elapsed budget across ready, module/probe, init and replacement workers', () => {
+  const FAKE = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] as const;
+  const fast = { startDelayMs: 2, capDelayMs: 4, random: () => 0.5 };
+  const live = { livenessIntervalMs: 10, livenessTimeoutMs: 10_000_000 };
+  const hung = (request: RequestEnvelope): WorkerMessage => ({
+    kind: 'response', protocol: PROTOCOL, sessionId: request.sessionId, requestId: request.requestId, ok: false, timings: { execMs: 0 },
+    error: { code: 'INIT_FAILED', message: 'The browser storage pool could not be opened', retryable: true, commitState: 'not_started', hung: true, attempts: [{ attempt: 1, force: false, code: 'INIT_FAILED', cause: 'WebStorageError: hung', elapsedMs: 5 }] }
+  });
+  type Phase = { worker: number; phase: string; elapsedMs: number };
+  type Failure = { code: string; details: { exhausted?: boolean; phases?: Phase[]; attempts?: { attempt: number }[]; elapsedMs?: number } } | null;
+  const run = async (promise: Promise<unknown>, advanceMs: number): Promise<Failure> => {
+    const outcome = promise.then(() => null, (e: unknown) => e as Failure);
+    await vi.advanceTimersByTimeAsync(advanceMs);
+    return outcome;
+  };
+
+  it('delayed ready: the remainder is measured AFTER ready, so init gets the budget minus the ready wait', async () => {
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    try {
+      const payloads: InitPayload[] = [];
+      const w = fakeWorkers((request, post) => { if (request.op === 'init') { payloads.push(request.payload as InitPayload); post(reply(request, INIT)); } }, 50);
+      const client = createWebSqliteClient({ workerFactory: w.factory, bootBudgetMs: 200, ...live });
+      const done = client.init();
+      await vi.advanceTimersByTimeAsync(60);
+      await done;
+      expect(payloads).toHaveLength(1);
+      expect(payloads[0]!.bootBudgetMs).toBeLessThanOrEqual(150); // 200 - the 50 ms ready wait (it was 200 before S9-02)
+      expect(payloads[0]!.bootBudgetMs).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ready slower than the whole budget: the ready wait is clipped, init is NEVER sent, final diagnostics carry the ready phase', async () => {
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    try {
+      let inits = 0;
+      const w = fakeWorkers((request) => { if (request.op === 'init') inits += 1; }, 150);
+      const client = createWebSqliteClient({ workerFactory: w.factory, bootBudgetMs: 80, ...live });
+      const t0 = Date.now();
+      const error = await run(client.init(), 200);
+      expect(error?.code).toBe('INIT_FAILED');
+      expect(error?.details.exhausted).toBe(true);
+      expect(Date.now() - t0).toBeLessThanOrEqual(200); // the fake clock only moved to 200 because the test advanced it; elapsed below is the real measure
+      expect(error?.details.elapsedMs).toBeLessThanOrEqual(81);
+      expect(error?.details.phases).toEqual([{ worker: 1, phase: 'ready', elapsedMs: expect.any(Number) }]);
+      expect(error?.details.phases![0]!.elapsedMs).toBeGreaterThanOrEqual(79);
+      expect(inits).toBe(0);
+      expect(w.terminated()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('slow module load / OPFS probe inside the worker: the worker subtracts it and refuses to start an acquisition; the client reports exhausted with the init phase', async () => {
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    try {
+      let acquisitions = 0;
+      const w = fakeWorkers((request, post) => {
+        if (request.op !== 'init') return;
+        const budget = (request.payload as InitPayload).bootBudgetMs;
+        // the worker model of sql.worker.ts boot(): 70 ms module + probe, then the SAME remainder rule
+        setTimeout(() => {
+          const left = remainingBootBudgetMs(budget, 70);
+          if (left !== undefined && left <= 0) {
+            post({ kind: 'response', protocol: PROTOCOL, sessionId: request.sessionId, requestId: request.requestId, ok: false, timings: { execMs: 0 }, error: { code: 'INIT_FAILED', message: 'The browser storage pool could not be opened', retryable: true, commitState: 'not_started', exhausted: true, moduleMs: 60, probeMs: 10 } });
+          } else { acquisitions += 1; post(reply(request, INIT)); }
+        }, 70);
+      });
+      const client = createWebSqliteClient({ workerFactory: w.factory, bootBudgetMs: 60, ...live });
+      const error = await run(client.init(), 200);
+      expect(error?.code).toBe('INIT_FAILED');
+      expect(error?.details.exhausted).toBe(true);
+      expect(acquisitions).toBe(0);
+      const phases = error?.details.phases ?? [];
+      expect(phases.map((p) => p.phase)).toEqual(['ready', 'init']);
+      expect(phases[1]!.elapsedMs).toBeGreaterThanOrEqual(70);
+      expect(w.created()).toBe(1); // a non-hung exhausted failure is not restarted
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('replacement workers inherit the REMAINING budget (never a fresh one) and the final diagnostics show per-phase elapsed', async () => {
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    try {
+      const payloads: InitPayload[] = [];
+      const w = fakeWorkers((request, post) => { if (request.op === 'init') { payloads.push(request.payload as InitPayload); post(hung(request)); } }, 30);
+      const client = createWebSqliteClient({ workerFactory: w.factory, bootBudgetMs: 100, bootAttemptTimeoutMs: 20, bootBackoff: fast, ...live });
+      const error = await run(client.init(), 400);
+      expect(error?.code).toBe('INIT_FAILED');
+      expect(error?.details.exhausted).toBe(true);
+      expect(payloads.length).toBeGreaterThanOrEqual(2);
+      payloads.forEach((p, i) => expect(p.bootBudgetMs!).toBeLessThanOrEqual(100 - 30 * (i + 1))); // each worker's ready wait already came off the one budget
+      for (let i = 1; i < payloads.length; i += 1) expect(payloads[i]!.bootBudgetMs!).toBeLessThan(payloads[i - 1]!.bootBudgetMs!);
+      const phases = error?.details.phases ?? [];
+      // a worker whose ready wait ate the rest of the budget never gets an init (so ready phases may exceed init payloads by that one)
+      const readies = phases.filter((p) => p.phase === 'ready').length;
+      expect([payloads.length, payloads.length + 1]).toContain(readies);
+      expect(phases.some((p) => p.phase === 'backoff')).toBe(true);
+      for (const p of phases.filter((x) => x.phase === 'ready')) expect(p.elapsedMs).toBeGreaterThanOrEqual(30);
+      expect(error?.details.elapsedMs).toBeLessThanOrEqual(100 + 10);
+      expect(w.terminated()).toBe(w.created());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

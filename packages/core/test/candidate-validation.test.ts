@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CATALOG_SCHEMA_OBJECTS, CATALOG_SCHEMA_FINGERPRINT } from '../src/db/catalog-fingerprint.generated';
+import { CATALOG_MIGRATIONS } from '../src/db/migrations.generated';
 import type { SqlDriver } from '../src/db/sql';
 import { CatalogInstallService } from '../src/services/catalog-install';
-import { validateCatalogCandidate } from '../src/services/candidate-validation';
+import { CATALOG_CHAIN_FINGERPRINT, validateCatalogCandidate } from '../src/services/candidate-validation';
 import { FakeDiskPort, FAKE_PACK_COUNTS } from '../src/testing/fake-install-port';
 import { harness, type Harness } from './helpers';
 
@@ -103,6 +104,43 @@ describe('R09 candidate validation (core owns all SQL checks)', () => {
     await expect(validateCatalogCandidate(wrap((s) => (s.includes('integrity_check') ? 'throw' : null)), entry)).rejects.toMatchObject({ code: 'PACK_INVALID' });
     await expect(validateCatalogCandidate(wrap((s) => (s.includes('foreign_key_check') ? { rows: [['catalog_cards', 1, 'catalog_sets', 0]] } : null)), entry)).rejects.toMatchObject({ code: 'PACK_INVALID', message: expect.stringMatching(/foreign key/) });
     await real.close();
+  });
+
+  it('S5-09: the chain fingerprint is exactly the builder formula (SHA-256 over `version:checksum\\n`, checksum = SHA-256 of the LF-normalised .sql)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const dir = join(here, '..', 'migrations', 'catalog');
+    const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+    const lines = files.map((f) => `${f.replace(/\.sql$/, '')}:${createHash('sha256').update(readFileSync(join(dir, f), 'utf8').split('\r\n').join('\n'), 'utf8').digest('hex')}\n`);
+    expect(CATALOG_CHAIN_FINGERPRINT).toBe(createHash('sha256').update(lines.join('')).digest('hex'));
+  });
+
+  it('S5-09: a candidate whose receipts and fingerprint match the bundled chain installs', async () => {
+    const r = await attempt((db) => {
+      const meta = db.prepare('SELECT schema_fingerprint AS f FROM catalog_meta').get() as { f: string };
+      expect(meta.f).toBe(CATALOG_CHAIN_FINGERPRINT);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()).toEqual({ n: CATALOG_MIGRATIONS.length });
+    });
+    expect(r.result).toHaveProperty('ok');
+  });
+
+  it('S5-09: a tampered receipt row (checksum, version, missing, extra bogus) -> PACK_INVALID / APP_UPDATE_REQUIRED', async () => {
+    rejected(await attempt((db) => db.exec("UPDATE schema_migrations SET checksum = '" + 'b'.repeat(64) + "'")), /receipts/);
+    rejected(await attempt((db) => db.exec("UPDATE schema_migrations SET version = '0000_other'")), /receipts/);
+    rejected(await attempt((db) => db.exec('DELETE FROM schema_migrations')), /receipts/);
+    // a receipt chain that extends the bundled one (prefix intact) was built by a newer app
+    const newer = await attempt((db) => db.exec("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES ('9999_future', '" + 'c'.repeat(64) + "', 'x')"));
+    expect(newer.result).toMatchObject({ err: { code: 'APP_UPDATE_REQUIRED' } });
+    expect(newer.disk.activeRef).toBeNull();
+  });
+
+  it('S5-09: a tampered catalog_meta.schema_fingerprint -> PACK_INVALID (even though the real schema SQL is faithful)', async () => {
+    rejected(await attempt((db) => db.exec("UPDATE catalog_meta SET schema_fingerprint = '" + 'd'.repeat(64) + "'")), /fingerprint/);
+    rejected(await attempt((db) => db.exec("UPDATE catalog_meta SET schema_fingerprint = ''")), /fingerprint/);
+  });
+
+  it('S5-09: a future schema_version -> APP_UPDATE_REQUIRED (not PACK_INVALID), also when the receipts differ', async () => {
+    const newer = await attempt((db) => db.exec("UPDATE schema_migrations SET checksum = '" + 'e'.repeat(64) + "'"), { schemaVersion: 2 });
+    expect(newer.result).toMatchObject({ err: { code: 'APP_UPDATE_REQUIRED' } });
   });
 
   it('the bundled fingerprint module matches migrations/catalog/*.sql (regenerate with `npm run db:embed` when a migration changes)', () => {

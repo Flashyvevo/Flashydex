@@ -12,7 +12,7 @@ import { classifySql, isMutationKind } from './sql-class';
 import { isPageRetired, retiredError } from '../web-storage/write-gate';
 import { backoffDelayMs, type PoolBootAttempt, type PoolOpenRetryOptions } from './pool-boot-retry';
 import {
-  fromWire, POOL_BOOT_BUDGET_MS, PROTOCOL, type BatchPayload, type BatchResult, type FaultSpec, type ImportResult, type InitResult, type OpenResult, type ProxyMethod,
+  fromWire, POOL_BOOT_BUDGET_MS, POOL_BOOT_REPLY_GRACE_MS, PROTOCOL, type BatchPayload, type BatchResult, type FaultSpec, type ImportResult, type InitResult, type OpenResult, type ProxyMethod,
   type RequestEnvelope, type StatsResult, type WireError, type WorkerMessage
 } from './protocol';
 
@@ -153,6 +153,13 @@ const mark = (name: string): void => {
   }
 };
 
+/** Per-phase elapsed time of the supervised boot (S9-02 diagnostics, carried in the final INIT_FAILED details). */
+export interface BootPhase {
+  worker: number;
+  phase: 'ready' | 'init' | 'backoff';
+  elapsedMs: number;
+}
+
 class LogicalDriver implements SqlDriver {
   invalid = false;
   closed = false;
@@ -245,34 +252,46 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
    * attempt/budget is clipped to what is left. Never two reservations in one pool: at most one worker exists at a time.
    */
   private async startSession(): Promise<WebSqliteInitInfo> {
-    const budget = this.options.bootBudgetMs ?? POOL_BOOT_BUDGET_MS;
+    const budget = this.options.bootBudgetMs ?? POOL_BOOT_BUDGET_MS; // S9-02: ONE total elapsed budget (see POOL_BOOT_BUDGET_MS in protocol.ts)
     const sleep = this.options.bootBackoff?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     const started = performance.now();
     const attempts: PoolBootAttempt[] = [];
+    const phases: BootPhase[] = [];
+    const exhausted = (error: unknown): WebStorageError => {
+      const own = error as { code?: WebStorageErrorCode; message?: string; details?: Record<string, unknown> } | null;
+      return new WebStorageError(own?.code ?? 'INIT_FAILED', own?.message ?? 'The browser storage pool could not be opened', {
+        ...(own?.details ?? {}), retryable: true, cause: error, attempts: [...attempts], phases: [...phases], exhausted: true, elapsedMs: Math.round(performance.now() - started)
+      } as ConstructorParameters<typeof WebStorageError>[2]);
+    };
     for (let worker = 1; ; worker += 1) {
       const workerStartedOffset = Math.round(performance.now() - started);
-      const remaining = Math.max(1, budget - workerStartedOffset);
+      // never start a worker (or an acquisition) once the ONE budget is gone; a replacement inherits only what is left
+      if (budget - (performance.now() - started) <= 0) throw exhausted(new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened'));
       try {
-        return await this.bootWorkerOnce(remaining);
+        return await this.bootWorkerOnce(worker, started, budget, phases);
       } catch (error) {
-        const hung = (error as { details?: { hung?: boolean } } | null)?.details?.hung === true;
-        if (!hung) throw error;
-        const own = (error as { details?: { attempts?: PoolBootAttempt[] } }).details?.attempts ?? [];
+        const details = (error as { details?: { hung?: boolean; exhausted?: boolean; attempts?: PoolBootAttempt[] } } | null)?.details;
+        const own = details?.attempts ?? [];
         for (const a of own) attempts.push({ ...a, attempt: attempts.length + 1, elapsedMs: workerStartedOffset + a.elapsedMs });
+        if (details?.hung !== true) {
+          if (details?.exhausted === true) throw exhausted(error);
+          throw error;
+        }
         this.teardownWorker(); // discard the worker that holds the hung acquisition (its handles die with it)
         this.assertLive();
         const delay = backoffDelayMs(worker, this.options.bootBackoff);
-        if (performance.now() - started + delay >= budget) {
-          throw new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', { retryable: true, cause: error, attempts: [...attempts], exhausted: true } as ConstructorParameters<typeof WebStorageError>[2]);
-        }
+        if (performance.now() - started + delay >= budget) throw exhausted(new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', { cause: error }));
+        const sleepStarted = performance.now();
         await sleep(delay);
+        phases.push({ worker, phase: 'backoff', elapsedMs: Math.round(performance.now() - sleepStarted) });
         this.assertLive();
       }
     }
   }
 
-  private async bootWorkerOnce(budgetMs: number): Promise<WebSqliteInitInfo> {
+  private async bootWorkerOnce(workerNo: number, bootStarted: number, budget: number, phases: BootPhase[]): Promise<WebSqliteInitInfo> {
     this.assertLive();
+    const remainingMs = () => budget - (performance.now() - bootStarted);
     const factory = this.options.workerFactory ?? defaultWorkerFactory;
     let worker: WorkerLike;
     try {
@@ -284,10 +303,14 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
     this.sessionId = (globalThis.crypto?.randomUUID?.() ?? `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
     this.workerStartedAt = performance.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // the ready wait is clipped to what is LEFT of the one budget; a timeout caused by that clip means "exhausted"
+    const readyLimit = this.options.readyTimeoutMs ?? 30_000;
+    const readyMs = Math.max(1, Math.min(readyLimit, remainingMs()));
+    const readyClipped = remainingMs() <= readyLimit;
     const ready = new Promise<void>((resolve, reject) => {
       this.readyResolve = resolve;
       this.readyReject = reject;
-      timer = setTimeout(() => reject(new WebStorageError('INIT_FAILED', 'The storage worker did not start')), this.options.readyTimeoutMs ?? 30_000);
+      timer = setTimeout(() => reject(new WebStorageError('INIT_FAILED', 'The storage worker did not start', (readyClipped ? { retryable: true, exhausted: true } : {}) as ConstructorParameters<typeof WebStorageError>[2])), readyMs);
     });
     worker.addEventListener('message', (event) => this.onMessage(worker, event.data as WorkerMessage));
     worker.addEventListener('error', () => {
@@ -300,11 +323,22 @@ export class WebSqliteClientImpl implements WebSqliteClientInternal {
       await ready;
     } finally {
       clearTimeout(timer);
+      phases.push({ worker: workerNo, phase: 'ready', elapsedMs: Math.round(performance.now() - this.workerStartedAt) });
     }
     this.assertLive(); // retired while the worker was booting: never ask it to acquire the pool (init's catch tears the worker down)
     const workerReadyMs = performance.now() - this.workerStartedAt;
     mark('fdx:web-worker-ready');
-    const result = (await this.send('init', { protocol: PROTOCOL, bootBudgetMs: Math.round(budgetMs), ...(this.options.bootAttemptTimeoutMs !== undefined ? { bootAttemptTimeoutMs: this.options.bootAttemptTimeoutMs } : {}), ...(import.meta.env.DEV && this.options.fault ? { fault: this.options.fault } : {}) }, { deadlineMs: this.initDeadlineMs }).promise) as InitResult;
+    // S9-02: re-measure AFTER ready. If the budget is gone, init is never sent: no acquisition starts past exhaustion.
+    const remaining = remainingMs();
+    if (remaining <= 0) throw new WebStorageError('INIT_FAILED', 'The browser storage pool could not be opened', { retryable: true, exhausted: true } as ConstructorParameters<typeof WebStorageError>[2]);
+    const initStarted = performance.now();
+    let result: InitResult;
+    try {
+      // the init wait is clipped too: the remaining budget plus a short grace for the worker's own (attempts-carrying) failure reply
+      result = (await this.send('init', { protocol: PROTOCOL, bootBudgetMs: Math.round(remaining), ...(this.options.bootAttemptTimeoutMs !== undefined ? { bootAttemptTimeoutMs: this.options.bootAttemptTimeoutMs } : {}), ...(import.meta.env.DEV && this.options.fault ? { fault: this.options.fault } : {}) }, { deadlineMs: Math.max(1, Math.min(this.initDeadlineMs, remaining + POOL_BOOT_REPLY_GRACE_MS)) }).promise) as InitResult;
+    } finally {
+      phases.push({ worker: workerNo, phase: 'init', elapsedMs: Math.round(performance.now() - initStarted) });
+    }
     this.assertLive(); // retired while the pool was being acquired: do not hand out a session
     mark('fdx:web-pool-ready');
     return {

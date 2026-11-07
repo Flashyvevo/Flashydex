@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { copyFileSync, existsSync, renameSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Language } from '@flashydex/schemas';
-import { CATALOG_SCHEMA_FINGERPRINT } from '../db/catalog-fingerprint.generated';
+import { CATALOG_CHAIN_FINGERPRINT } from '../services/candidate-validation';
 import type { SqlDriver } from '../db/sql';
 import type { Environment } from '../platform/platform';
 import type { CatalogInstallPort, PackDiskState, PackEntry, PackInstallProgress, PackStageResult } from '../services/catalog-install';
@@ -125,7 +125,7 @@ export class FakeDiskPort implements CatalogInstallPort {
       await tx.run(
         `INSERT INTO catalog_meta (id, language, version, schema_version, built_at, builder_version, source_cutoff_at, source_set_count, source_card_count, source_variant_count,
            source_price_count, unpublished_set_count, schema_fingerprint) VALUES ('catalog', ?, ?, ?, ?, 'test', ?, 1, 5, 0, 0, 0, ?)`,
-        [m.language ?? entry.language, m.version ?? entry.targetVersion, m.schemaVersion ?? 1, '2026-10-31T01:00:00.000Z', '2026-10-31T00:00:00.000Z', CATALOG_SCHEMA_FINGERPRINT]
+        [m.language ?? entry.language, m.version ?? entry.targetVersion, m.schemaVersion ?? 1, '2026-10-31T01:00:00.000Z', '2026-10-31T00:00:00.000Z', CATALOG_CHAIN_FINGERPRINT]
       );
     });
     await writer.close();
