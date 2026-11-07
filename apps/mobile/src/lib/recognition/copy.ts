@@ -29,8 +29,33 @@ export const COPY = {
   heicHelp: 'This photo format couldn’t be read. Choose a JPEG, or switch Camera → Formats → Most Compatible.',
   unreadable: 'This photo couldn’t be read. Try another photo.',
   otherPossibilities: 'Other possibilities',
-  backToPossibilities: 'Back to possibilities'
+  backToPossibilities: 'Back to possibilities',
+  // Live scan
+  usingCameraApp: 'Using the camera app',
+  chipSteady: 'Hold steady',
+  chipDark: 'Too dark',
+  chipGlare: 'Glare — tilt the card',
+  chipBlur: 'Blurry — hold still',
+  chipRetry: 'Didn’t catch it — trying again',
+  chipAnalyzing: 'Analyzing card…',
+  shutter: 'Scan now',
+  coachTitle: 'Let’s get a cleaner shot',
+  coachDark: 'Place the card on a dark, matte surface',
+  coachFill: 'Fill the frame, card flat',
+  coachGlare: 'Tilt away from lights or windows to kill glare',
+  coachSleeve: 'Wipe the sleeve or take it out',
+  coachLight: 'Add more light — the card looks too dark',
+  keepScanning: 'Keep Scanning'
 } as const;
+
+export type CoachLead = 'dark-surface' | 'glare' | 'light';
+/** Coach bullets, most relevant first (glare-dominant → glare line first; too-dark → lighting first). */
+export function coachBullets(lead: CoachLead): string[] {
+  const base = [COPY.coachDark, COPY.coachFill, COPY.coachGlare, COPY.coachSleeve];
+  if (lead === 'glare') return [COPY.coachGlare, COPY.coachDark, COPY.coachFill, COPY.coachSleeve];
+  if (lead === 'light') return [COPY.coachLight, ...base];
+  return base;
+}
 
 export const added = (name: string): string => `Added ${name}`;
 export const installCatalog = (languageName: string): string => `Install ${languageName} catalog`;

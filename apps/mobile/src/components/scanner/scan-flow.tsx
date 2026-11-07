@@ -1,15 +1,17 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Camera, CheckCircle2, CloudOff, SearchX } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useCandidateAvailability, useScan, type Availability } from '../../data/recognition';
+import { useCandidateAvailability, useScan, type Availability, type ScanState } from '../../data/recognition';
 import { useCatalogInstall, useRemoveCopy } from '../../data';
 import { useSettings, useUpdateSettings } from '../../data';
 import { collectorNumber, LANGUAGE_BADGE, LANGUAGE_NAMES, type Language, type Variant } from '../../lib/format';
 import { suggestVariant, type RecognitionCandidate } from '../../lib/recognition/client';
 import { cardMissing, catalogMissing, COPY, failureCopy, installCatalog } from '../../lib/recognition/copy';
+import { isNoMatch } from '../../lib/recognition/retry';
 import { AddConfirmSheet, type AddedInfo } from '../add-confirm';
 import { CardArt, LangBadge } from '../card';
 import { Banner, Button, LinkButton, ProgressBar, Spinner } from '../ui';
+import { Coach } from './coach';
 
 export type ScanFlowProps = {
   file: File;
@@ -20,6 +22,17 @@ export type ScanFlowProps = {
   onBrowseBySet: () => void;
   /** After a successful add: clear the photo and re-open the camera input (must run inside the click handler). */
   onScanAnother: () => void;
+  /** A settled result from the live session: shown as-is (no upload of `file`). */
+  outcome?: ScanState;
+  /** Retry button override (live: back to the viewfinder). Defaults to re-running the same photo. */
+  onRetry?: () => void;
+  /** Consecutive no-match photos before this one; ≥ 1 turns this no-match into the coach. */
+  priorNoMatches?: number;
+  /** Reports the settled kind once (drives the file-mode no-match streak). */
+  onOutcome?: (kind: 'no_match' | 'ok' | 'failed') => void;
+  /** Coach actions (file mode): Keep Scanning resets the streak; Take Photo opens the system camera inside the click. */
+  onKeepScanning?: () => void;
+  onTakePhoto?: () => void;
 };
 
 type PickProps = Omit<ScanFlowProps, 'file' | 'onCancel' | 'onScanAnother'> & { onPick: (candidate: RecognitionCandidate, isTop: boolean) => void };
@@ -53,7 +66,18 @@ function Heading({ stateKey, children, className }: { stateKey: string; children
 
 export function ScanFlow(props: ScanFlowProps) {
   const { file, onCancel } = props;
-  const { state, retry } = useScan(file);
+  const scan = useScan(props.outcome ? null : file);
+  const state: ScanState = props.outcome ?? scan.state;
+  const retry = props.onRetry ?? scan.retry;
+  const { onOutcome } = props;
+  const reported = useRef<ScanState | null>(null);
+  useEffect(() => {
+    if (reported.current === state) return;
+    if (state.phase === 'done') onOutcome?.(isNoMatch(state.response.status) ? 'no_match' : 'ok');
+    else if (state.phase === 'failed') onOutcome?.('failed');
+    else return;
+    reported.current = state;
+  }, [state, onOutcome]);
   const thumb = useObjectUrl(file);
   const navigate = useNavigate();
   const remove = useRemoveCopy();
@@ -200,6 +224,8 @@ export function ScanFlow(props: ScanFlowProps) {
           <Fallbacks onSearchManually={props.onSearchManually} onBrowseBySet={props.onBrowseBySet} secondary />
         </div>
       );
+    } else if ((props.priorNoMatches ?? 0) >= 1) {
+      body = <Coach lead="dark-surface" onKeepScanning={props.onKeepScanning ?? props.onTryAnother} onTakePhoto={props.onTakePhoto ?? props.onTryAnother} onSearchManually={props.onSearchManually} onBrowseBySet={props.onBrowseBySet} />;
     } else {
       body = (
         <div className="flex w-full flex-col items-center gap-3 text-center" data-testid="scan-no-match" data-status={response.status}>

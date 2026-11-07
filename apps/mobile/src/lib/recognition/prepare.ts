@@ -105,7 +105,7 @@ async function decode(blob: Blob): Promise<Drawable> {
   }
 }
 
-async function encodeJpeg(source: CanvasImageSource, width: number, height: number): Promise<Blob> {
+export async function encodeJpeg(source: CanvasImageSource, width: number, height: number): Promise<Blob> {
   if (typeof OffscreenCanvas === 'function') {
     try {
       const canvas = new OffscreenCanvas(width, height);

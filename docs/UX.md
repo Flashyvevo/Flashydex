@@ -695,6 +695,7 @@ Data: `CatalogRepo.listSets({language, owned, hideTcgPocket, sort, q})`.
   - "Most complete" = `completion_desc`.
 - **Count format:** `ownedUnique / catalogCount · completionPercent%`. When `completionPercent` is null (catalog incomplete), show `45 / 201 loaded · Catalog incomplete` in `warning`, with no percent.
 - **Logos:** TCGdex has logos for 157/220 EN sets and **0/184 JA sets**. Without a logo, render a 56×32 `surface-3` chip with the set id in micro mono (`SV1a`, `PMCG1`). Never a stretched image. Logo URL = `logoUrl` + `.webp`.
+- **Set art tiers (extends the Logos rule; used by Sets tab, set header, set picker / onboarding):** `SetLogo` renders the first tier that works: logo (contain) -> symbol (centered, at most 3/4 x 3/5 of the box) -> **cover card** (first card by collector number with `imageUrl`, `low.webp`, `object-cover`, `object-position: 50% 20%`, subtle bottom gradient; set-name overlay via `showName` only where no name sits beside the tile) -> id chip. An `<img>` error advances one tier; never a broken-image icon. The box is fixed (56x32; 240x80 on the set header) so tiers resolving causes no layout shift. Cover lookups are gated to tiles within 200 px of the viewport and coalesced into one `CatalogRepo.setCovers(language, ids)` read per language per ~16 ms window (at most 100 sets per statement, correlated `LIMIT 1` over `cc_set_sort`), cached in the query cache (`['fd','setCover',lang,id]`).
 - **Extras:** duplicate extras per set appear as the caption "8 extra" when > 0.
 - **TCG Pocket:** sets in series `tcgp` (15 EN sets, ~2.5k digital-only cards) are hidden while Settings → "Include TCG Pocket (digital) cards" is off (the default). A footer row reads "TCG Pocket sets hidden · Show" and links to that setting.
 - **Unpublished shells** (`status:'unpublished'`) never appear in Phase 1.
@@ -1611,3 +1612,37 @@ New web-only surfaces (all plain copy, no claim the browser did not make; 390 ×
 - Safari tab and Home Screen app have separate storage; scanning from one does not show in the other.
 - HEIC that still reaches the page and fails to decode shows the "Most Compatible" copy.
 - Real-photo accuracy, camera behaviour and the tunnel path need the owner's iPhone steps (ios-camera.md "Owner test steps").
+
+### Live Scan (Milestone 2 follow-up) — viewfinder, auto-capture, silent retry, coach
+
+Owner intent: "I shouldn't have to take a photo — it should just use my phone's camera to scan the card, analyze it, and if it keeps getting errors tell the user to place the card on a dark surface."
+
+**Modes.** `/scan` tries the live camera on mount (only when `navigator.mediaDevices.getUserMedia` exists). While it opens a skeleton (`live-skeleton`) fills the viewfinder and the four buttons below stay usable. Any camera failure drops **silently** to the file-input landing described above (a muted "Using the camera app" line, `scan-camera-hint`, is the only trace — no error screen):
+- `denied` — `NotAllowedError`; `unavailable` — `NotFoundError` / `OverconstrainedError` / no `mediaDevices` / insecure context; `blank` — the stream arrived but `video.readyState < 2` or `videoWidth === 0` after 2.5 s, or the track ended / stayed muted > 1 s (the iOS standalone bug). A track that ends mid-session also falls back; if a request was in flight its result is kept and shown.
+- Dev/test only (`import.meta.env.DEV`): `/scan?camera=live|file` forces a mode; `window.__fdxFakeCamera()` supplies a `MediaStream` (canvas `captureStream()`) or throws a `DOMException`. Production builds ignore both.
+
+**Viewfinder (`live-view`).** Full-width `<video playsInline muted autoPlay>` (3:4 box, `max-height: 50dvh`; 50 % of the viewport at 375 × 812 and 390 × 844), 63:88 card guide (rounded, lime corners, dimmed outside), status chip (`live-chip`: "Hold steady", "Too dark", "Glare — tilt the card", "Blurry — hold still", "Analyzing card…", "Didn't catch it — trying again"), a 64 px shutter (`live-shutter`, manual capture ignores quality but not the in-flight/rate rules), and four text links: Take Photo (system camera), Choose Photo, Search Manually, Browse by Set (same test ids as the landing). Sampling runs on `requestAnimationFrame` throttled to ~6 fps, drawing the guide region (≤ 320 px long edge) to an offscreen canvas. Sampling and the video pause while `document.hidden`; tracks stop on unmount, route leave, and whenever a result / error / coach is on screen (battery, and iOS's ~90 s permission revoke) — Scan Another reopens the camera.
+
+**Thresholds** (`lib/recognition/frame-quality.ts`; `[needs owner iPhone]` — tuned on synthetic frames only):
+
+| metric | rule | constant |
+| --- | --- | --- |
+| sharpness | variance of the Laplacian on luma ≥ 45 | `MIN_SHARPNESS` |
+| glare | share of luma > 245 in the central 70 % ≤ 6 % | `MAX_GLARE`, `GLARE_LUMA` |
+| brightness | mean luma ≥ 45 | `MIN_BRIGHTNESS` |
+
+Reason priority when several fail: dark → glare → blur. **Auto-capture:** 4 consecutive passing samples (~0.7 s) → crop to the guide rect, long edge ≤ 1600, JPEG q0.85 (`encodeJpeg` from `prepare.ts`, EXIF-free by construction) → `POST /api/identify`. Never while a request is in flight.
+
+**State machine** (`useLiveSession`, `data/recognition.ts`): `live → analyzing → { result | error | live(retrying) | coach }`.
+- `match` / `candidates` → `result` (the normal result screens; add/confirm unchanged).
+- `no_match` / `no_card` → counts as a failed attempt; the viewfinder stays live with the retrying chip. The 3rd failure → `coach`.
+- Network / 5xx / 429 → `error` (existing error copy and buttons); **not** an attempt and not counted.
+- Scan Another, Keep Scanning, Try another photo and leaving the route reset the session.
+
+**Retry policy** (`lib/recognition/retry.ts`): at most 3 attempts in any 10 s, ≥ 1.5 s between attempt starts, each needing fresh quality-passing frames, so the 30/min server limit is never approached.
+
+**Coach** (`scan-coach`, `data-lead`): "Let's get a cleaner shot" — "Place the card on a dark, matte surface", "Fill the frame, card flat", "Tilt away from lights or windows to kill glare", "Wipe the sleeve or take it out". If glare was the dominant rejected-quality reason (≥ 3 samples) the glare line leads; if "Too dark", a lighting line ("Add more light — the card looks too dark") leads. Buttons: Keep Scanning (reset → viewfinder), Take Photo (system camera), Search Manually, Browse by Set. File-input mode shows the same coach after 2 consecutive no-match photos.
+
+**iOS standalone caveat.** The research (`.agent/research/ios-camera.md`) says not to depend on `getUserMedia` in a Home Screen PWA: WebKit bug 282327 (indicator shows, no stream returned) and 215884 (permission revoked on hash change and after ~90 s). Live mode therefore treats the camera as optional: blank / revoked streams fall back to the file-input flow, which stays the reliable path.
+
+**`[needs owner iPhone]`:** whether the live stream works at all in the installed PWA (and on which iOS), how long it survives, the permission prompt frequency per Scan Another, threshold tuning on real sleeved cards / glossy holos / table lighting, battery and heat over a long session, auto-capture feel (4-sample streak) with a hand-held phone.

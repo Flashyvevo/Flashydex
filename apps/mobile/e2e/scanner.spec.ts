@@ -12,7 +12,7 @@ async function setup(page: Page) {
   await mockHealth(page, true);
   const identify = await mockIdentify(page);
   await onboardAndInstall(page);
-  await page.goto('/scan');
+  await page.goto('/scan?camera=file');
   await expect(page.getByTestId('scan-capture')).toBeVisible();
   return { errors, identify };
 }
@@ -124,6 +124,7 @@ for (const vp of VIEWPORTS) {
 
       // ── no_match / no_card ───────────────────────────────────────────────────
       for (const status of ['no_match', 'no_card'] as const) {
+        if (status === 'no_card') await page.goto('/scan?camera=file'); // a 2nd consecutive no-match shows the coach (covered in scanner-live.spec.ts)
         identify.reply = { json: recognition(status, [], 0.1) };
         await submitPhoto(page, photo);
         const nm = page.getByTestId('scan-no-match');
@@ -218,10 +219,10 @@ for (const vp of VIEWPORTS) {
       await expect(page).toHaveURL(/\/add/);
 
       // ── landing actions navigate ────────────────────────────────────────────
-      await page.goto('/scan');
+      await page.goto('/scan?camera=file');
       await page.getByTestId('scan-browse').click();
       await expect(page).toHaveURL(/\/sets/);
-      await page.goto('/scan');
+      await page.goto('/scan?camera=file');
       await page.getByTestId('scan-search').click();
       await expect(page).toHaveURL(/\/add/);
 
@@ -262,7 +263,7 @@ for (const vp of VIEWPORTS) {
       const photo = await makeJpeg(page);
       const before = await readOwnedCopies(page);
       expect(before).toHaveLength(0);
-      await page.goto('/scan');
+      await page.goto('/scan?camera=file');
 
       // 1st scan: Charizard V
       identify.reply = { json: recognition('match', [CHARIZARD_V], 0.97) };
@@ -274,7 +275,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId('confirm-sheet')).toHaveCount(0);
       await expect(page.getByTestId('scan-heading')).toHaveText('Added to collection');
       await expect(page.getByTestId('scan-added-name')).toContainText('Charizard V');
-      await expect(page).toHaveURL(/\/scan$/);
+      await expect(page).toHaveURL(/\/scan(\?camera=file)?$/);
       await assertNoOverflow(page);
       await assertTapTargets(page);
       measure(`scan-height@${vp.width}`, await page.evaluate(() => document.documentElement.scrollHeight));
@@ -283,7 +284,7 @@ for (const vp of VIEWPORTS) {
       identify.reply = { json: recognition('match', [FURRET], 0.9) };
       let [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByTestId('scan-another').click()]);
       expect(chooser.isMultiple()).toBe(false);
-      await expect(page).toHaveURL(/\/scan$/);
+      await expect(page).toHaveURL(/\/scan(\?camera=file)?$/);
       await chooser.setFiles({ name: 'card2.jpg', mimeType: 'image/jpeg', buffer: photo });
       await expect(page.getByTestId('scan-card-name')).toHaveText('Furret', { timeout: 15_000 });
       await page.getByTestId('scan-confirm').click();

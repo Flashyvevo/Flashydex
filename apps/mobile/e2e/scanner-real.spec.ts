@@ -89,7 +89,7 @@ test('@real UI: real photo through the Scan screen; unsupported copy; offline; i
   });
   page.on('requestfailed', (req) => console.log('REAL ui requestfailed', req.url(), req.failure()?.errorText));
   await onboardAndInstall(page);
-  await page.goto('/scan');
+  await page.goto('/scan?camera=file');
   await expect(page.getByTestId('scan-capture')).toBeVisible();
   await expect(page.getByTestId('scan-offline-banner')).toHaveCount(0);
 
