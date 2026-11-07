@@ -1,7 +1,8 @@
 import { Check } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSetIndex } from '../data';
-import { assetWebp, LANGUAGE_BADGE, plural, releaseYear, type Language } from '../lib/format';
+import { LANGUAGE_BADGE, plural, releaseYear, type Language } from '../lib/format';
+import { SetLogo } from './set-logo';
 import { ChipGroup, SearchField, Skeleton, cx } from './ui';
 
 export type SetKey = { language: Language; setId: string };
@@ -75,7 +76,6 @@ export function SetPicker({
                 {list.map((s) => {
                   const key = { language: s.language, setId: s.id };
                   const on = selected.has(setKeyString(key));
-                  const logo = assetWebp(s.logoUrl);
                   return (
                     <li key={s.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 56px' }}>
                       <button
@@ -89,9 +89,7 @@ export function SetPicker({
                         <span aria-hidden className={cx('inline-flex size-6 shrink-0 items-center justify-center rounded-md border', on ? 'border-accent bg-accent text-on-accent' : 'border-border-input')}>
                           {on && <Check size={16} />}
                         </span>
-                        <span aria-hidden className="flex h-8 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xs bg-surface-3">
-                          {logo ? <img src={logo} alt="" loading="lazy" className="max-h-full max-w-full object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} /> : <span className="font-mono text-micro text-fg-muted">{s.id}</span>}
-                        </span>
+                        <SetLogo set={s} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-body">{s.name}</span>
                           <span className="block text-caption text-fg-muted">

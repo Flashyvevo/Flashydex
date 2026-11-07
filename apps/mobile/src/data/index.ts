@@ -20,7 +20,7 @@ export {
 } from './collection-hooks';
 export type { CollectionQuery, AddCopiesInput } from './collection-hooks';
 
-export { useCardSearch, useCatalogCard, useSets, useSet, useSetCards, useSetIndex } from './catalog-hooks';
+export { useCardSearch, useCatalogCard, useSets, useSet, useSetCards, useSetCover, useSetIndex } from './catalog-hooks';
 export type { SetIndexResult } from './catalog-hooks';
 
 export { useCatalogManifest, useCatalogStatus, useCatalogInstall, useUninstallCatalog, useRollbackCatalog, isCatalogInstallActive, useCatalogInstallActive } from './install-hooks';

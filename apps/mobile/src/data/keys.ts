@@ -17,6 +17,7 @@ export const keys = {
   sets: (q: unknown) => ['fd', 'sets', q ?? null] as const,
   set: (key: unknown) => ['fd', 'set', key] as const,
   setCards: (q: unknown) => ['fd', 'setCards', q] as const,
+  setCover: (language: string, setId: string) => ['fd', 'setCover', language, setId] as const,
   setIndex: (language: string) => ['fd', 'setIndex', language] as const,
   manifest: (languages: unknown) => ['fd', 'manifest', languages ?? null] as const,
   catalogStatus: (language: string) => ['fd', 'catalogStatus', language] as const,

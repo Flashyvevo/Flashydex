@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query';
-import { SetIndex, type CardDetail, type CardSearchQuery, type CardSummary, type DomainError, type Input, type Language, type Page, type SetCardsQuery, type SetIndexRow, type SetKey, type SetListQuery, type SetSummary } from '@flashydex/core';
+import { SetIndex, type CardDetail, type CardSearchQuery, type CardSummary, type DomainError, type Input, type Language, type Page, type Services, type SetCardsQuery, type SetIndexRow, type SetKey, type SetListQuery, type SetSummary } from '@flashydex/core';
 import { fetchManifestText } from '../platform/pack-install';
 import bundledEn from './bootstrap/set-index-en.json';
 import bundledJa from './bootstrap/set-index-ja.json';
@@ -58,6 +58,51 @@ export function useSetCards(query: Omit<Input<typeof SetCardsQuery>, 'offset'> |
 }
 
 export type SetIndexResult = { source: 'catalog' | 'manifest' | 'bundled'; rows: SetIndexRow[] };
+
+/**
+ * Cover-card lookup for set tiles. Callers may mount hundreds of tiles: lookups made in the same ~16 ms window are coalesced into
+ * ONE `catalog.setCovers(language, ids)` read per language (core chunks it at 100 sets). Results live in the query cache forever
+ * (`staleTime: Infinity`) and are dropped by `invalidateAll` (catalog changed), never by personal-data writes.
+ */
+type CoverBatch = { services: Services; waiters: Map<string, Array<{ resolve: (v: string | null) => void; reject: (e: unknown) => void }>> };
+const coverBatches = new Map<Language, CoverBatch>();
+
+async function flushCovers(language: Language): Promise<void> {
+  const batch = coverBatches.get(language);
+  coverBatches.delete(language);
+  if (!batch) return;
+  try {
+    const covers = await batch.services.catalog.setCovers(language, [...batch.waiters.keys()]);
+    for (const [id, waiters] of batch.waiters) for (const w of waiters) w.resolve(covers[id] ?? null);
+  } catch (error) {
+    for (const waiters of batch.waiters.values()) for (const w of waiters) w.reject(error);
+  }
+}
+
+function loadCover(services: Services, language: Language, setId: string): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    let batch = coverBatches.get(language);
+    if (!batch) {
+      batch = { services, waiters: new Map() };
+      coverBatches.set(language, batch);
+      setTimeout(() => void flushCovers(language), 16);
+    }
+    batch.waiters.set(setId, [...(batch.waiters.get(setId) ?? []), { resolve, reject }]);
+  });
+}
+
+/** Image base URL of the set's first card (collector order) that has art, or null. `enabled` gates the lookup (tile on screen, no logo). */
+export function useSetCover(language: Language, setId: string, enabled: boolean) {
+  const services = useServicesIfReady();
+  return useQuery<string | null, DomainError>({
+    queryKey: keys.setCover(language, setId),
+    enabled: services !== null && enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 30 * 60_000,
+    retry: false,
+    queryFn: () => loadCover(services as NonNullable<typeof services>, language, setId)
+  });
+}
 
 const BUNDLED: Record<Language, unknown> = { en: bundledEn, ja: bundledJa };
 
