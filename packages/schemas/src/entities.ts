@@ -188,6 +188,7 @@ export const CurrencyStats = z
     // Pricing v2 FX layer (USD stats only; omitted for an empty collection). Converted copies are included in valued/estimated above.
     /** Valued copies that needed no conversion (TCGplayer-native or manual). */
     sourcePricedCopies: SafeInt.optional(),
+    manualCopies: SafeInt.optional(),
     convertedCopies: SafeInt.optional(),
     convertedValueCents: SafeInt.optional(),
     /** Converted copies whose FX rate is more than 7 days old. */

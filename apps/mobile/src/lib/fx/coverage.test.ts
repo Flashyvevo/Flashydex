@@ -47,4 +47,12 @@ describe('describeValueSource (R11-02)', () => {
   it('never calls an all-converted total TCGplayer', () => {
     expect(describeValueSource({ sourcePricedCopies: 0, convertedCopies: 5, fxRateDate: '2026-11-06' }, 'USD')).not.toContain('TCGplayer');
   });
+  it('never attributes manual values to a provider (Sol-12 residual R11-02)', () => {
+    expect(describeValueSource({ sourcePricedCopies: 0, convertedCopies: 0, manualCopies: 2 }, 'USD')).toBe('your manual prices');
+    expect(describeValueSource({ sourcePricedCopies: 0, convertedCopies: 0, manualCopies: 2 }, 'EUR')).toBe('your manual prices');
+    expect(describeValueSource({ sourcePricedCopies: 1, convertedCopies: 0, manualCopies: 2 }, 'USD')).toBe('TCGplayer prices + manual prices');
+    expect(describeValueSource({ sourcePricedCopies: 0, convertedCopies: 1, manualCopies: 1, fxRateDate: '2026-11-06' }, 'USD')).toBe('Cardmarket prices converted to USD (ECB 2026-11-06) + manual prices');
+    expect(describeValueSource({ sourcePricedCopies: 1, convertedCopies: 1, manualCopies: 1 }, 'USD')).toBe('TCGplayer + converted Cardmarket prices + manual prices');
+    expect(describeValueSource({ sourcePricedCopies: 1, convertedCopies: 0, manualCopies: 1 }, 'EUR')).toBe('Cardmarket prices + manual prices');
+  });
 });

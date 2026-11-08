@@ -1,6 +1,7 @@
 /** Pure UI wording for the FX coverage line (dashboard). Kept out of the component so the strings are unit-tested. */
 export type FxCoverageStats = {
   sourcePricedCopies?: number;
+  manualCopies?: number;
   convertedCopies?: number;
   staleFxCopies?: number;
   fxUnavailableCopies?: number;
@@ -50,11 +51,20 @@ export function describeValuationSource(v: ValuationSource, money: (cents: numbe
  * Source attribution for a currency's total, derived from the bucket composition (never assumed):
  * all source-priced → TCGplayer; all converted → Cardmarket converted with the ECB date; mixed → both; EUR → Cardmarket.
  */
-export function describeValueSource(s: Pick<FxCoverageStats, 'sourcePricedCopies' | 'convertedCopies' | 'fxRateDate'> | undefined, currency: 'USD' | 'EUR'): string {
-  if (currency === 'EUR') return 'Cardmarket prices';
+export function describeValueSource(s: Pick<FxCoverageStats, 'sourcePricedCopies' | 'manualCopies' | 'convertedCopies' | 'fxRateDate'> | undefined, currency: 'USD' | 'EUR'): string {
+  const manual = s?.manualCopies ?? 0;
   const converted = s?.convertedCopies ?? 0;
-  if (converted === 0) return 'TCGplayer prices';
   const source = s?.sourcePricedCopies ?? 0;
-  if (source === 0) return s?.fxRateDate ? `Cardmarket prices converted to USD (ECB ${s.fxRateDate})` : 'Cardmarket prices converted to USD';
-  return 'TCGplayer + converted Cardmarket prices';
+  const parts: string[] = [];
+  if (currency === 'EUR') {
+    // EUR automatic values are always Cardmarket; only an all-manual EUR total has no provider.
+    if (source > 0 || converted > 0 || manual === 0) parts.push('Cardmarket prices');
+  } else {
+    if (source > 0 && converted > 0) parts.push('TCGplayer + converted Cardmarket prices');
+    else if (source > 0) parts.push('TCGplayer prices');
+    else if (converted > 0) parts.push(s?.fxRateDate ? `Cardmarket prices converted to USD (ECB ${s.fxRateDate})` : 'Cardmarket prices converted to USD');
+    else if (manual === 0) parts.push('TCGplayer prices');
+  }
+  if (manual > 0) parts.push(parts.length === 0 ? 'your manual prices' : 'manual prices');
+  return parts.join(' + ');
 }

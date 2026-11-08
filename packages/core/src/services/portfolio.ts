@@ -10,7 +10,7 @@ type Bucket = {
 };
 
 /** USD-only FX accounting (Pricing v2). Each physical copy lands in exactly one of sourcePriced / converted / unpriced. */
-type FxStats = { sourcePriced: number; converted: number; convertedValue: number; staleFx: number; fxUnavailable: number; costConverted: number };
+type FxStats = { sourcePriced: number; converted: number; convertedValue: number; staleFx: number; fxUnavailable: number; costConverted: number; manual: number };
 
 /** DATA-MODEL "Definitions for every screen and aggregate". Whole collection: no Pocket/filter exclusions. */
 export class PortfolioService {
@@ -53,7 +53,7 @@ export class PortfolioService {
 
     const quotes = await loadQuotes(this.ctx, aggregates.filter((a) => a.catalogCardId !== null).map((a) => ({ language: a.language, id: a.catalogCardId as string })));
     const fx = fxFor(this.ctx);
-    const fxStats: FxStats = { sourcePriced: 0, converted: 0, convertedValue: 0, staleFx: 0, fxUnavailable: 0, costConverted: 0 };
+    const fxStats: FxStats = { sourcePriced: 0, converted: 0, convertedValue: 0, staleFx: 0, fxUnavailable: 0, costConverted: 0, manual: 0 };
     const buckets: Record<Currency, Bucket> = {
       USD: { currency: 'USD', valuedCopies: 0, value: 0, paidCopies: 0, paid: 0, comparableCopies: 0, comparableCost: 0, comparableValue: 0 },
       EUR: { currency: 'EUR', valuedCopies: 0, value: 0, paidCopies: 0, paid: 0, comparableCopies: 0, comparableCost: 0, comparableValue: 0 }
@@ -66,7 +66,10 @@ export class PortfolioService {
         const identityQuotes = a.catalogCardId === null ? [] : (quotes.get(identityKey(a.language, a.catalogCardId)) ?? []);
         const valuations = valuationsFor({ variant: a.variant, variantDetail: a.variantDetail, graded, manual, updatedAt: '' }, identityQuotes, fx);
         const usdValuation = valuations.find((v) => v.currency === 'USD');
-        if (usdValuation) {
+        if (manual) {
+          // Manual values are the owner's own numbers: never attributed to TCGplayer or Cardmarket.
+          fxStats.manual += n;
+        } else if (usdValuation) {
           if (usdValuation.converted) {
             fxStats.converted += n;
             fxStats.convertedValue = safeAdd(fxStats.convertedValue, safeMul(usdValuation.cents, n));
@@ -110,7 +113,7 @@ export class PortfolioService {
       const b = buckets[c];
       const fxExtra: Partial<CurrencyStats> = c === 'USD' && totalCopies > 0
         ? {
-            sourcePricedCopies: fxStats.sourcePriced, convertedCopies: fxStats.converted, convertedValueCents: fxStats.convertedValue, staleFxCopies: fxStats.staleFx,
+            sourcePricedCopies: fxStats.sourcePriced, manualCopies: fxStats.manual, convertedCopies: fxStats.converted, convertedValueCents: fxStats.convertedValue, staleFxCopies: fxStats.staleFx,
             fxUnavailableCopies: fxStats.fxUnavailable, costConvertedCopies: fxStats.costConverted, fxRateDate: fx?.record.rateDate ?? null
           }
         : {};
