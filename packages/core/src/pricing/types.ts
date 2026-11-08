@@ -38,6 +38,11 @@ export interface MarketQuote {
   observedAt: string;
   /** The provider's own timestamp for the value (ISO-8601 UTC), when it supplies one. */
   providerUpdatedAt: string | null;
+  /**
+   * Set when the provider says how a figure is derived but not the window/method we could audit (e.g. TCGplayer `market`:
+   * "average across multiple recent transactions", window unspecified). Absent = no such caveat. Never implies a verified sale.
+   */
+  methodology?: 'provider-unspecified';
 }
 
 export interface GradedInfo {

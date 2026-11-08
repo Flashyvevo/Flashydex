@@ -8,7 +8,8 @@ import { BottomSheet, ConfirmDialog, useToast } from './overlay';
 import { Page } from './page';
 import { RefreshSetRow } from './refresh-set';
 import { Banner, Button, EmptyState, ErrorState, LinkButton, OfflineChip, SegmentedControl, Skeleton, cx } from './ui';
-import { useCatalogCard, useOwnedCopy, useRemoveCopy, useLocations, useSettings, useUpdateCopy, type OwnedDto, type PriceDto, type Currency } from '../data';
+import { useCatalogCard, useFxRecord, useOwnedCopy, useRemoveCopy, useLocations, useSettings, useUpdateCopy, type OwnedDto, type PriceDto, type Currency } from '../data';
+import { resolveFx, valuationsFor, type FxContext, type Quote } from '@flashydex/core';
 import { errorCode } from '../lib/errors';
 import { hasCurrencyPrice, priceGap } from '../lib/price-gap';
 import { describeValuationSource, type ValuationSource } from '../lib/fx/coverage';
@@ -95,15 +96,29 @@ function PricesTable({ prices, currencyTab }: { prices: PriceDto[]; currencyTab:
 
 /* ───────── Estimated value (derived USD for EUR-only prints) ───────── */
 
-function EstimatedValue({ copies, currency }: { copies: OwnedDto[]; currency: Currency }) {
-  // One line per exact print (variant + detail); the first raw, non-manual copy represents it. Graded/manual copies carry their own text elsewhere.
+type EstimatePrint = { variant: string; variantDetail: string; valuations: OwnedDto['valuations'] };
+
+/** One estimate per exact print (variant + detail) found in the card's latest quotes — for a card the user does not own yet. Never mixes variants. */
+function printsFromQuotes(prices: readonly PriceDto[], fx: FxContext | null): EstimatePrint[] {
+  const keys = new Map<string, { variant: string; variantDetail: string }>();
+  for (const p of prices) keys.set(`${p.variant}|${p.variantDetail}`, { variant: p.variant, variantDetail: p.variantDetail });
+  return [...keys.values()]
+    .map((k) => ({ ...k, valuations: valuationsFor({ variant: k.variant, variantDetail: k.variantDetail, graded: false, manual: null, updatedAt: '' }, prices as Quote[], fx) }))
+    .sort((a, b) => a.variant.localeCompare(b.variant) || a.variantDetail.localeCompare(b.variantDetail));
+}
+
+/** Per-print provenance from whatever copies are loaded (first raw, non-manual copy per print). Graded/manual copies carry their own text elsewhere. */
+function printsFromCopies(copies: readonly OwnedDto[]): EstimatePrint[] {
   const seen = new Map<string, OwnedDto>();
   for (const x of copies) {
     if (x.grade || x.manualPrice) continue;
     const key = `${x.variant}|${x.variantDetail}`;
     if (!seen.has(key)) seen.set(key, x);
   }
-  const prints = [...seen.values()];
+  return [...seen.values()].map((x) => ({ variant: x.variant, variantDetail: x.variantDetail, valuations: x.valuations }));
+}
+
+function EstimatedValue({ prints, currency, note }: { prints: EstimatePrint[]; currency: Currency; note?: string | null }) {
   if (prints.length === 0) return null;
   const money = (cents: number, cur: Currency) => formatMoney(cents, cur) ?? '';
   return (
@@ -132,6 +147,7 @@ function EstimatedValue({ copies, currency }: { copies: OwnedDto[]; currency: Cu
           </div>
         );
       })}
+      {note && <p className="text-caption text-fg-muted" data-testid="est-note">{note}</p>}
     </div>
   );
 }
@@ -263,6 +279,17 @@ export function CatalogCardView({
   const valued = copies.filter((x) => x.valuations.some((v) => v.currency === currency));
   const worth = valued.reduce((n, x) => n + (x.valuations.find((v) => v.currency === currency)?.cents ?? 0), 0);
   const allLoaded = c ? copies.length === c.ownedCount : false;
+  const fxRecord = useFxRecord();
+  const fxContext = useMemo(() => resolveFx({ get: () => fxRecord }, new Date().toISOString()), [fxRecord]);
+  const estimatePrints = useMemo(() => {
+    if (!c) return [];
+    // Owned: provenance per print from the LOADED copies (complete or not). Unowned: from the catalog quotes, so the screen is informative before you own it.
+    return c.ownedCount > 0 ? printsFromCopies(copies) : printsFromQuotes(c.latestPrices as PriceDto[], fxContext);
+  }, [c, copies, fxContext]);
+  const estimateNote = !c ? null
+    : c.ownedCount === 0 ? 'You don’t own this card yet — estimate from the latest prices.'
+    : copies.length < c.ownedCount ? (offset === 0 ? `Showing prices for the first ${formatInt(copies.length)} of ${formatInt(c.ownedCount)} copies.` : `Showing prices for the ${formatInt(copies.length)} copies on this page (of ${formatInt(c.ownedCount)}).`)
+    : null;
 
   if (card.isError && errorCode(card.error) === 'NOT_FOUND') {
     return (
@@ -419,7 +446,7 @@ export function CatalogCardView({
             ) : (
               <p className="text-small text-fg-subtle">No price data from TCGdex for this card.</p>
             )}
-            {c.ownedCount > 0 && allLoaded && <EstimatedValue copies={copies} currency={currency} />}
+            <EstimatedValue prints={estimatePrints} currency={currency} note={estimateNote} />
             {c.ownedCount > 0 && allLoaded && (
               <p className="text-small text-fg-muted">Your copies are worth {valued.length ? formatMoney(worth, currency) : '—'} ({valued.length} of {copies.length} {copies.length === 1 ? 'copy' : 'copies'} valued)</p>
             )}

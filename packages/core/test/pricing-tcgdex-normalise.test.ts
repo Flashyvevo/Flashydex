@@ -19,7 +19,7 @@ describe('normaliseTcgdexPricing (real TCGdex payloads)', () => {
   it('swsh3-136: tcgplayer per-variant fields are listing estimates in USD cents', () => {
     const q = run('pricing-en-swsh3-136');
     const market = find(q, 'normal', 'market');
-    expect(market).toMatchObject({ provider: TCGDEX_PROVIDER, kind: 'listing-estimate', currency: 'USD', cents: 30, providerUpdatedAt: '2026-11-07T23:49:29.372Z', observedAt: OBSERVED });
+    expect(market).toMatchObject({ provider: TCGDEX_PROVIDER, kind: 'provider-sale-average', methodology: 'provider-unspecified', currency: 'USD', cents: 30, providerUpdatedAt: '2026-11-07T23:49:29.372Z', observedAt: OBSERVED });
     expect(market?.cardIdentity).toEqual({ language: 'en', cardId: 'swsh3-136', variant: 'normal', variantDetail: '' });
     expect(find(q, 'normal', 'mid')?.cents).toBe(28);
     expect(find(q, 'normal', 'low')?.cents).toBe(2);
@@ -46,7 +46,7 @@ describe('normaliseTcgdexPricing (real TCGdex payloads)', () => {
     expect(find(q, 'cardmarket-foil', 'low')).toBeUndefined();
     expect(find(q, 'cardmarket-foil', 'trend')?.cents).toBe(12363);
     expect(find(q, 'cardmarket-nonfoil', 'avg')?.cents).toBe(45810);
-    expect(find(q, 'holo', 'market')).toMatchObject({ cents: 98713, currency: 'USD', kind: 'listing-estimate' });
+    expect(find(q, 'holo', 'market')).toMatchObject({ cents: 98713, currency: 'USD', kind: 'provider-sale-average', methodology: 'provider-unspecified' });
     expect(find(q, 'holo', 'directLow')?.cents).toBe(149909);
     expect(q.filter((x) => x.currency === 'USD').every((x) => x.cardIdentity.variant === 'holo')).toBe(true);
   });
@@ -84,7 +84,8 @@ describe('normaliseTcgdexPricing (real TCGdex payloads)', () => {
       if (quote.cardIdentity.variant.startsWith('cardmarket')) {
         expect(quote.kind).toBe(['avg', 'avg1', 'avg7', 'avg30'].includes(quote.quoteType) ? 'provider-sale-average' : 'listing-estimate');
       } else {
-        expect(quote.kind).toBe('listing-estimate');
+        expect(quote.kind).toBe(quote.quoteType === 'market' ? 'provider-sale-average' : 'listing-estimate');
+        expect(quote.methodology).toBe(quote.quoteType === 'market' ? 'provider-unspecified' : undefined);
       }
     }
   });
@@ -102,5 +103,25 @@ describe('normaliseTcgdexPricing (real TCGdex payloads)', () => {
     for (const input of [null, undefined, 5, 'x', [], {}, { cardmarket: null, tcgplayer: null }, { tcgplayer: { unit: 'USD', normal: { marketPrice: 'abc', lowPrice: -1 } } }]) {
       expect(normaliseTcgdexPricing(input, opts)).toEqual([]);
     }
+  });
+});
+
+describe('TCGplayer market classification (R11-05)', () => {
+  it('market = provider-sale-average + provider-unspecified; low/mid/high/directLow stay listing-estimate without methodology', () => {
+    const q = run('pricing-en-swsh3-136').filter((x) => x.provider === TCGDEX_PROVIDER && x.currency === 'USD');
+    expect(q.length).toBeGreaterThan(0);
+    for (const quote of q) {
+      if (quote.quoteType === 'market') {
+        expect(quote.kind).toBe('provider-sale-average');
+        expect(quote.methodology).toBe('provider-unspecified');
+      } else {
+        expect(quote.kind).toBe('listing-estimate');
+        expect(quote.methodology).toBeUndefined();
+      }
+      expect(quote.kind).not.toBe('verified-sale');
+    }
+  });
+  it('Cardmarket quotes carry no methodology field', () => {
+    for (const quote of run('pricing-en-swsh3-136').filter((x) => x.currency === 'EUR')) expect('methodology' in quote).toBe(false);
   });
 });

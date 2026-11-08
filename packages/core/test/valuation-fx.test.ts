@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FxRecord } from '../src/domain/fx';
 import { copyOf, harness, installCatalog, TEST_SET, testCards, type Harness } from './helpers';
 
-const RATE: FxRecord = { base: 'EUR', quote: 'USD', rate: '1.1165', rateDate: '2026-11-06', provider: 'frankfurter', fetchedAt: '2026-10-30T11:00:00.000Z' };
+const RATE: FxRecord = { base: 'EUR', quote: 'USD', rate: '1.1165', rateDate: '2026-10-29', provider: 'frankfurter', fetchedAt: '2026-10-29T11:00:00.000Z' };
 
 let h: Harness;
 const setFx = (record: FxRecord | null) => { h.ctx.fx = { get: () => record }; };
@@ -40,7 +40,7 @@ describe('valuation with FX (gate 1-6, 8-11)', () => {
     const v = usd(copy);
     expect(v).toMatchObject({
       currency: 'USD', cents: 2389, source: 'cardmarket', converted: true, originalCents: 2140, originalCurrency: 'EUR', fxRate: '1.1165',
-      fxRateDate: '2026-11-06', fxProvider: 'frankfurter', quoteType: 'avg', stale: false
+      fxRateDate: '2026-10-29', fxProvider: 'frankfurter', quoteType: 'avg', stale: false
     });
     expect(eur(copy)).toMatchObject({ cents: 2140, source: 'cardmarket' });
     expect(eur(copy)?.converted).toBeUndefined();

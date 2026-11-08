@@ -1,4 +1,4 @@
-import { isValidFxRecord, type FxRecord } from '@flashydex/core';
+import { validateFxRecord, type FxRecord } from '@flashydex/core';
 
 /** Frankfurter (ECB reference rates, published on weekdays). Real response shape, verified with curl:
  *  {"amount":1.0,"base":"EUR","date":"2026-11-06","rates":{"USD":1.1165}} */
@@ -16,13 +16,8 @@ export function parseFrankfurter(body: unknown, fetchedAt: string): FxRecord | n
   if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return null;
   const rate = String(raw);
   if (!/^\d+(\.\d+)?$/.test(rate)) return null; // exponent forms etc.: refuse rather than guess
-  const record: FxRecord = { base: 'EUR', quote: 'USD', rate, rateDate: b.date, provider: 'frankfurter', fetchedAt };
-  if (!isValidFxRecord(record)) return null;
-  // A rate dated more than a day in the future is not a reference rate we can trust.
-  const dateMs = Date.parse(`${b.date}T00:00:00.000Z`);
-  const fetchedMs = Date.parse(fetchedAt);
-  if (!Number.isFinite(fetchedMs) || dateMs > fetchedMs + 86_400_000) return null;
-  return record;
+  // Same strict validation as the storage read path (real calendar date, <= 1 day ahead, >= 1999-01-04, rate <= 12 fractional digits).
+  return validateFxRecord({ base: 'EUR', quote: 'USD', rate, rateDate: b.date, provider: 'frankfurter', fetchedAt }, fetchedAt);
 }
 
 /** One network fetch. Resolves null on offline/HTTP/parse failure (callers keep the last verified record). */

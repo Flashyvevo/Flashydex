@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeFxCoverage, describeValuationSource } from './coverage';
+import { describeFxCoverage, describeValuationSource, describeValueSource } from './coverage';
 
 const money = (cents: number, cur: 'USD' | 'EUR') => `${cur === 'USD' ? '$' : '€'}${(cents / 100).toFixed(2)}`;
 
@@ -31,5 +31,20 @@ describe('describeValuationSource', () => {
     expect(describeValuationSource({ source: 'tcgplayer', cents: 250, quoteType: 'mid' }, money)).toBe('TCGplayer mid $2.50');
     expect(describeValuationSource({ source: 'cardmarket', cents: 2140 }, money)).toBe('Cardmarket avg €21.40');
     expect(describeValuationSource({ source: 'manual', cents: 1 }, money)).toBeNull();
+  });
+});
+
+describe('describeValueSource (R11-02)', () => {
+  it('derives the label from the bucket composition', () => {
+    expect(describeValueSource({ sourcePricedCopies: 3, convertedCopies: 0, fxRateDate: '2026-11-06' }, 'USD')).toBe('TCGplayer prices');
+    expect(describeValueSource(undefined, 'USD')).toBe('TCGplayer prices');
+    expect(describeValueSource({ convertedCopies: 0 }, 'USD')).toBe('TCGplayer prices');
+    expect(describeValueSource({ sourcePricedCopies: 0, convertedCopies: 2, fxRateDate: '2026-11-06' }, 'USD')).toBe('Cardmarket prices converted to USD (ECB 2026-11-06)');
+    expect(describeValueSource({ sourcePricedCopies: 0, convertedCopies: 2, fxRateDate: null }, 'USD')).toBe('Cardmarket prices converted to USD');
+    expect(describeValueSource({ sourcePricedCopies: 1, convertedCopies: 2, fxRateDate: '2026-11-06' }, 'USD')).toBe('TCGplayer + converted Cardmarket prices');
+    expect(describeValueSource({ sourcePricedCopies: 1, convertedCopies: 2 }, 'EUR')).toBe('Cardmarket prices');
+  });
+  it('never calls an all-converted total TCGplayer', () => {
+    expect(describeValueSource({ sourcePricedCopies: 0, convertedCopies: 5, fxRateDate: '2026-11-06' }, 'USD')).not.toContain('TCGplayer');
   });
 });

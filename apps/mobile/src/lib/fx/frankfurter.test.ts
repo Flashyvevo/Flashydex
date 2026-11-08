@@ -18,6 +18,14 @@ describe('parseFrankfurter', () => {
     ];
     for (const body of bad) expect(parseFrankfurter(body, NOW), JSON.stringify(body)).toBeNull();
   });
+  it('rejects impossible calendar dates, pre-euro dates and over-long rates', () => {
+    expect(parseFrankfurter({ base: 'EUR', date: '2026-02-31', rates: { USD: 1.1 } }, NOW)).toBeNull();
+    expect(parseFrankfurter({ base: 'EUR', date: '2026-13-01', rates: { USD: 1.1 } }, NOW)).toBeNull();
+    expect(parseFrankfurter({ base: 'EUR', date: '1998-12-31', rates: { USD: 1.1 } }, NOW)).toBeNull();
+    expect(parseFrankfurter({ base: 'EUR', date: '2026-11-06', rates: { USD: 1.1234567890123 } }, NOW)).toBeNull();
+    expect(parseFrankfurter({ base: 'EUR', date: '2026-11-06', rates: { USD: 1.1234567 } }, NOW)?.rate).toBe('1.1234567');
+    expect(parseFrankfurter({ base: 'EUR', date: '2026-11-06', rates: { USD: 1.1 } }, 'not-a-clock')).toBeNull();
+  });
   it('rejects a rate dated more than a day in the future', () => {
     expect(parseFrankfurter({ base: 'EUR', date: '2026-11-20', rates: { USD: 1.1 } }, NOW)).toBeNull();
     expect(parseFrankfurter({ base: 'EUR', date: '2026-11-09', rates: { USD: 1.1 } }, NOW)).not.toBeNull();

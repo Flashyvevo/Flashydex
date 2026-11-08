@@ -31,12 +31,12 @@ const TCGPLAYER_KEYS: Record<string, { variant: string; variantDetail: string }>
 };
 
 /**
- * TCGplayer fields. All are `listing-estimate`: TCGdex relays TCGplayer's own low/mid/high/market/direct-low
- * figures, which we cannot audit as individual sales (TCGplayer describes marketPrice as based on recent sales,
- * but it is a provider-computed number, so we do not label it a verified sale or a sale average).
+ * TCGplayer fields. `market` is `provider-sale-average` with `methodology:'provider-unspecified'`: TCGplayer defines Market
+ * Price as "based upon actual recent sales ... average across multiple recent transactions" but gives no window we can audit,
+ * so it is neither a listing nor an individual verified sale. low/mid/high/directLow are listing-derived => listing-estimate.
  */
-const TCGPLAYER_FIELDS: ReadonlyArray<readonly [string, QuoteType, QuoteKind]> = [
-  ['marketPrice', 'market', 'listing-estimate'],
+const TCGPLAYER_FIELDS: ReadonlyArray<readonly [string, QuoteType, QuoteKind, 'provider-unspecified'?]> = [
+  ['marketPrice', 'market', 'provider-sale-average', 'provider-unspecified'],
   ['midPrice', 'mid', 'listing-estimate'],
   ['lowPrice', 'low', 'listing-estimate'],
   ['highPrice', 'high', 'listing-estimate'],
@@ -78,10 +78,10 @@ function currencyOf(block: Json, expected: PricingCurrency): PricingCurrency | n
 export function normaliseTcgdexPricing(pricing: unknown, options: NormaliseOptions): MarketQuote[] {
   if (!isRecord(pricing)) return [];
   const out: MarketQuote[] = [];
-  const push = (identity: CardIdentity, quoteType: QuoteType, kind: QuoteKind, currency: PricingCurrency, raw: unknown, providerUpdatedAt: string | null) => {
+  const push = (identity: CardIdentity, quoteType: QuoteType, kind: QuoteKind, currency: PricingCurrency, raw: unknown, providerUpdatedAt: string | null, methodology?: 'provider-unspecified') => {
     const { cents } = parseCents(raw);
     if (cents === null || cents <= 0) return;
-    out.push({ provider: TCGDEX_PROVIDER, cardIdentity: identity, quoteType, kind, currency, cents, observedAt: options.observedAt, providerUpdatedAt });
+    out.push({ provider: TCGDEX_PROVIDER, cardIdentity: identity, quoteType, kind, currency, cents, observedAt: options.observedAt, providerUpdatedAt, ...(methodology ? { methodology } : {}) });
   };
 
   const tcg = pricing.tcgplayer;
@@ -93,7 +93,7 @@ export function normaliseTcgdexPricing(pricing: unknown, options: NormaliseOptio
         if (!isRecord(entry)) continue; // skips updated/unit and anything non-object
         const mapped = TCGPLAYER_KEYS[key] ?? { variant: 'other', variantDetail: key };
         const identity: CardIdentity = { language: options.language, cardId: options.cardId, ...mapped };
-        for (const [field, quoteType, kind] of TCGPLAYER_FIELDS) push(identity, quoteType, kind, currency, entry[field], updated);
+        for (const [field, quoteType, kind, methodology] of TCGPLAYER_FIELDS) push(identity, quoteType, kind, currency, entry[field], updated, methodology);
       }
     }
   }

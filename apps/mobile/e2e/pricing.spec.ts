@@ -47,6 +47,8 @@ test('dashboard shows converted coverage with the FX date; EUR-only value is add
   await expect(page.getByTestId('fx-coverage')).toHaveText(`1 source-priced · 1 converted (FX ${date}) · 0 unpriced`, { timeout: 30_000 });
   // 251 (225 EUR cents x 1.1165 = 251.2) + 10 native = $2.61
   await expect(page.getByTestId('value-primary')).toHaveText('$2.61');
+  // Mixed bucket (1 native + 1 converted): the label must name both sources.
+  await expect(page.getByTestId('value-source')).toHaveText('TCGplayer + converted Cardmarket prices');
   await expect(page.getByTestId('fx-stale')).toHaveCount(0);
   expect(errors.filter((e) => !/frankfurter|ERR_INTERNET_DISCONNECTED/i.test(e))).toEqual([]);
 });
@@ -73,6 +75,8 @@ test('offline / fetch failure keeps the cached rate and shows its date; a rate o
   await page.goto('/');
   await expect(page.getByTestId('fx-coverage')).toHaveText(`0 source-priced · 1 converted (FX ${cachedDate}) · 0 unpriced`, { timeout: 30_000 });
   await expect(page.getByTestId('fx-stale')).toHaveCount(0);
+  // All-converted bucket: never labelled TCGplayer.
+  await expect(page.getByTestId('value-source')).toHaveText(`Cardmarket prices converted to USD (ECB ${cachedDate})`);
   await page.goto('/cards/en/swsh3-105?variant=other');
   await expect(page.getByTestId('est-source')).toHaveText(`Cardmarket €2.25 → $2.70 · ECB rate 1.2000 (${cachedDate})`, { timeout: 30_000 });
 
@@ -99,4 +103,27 @@ test('no cached rate and no network: EUR-only value is "unavailable", never $0.0
   await expect(page.getByTestId('est-unavailable')).toContainText('USD value unavailable — no exchange rate yet · Cardmarket avg €2.25', { timeout: 30_000 });
   await expect(page.getByTestId('est-value')).toHaveCount(0);
   await expect(page.locator('main, body').first()).not.toContainText('$0.00');
+});
+
+test('unowned card: the estimate block shows the converted $ value from the quotes before you own it', async ({ page }) => {
+  const date = isoDate(-1);
+  await mockFrankfurter(page, { date, rate: 1.1165 });
+  await onboardAndInstall(page);
+  await page.waitForFunction((k) => Boolean(localStorage.getItem(k)), KEY);
+  await page.goto('/cards/en/swsh3-105');
+  // swsh3-105 has several prints; the EUR-only one must show its converted $ line and provenance.
+  await expect(page.getByTestId('est-source').filter({ hasText: '€2.25' })).toHaveText(`Cardmarket €2.25 → $2.51 · ECB rate 1.1165 (${date})`, { timeout: 30_000 });
+  await expect(page.getByTestId('est-value').filter({ hasText: '$2.51' })).toHaveCount(1);
+  await expect(page.getByTestId('est-note')).toContainText('You don’t own this card yet');
+});
+
+test('more copies than one page: provenance still shows from the loaded copies and says "first N"', async ({ page }) => {
+  const date = isoDate(-1);
+  await mockFrankfurter(page, { date, rate: 1.1165 });
+  await onboardAndInstall(page);
+  await page.waitForFunction((k) => Boolean(localStorage.getItem(k)), KEY);
+  await addCopies(page, Array.from({ length: 55 }, () => EUR_ONLY));
+  await page.goto('/cards/en/swsh3-105?variant=other');
+  await expect(page.getByTestId('est-source')).toHaveText(`Cardmarket €2.25 → $2.51 · ECB rate 1.1165 (${date})`, { timeout: 60_000 });
+  await expect(page.getByTestId('est-note')).toHaveText(/Showing prices for the first \d+ of 55 copies\./);
 });

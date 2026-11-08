@@ -64,17 +64,31 @@ function assertVerifiedSale(record: unknown, index: number): asserts record is S
  * excluded, then outliers (IQR or MAD) are trimmed, then mean/median are taken over what remains.
  *
  * Window: soldAt in (now - windowDays, now]. Unparseable or future timestamps count as out-of-window.
- * Runtime guard: any record whose `kind` is not 'verified-sale' throws (defence in depth behind the type).
+ * Runtime guards (throw): `now` must be a valid Date; every record must be a 'verified-sale' with finite non-negative integer
+ * `priceCents`; all records must share one card identity (language, cardId, variant, variantDetail).
  */
 export function summariseSold(records: readonly SoldRecord[], options: SummariseOptions): SoldSummary[] {
   const { windowDays, now, outlier } = options;
   if (!(windowDays > 0) || !Number.isFinite(windowDays)) throw new RangeError('summariseSold: windowDays must be a positive number');
-  const nowMs = now.getTime();
+  const nowMs = now instanceof Date ? now.getTime() : Number.NaN;
+  if (!Number.isFinite(nowMs)) throw new RangeError('summariseSold: now must be a valid Date');
   const startMs = nowMs - windowDays * DAY_MS;
 
-  const groups = new Map<string, { bucket: SoldSummaryBucket; kept: number[]; outOfWindow: number; bundle: number }>();
+  // One call summarises ONE card print: mixing identities would average different cards/prints into a single number.
+  let identity: string | null = null;
   records.forEach((record, index) => {
     assertVerifiedSale(record, index);
+    if (typeof record.priceCents !== 'number' || !Number.isInteger(record.priceCents) || record.priceCents < 0) {
+      throw new RangeError(`summariseSold: record[${index}].priceCents must be a finite non-negative integer (got ${String(record.priceCents)})`);
+    }
+    const c = record.cardIdentity;
+    const key = JSON.stringify([c?.language, c?.cardId, c?.variant, c?.variantDetail]);
+    if (identity === null) identity = key;
+    else if (key !== identity) throw new TypeError(`summariseSold: record[${index}] has a different card identity (language/cardId/variant/variantDetail) than record[0]; summarise one print at a time`);
+  });
+
+  const groups = new Map<string, { bucket: SoldSummaryBucket; kept: number[]; outOfWindow: number; bundle: number }>();
+  records.forEach((record) => {
     const graded = record.graded ? { company: record.graded.company.trim().toUpperCase(), grade: record.graded.grade.trim() } : null;
     const key = bucketKey(graded, record.currency);
     let group = groups.get(key);

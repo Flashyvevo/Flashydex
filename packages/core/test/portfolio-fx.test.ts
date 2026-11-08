@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FxRecord } from '../src/domain/fx';
 import { copyOf, harness, installCatalog, TEST_SET, testCards, type Harness } from './helpers';
 
-const RATE: FxRecord = { base: 'EUR', quote: 'USD', rate: '1.1165', rateDate: '2026-11-06', provider: 'frankfurter', fetchedAt: '2026-10-30T11:00:00.000Z' };
+const RATE: FxRecord = { base: 'EUR', quote: 'USD', rate: '1.1165', rateDate: '2026-10-29', provider: 'frankfurter', fetchedAt: '2026-10-29T11:00:00.000Z' };
 
 let h: Harness;
 const setFx = (record: FxRecord | null) => { h.ctx.fx = { get: () => record }; };
@@ -31,7 +31,7 @@ describe('portfolio with FX', () => {
     const d = await h.portfolio.dashboard({});
     expect(d.currencies[0]).toMatchObject({
       estimatedValueCents: 3 * 2389, valuedCopies: 3, convertedCopies: 3, convertedValueCents: 3 * 2389, sourcePricedCopies: 0, staleFxCopies: 0,
-      fxUnavailableCopies: 0, fxRateDate: '2026-11-06', unvaluedCopies: 0
+      fxUnavailableCopies: 0, fxRateDate: '2026-10-29', unvaluedCopies: 0
     });
     expect(d.pricedCopies).toBe(3);
     expect(d.currencies[1]).toMatchObject({ estimatedValueCents: 3 * 2140, valuedCopies: 3 }); // EUR bucket unchanged and separate

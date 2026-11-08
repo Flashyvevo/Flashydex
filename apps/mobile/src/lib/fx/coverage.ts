@@ -45,3 +45,16 @@ export function describeValuationSource(v: ValuationSource, money: (cents: numbe
   if (v.source === 'tcgplayer') return `TCGplayer ${v.quoteType === 'mid' ? 'mid' : 'market'} ${money(v.cents, 'USD')}`;
   return `Cardmarket avg ${money(v.cents, 'EUR')}`;
 }
+
+/**
+ * Source attribution for a currency's total, derived from the bucket composition (never assumed):
+ * all source-priced → TCGplayer; all converted → Cardmarket converted with the ECB date; mixed → both; EUR → Cardmarket.
+ */
+export function describeValueSource(s: Pick<FxCoverageStats, 'sourcePricedCopies' | 'convertedCopies' | 'fxRateDate'> | undefined, currency: 'USD' | 'EUR'): string {
+  if (currency === 'EUR') return 'Cardmarket prices';
+  const converted = s?.convertedCopies ?? 0;
+  if (converted === 0) return 'TCGplayer prices';
+  const source = s?.sourcePricedCopies ?? 0;
+  if (source === 0) return s?.fxRateDate ? `Cardmarket prices converted to USD (ECB ${s.fxRateDate})` : 'Cardmarket prices converted to USD';
+  return 'TCGplayer + converted Cardmarket prices';
+}

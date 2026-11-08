@@ -110,3 +110,29 @@ describe('summariseSold', () => {
     expect(bad.kind).toBe('listing-estimate');
   });
 });
+
+describe('summariseSold input validation (R11-06)', () => {
+  it('rejects an invalid or non-Date now', () => {
+    expect(() => summariseSold([sale(100)], { ...base, now: new Date('nope') })).toThrow(RangeError);
+    expect(() => summariseSold([sale(100)], { ...base, now: new Date(Number.NaN) })).toThrow(/valid Date/);
+    expect(() => summariseSold([sale(100)], { ...base, now: 1762603200000 as unknown as Date })).toThrow(RangeError);
+    expect(() => summariseSold([sale(100)], { ...base, now: undefined as unknown as Date })).toThrow(RangeError);
+  });
+  it('rejects negative, NaN, infinite, fractional and non-number cents', () => {
+    for (const bad of [-100, Number.NaN, Number.POSITIVE_INFINITY, 10.5, '100' as unknown as number, null as unknown as number, undefined as unknown as number]) {
+      expect(() => summariseSold([sale(100), sale(bad)], base), String(bad)).toThrow(RangeError);
+    }
+    expect(summariseSold([sale(0), sale(100)], base)[0]).toMatchObject({ n: 2, meanCents: 50 });
+  });
+  it('rejects mixed identities: card id, language, variant, variantDetail', () => {
+    const other = (over: Partial<SoldRecord['cardIdentity']>) => sale(100, { cardIdentity: { ...id, ...over } });
+    expect(() => summariseSold([sale(100), other({ cardId: 'base1-5' })], base)).toThrow(/different card identity/);
+    expect(() => summariseSold([sale(100), other({ language: 'ja' })], base)).toThrow(TypeError);
+    expect(() => summariseSold([sale(100), other({ variant: 'normal' })], base)).toThrow(TypeError);
+    expect(() => summariseSold([sale(100), other({ variantDetail: 'shadowless' })], base)).toThrow(TypeError);
+  });
+  it('a homogeneous set and an empty set still work', () => {
+    expect(summariseSold([sale(100), sale(300)], base)[0]).toMatchObject({ n: 2, meanCents: 200 });
+    expect(summariseSold([], base)).toEqual([]);
+  });
+});

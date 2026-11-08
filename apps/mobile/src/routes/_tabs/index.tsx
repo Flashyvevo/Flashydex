@@ -7,15 +7,14 @@ import { useToast } from '../../components/overlay';
 import { Button, EmptyState, ErrorState, LinkButton, SectionTitle, Skeleton, StatTile, cx } from '../../components/ui';
 import { useCatalogInstall, useCatalogStatus, useDashboard, useSettings, useSyncCapabilities, useUpdateOwnedPrices } from '../../data';
 import { describeProgress } from '../../lib/catalog';
-import { describeFxCoverage } from '../../lib/fx/coverage';
+import { describeFxCoverage, describeValueSource } from '../../lib/fx/coverage';
 import { describeError, isCancelled } from '../../lib/errors';
-import { formatInt, plural, formatMoney, formatSigned, LANGUAGE_NAMES, type Currency } from '../../lib/format';
+import { formatInt, plural, formatMoney, formatSigned, LANGUAGE_NAMES } from '../../lib/format';
 import { useDelayedFlag } from '../../lib/hooks';
 import { useNetwork } from '../../lib/native';
 
 export const Route = createFileRoute('/_tabs/')({ component: Dashboard });
 
-const SOURCE: Record<Currency, string> = { USD: 'TCGplayer', EUR: 'Cardmarket' };
 
 function Dashboard() {
   const dash = useDashboard();
@@ -197,11 +196,11 @@ function ValueBlock({ d, onUpdate, updating, unavailable }: { d: Dash; onUpdate:
           <FxCoverage stats={primary} />
           {otherValue && other && (
             <p className="text-small text-fg-muted" data-testid="value-secondary">
-              {otherValue} from {SOURCE[other.currency]} prices
+              {otherValue} from {describeValueSource(other, other.currency)}
             </p>
           )}
           <p className="flex flex-wrap items-center gap-x-2 text-caption text-fg-subtle">
-            <span>{SOURCE[d.displayCurrency]} prices</span>
+            <span data-testid="value-source">{describeValueSource(primary, d.displayCurrency)}</span>
             <Button variant="text" className="min-h-(--ps-tap) px-1 text-caption" loading={updating} softDisabled={unavailable !== null} aria-describedby={unavailable ? 'dash-update-reason' : undefined} onClick={onUpdate} aria-label="Update prices" data-testid="dash-update-prices">
               Update prices
             </Button>
