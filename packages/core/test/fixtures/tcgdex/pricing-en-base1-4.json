@@ -1,0 +1,38 @@
+{
+  "source": "https://api.tcgdex.net/v2/en/cards/base1-4",
+  "fetchedAt": "2026-11-08",
+  "language": "en",
+  "id": "base1-4",
+  "name": "Charizard",
+  "pricing": {
+    "cardmarket": {
+      "updated": "2026-11-07T23:49:17.843Z",
+      "unit": "EUR",
+      "idProduct": 273699,
+      "avg": 458.1,
+      "low": 85,
+      "trend": 353.78,
+      "avg1": 197.8,
+      "avg7": 312.04,
+      "avg30": 430.3,
+      "avg-holo": null,
+      "low-holo": null,
+      "trend-holo": 123.63,
+      "avg1-holo": 207.4,
+      "avg7-holo": 129.55,
+      "avg30-holo": 202.71
+    },
+    "tcgplayer": {
+      "unit": "USD",
+      "updated": "2026-11-07T23:49:18.103Z",
+      "holofoil": {
+        "productId": 42382,
+        "lowPrice": 475,
+        "midPrice": 630.17,
+        "highPrice": 3499.1,
+        "marketPrice": 987.13,
+        "directLowPrice": 1499.09
+      }
+    }
+  }
+}

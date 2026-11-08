@@ -5,11 +5,17 @@ import { chunk, placeholders, type Exec } from '../db/sql';
 import { ValidationError, type ValidationIssue } from '../errors';
 import type { Environment } from '../platform/platform';
 import type { Quote } from '../domain/valuation';
+import { resolveFx, type FxContext, type FxProvider } from '../domain/fx';
 
 export interface ServiceContext {
   databases: DatabaseSet;
   env: Environment;
+  /** Optional already-loaded FX snapshot supplied by the app (core never fetches). Absent = EUR-only cards have no USD value. */
+  fx?: FxProvider;
 }
+
+/** FX snapshot for one computation, staleness judged against the context clock. Null = unavailable. */
+export const fxFor = (ctx: ServiceContext): FxContext | null => resolveFx(ctx.fx, ctx.env.clock.now());
 
 export const CHUNK = 100;
 

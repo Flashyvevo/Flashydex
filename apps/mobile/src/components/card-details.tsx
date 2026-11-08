@@ -11,6 +11,7 @@ import { Banner, Button, EmptyState, ErrorState, LinkButton, OfflineChip, Segmen
 import { useCatalogCard, useOwnedCopy, useRemoveCopy, useLocations, useSettings, useUpdateCopy, type OwnedDto, type PriceDto, type Currency } from '../data';
 import { errorCode } from '../lib/errors';
 import { hasCurrencyPrice, priceGap } from '../lib/price-gap';
+import { describeValuationSource, type ValuationSource } from '../lib/fx/coverage';
 import { CONDITION_LABEL, VARIANT_LABEL, collectorNumber, formatDate, formatInt, formatMoney, hasJapanese, plural, variantLabel, type Variant } from '../lib/format';
 import { useDelayedFlag } from '../lib/hooks';
 import { haptic, useNetwork } from '../lib/native';
@@ -23,8 +24,9 @@ function CopyRow({ copy, onOpen, selecting, selected, onToggle, currency }: { co
   const paid = copy.purchasePrice ? formatMoney(copy.purchasePrice.cents, copy.purchasePrice.currency as Currency) : null;
   const manual = copy.manualPrice ? formatMoney(copy.manualPrice.cents, copy.manualPrice.currency as Currency) : null;
   const value = copy.valuations.find((v) => v.currency === currency);
+  const worthText = value ? `Worth ${formatMoney(value.cents, currency)}${value.converted ? ' (converted)' : ''}` : null;
   const line1 = [variantLabel(copy.variant as Variant, copy.variantDetail), copy.grade ? null : copy.condition ?? 'Condition not set', copy.storageLocationName].filter(Boolean).join(' · ');
-  const line2 = [paid ? `Paid ${paid}` : 'Paid —', formatDate(copy.acquisition?.purchasedOn), copy.acquisition?.source, manual ? `Your price ${manual}` : value ? `Worth ${formatMoney(value.cents, currency)}` : null].filter(Boolean).join(' · ');
+  const line2 = [paid ? `Paid ${paid}` : 'Paid —', formatDate(copy.acquisition?.purchasedOn), copy.acquisition?.source, manual ? `Your price ${manual}` : worthText].filter(Boolean).join(' · ');
   return (
     <button
       type="button"
@@ -88,6 +90,49 @@ function PricesTable({ prices, currencyTab }: { prices: PriceDto[]; currencyTab:
         ))}
       </tbody>
     </table>
+  );
+}
+
+/* ───────── Estimated value (derived USD for EUR-only prints) ───────── */
+
+function EstimatedValue({ copies, currency }: { copies: OwnedDto[]; currency: Currency }) {
+  // One line per exact print (variant + detail); the first raw, non-manual copy represents it. Graded/manual copies carry their own text elsewhere.
+  const seen = new Map<string, OwnedDto>();
+  for (const x of copies) {
+    if (x.grade || x.manualPrice) continue;
+    const key = `${x.variant}|${x.variantDetail}`;
+    if (!seen.has(key)) seen.set(key, x);
+  }
+  const prints = [...seen.values()];
+  if (prints.length === 0) return null;
+  const money = (cents: number, cur: Currency) => formatMoney(cents, cur) ?? '';
+  return (
+    <div className="flex flex-col gap-2" data-testid="est-value-block">
+      {prints.map((x) => {
+        const v = x.valuations.find((val) => val.currency === currency);
+        const eur = x.valuations.find((val) => val.currency === 'EUR');
+        const label = prints.length > 1 ? `${variantLabel(x.variant as Variant, x.variantDetail)}: ` : '';
+        if (!v) {
+          // USD requested, a Cardmarket price exists, but there is no exchange rate: say so, never $0.00.
+          if (currency === 'USD' && eur) {
+            return (
+              <p key={`${x.variant}|${x.variantDetail}`} className="text-small text-fg-muted" data-testid="est-unavailable">
+                {label}USD value unavailable — no exchange rate yet · Cardmarket avg {money(eur.cents, 'EUR')}
+              </p>
+            );
+          }
+          return null;
+        }
+        const source = describeValuationSource(v as ValuationSource, money);
+        return (
+          <div key={`${x.variant}|${x.variantDetail}`} className="flex flex-col gap-0.5">
+            <p className="text-small tabular-nums" data-testid="est-value">{label}Estimated value {money(v.cents, currency)}</p>
+            {source && <p className="text-caption text-fg-subtle" data-testid="est-source">{source}</p>}
+            {v.converted && v.stale && <p className="text-caption text-warning" data-testid="est-stale">FX rate from {v.fxRateDate}</p>}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -374,6 +419,7 @@ export function CatalogCardView({
             ) : (
               <p className="text-small text-fg-subtle">No price data from TCGdex for this card.</p>
             )}
+            {c.ownedCount > 0 && allLoaded && <EstimatedValue copies={copies} currency={currency} />}
             {c.ownedCount > 0 && allLoaded && (
               <p className="text-small text-fg-muted">Your copies are worth {valued.length ? formatMoney(worth, currency) : '—'} ({valued.length} of {copies.length} {copies.length === 1 ? 'copy' : 'copies'} valued)</p>
             )}

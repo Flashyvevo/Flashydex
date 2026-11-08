@@ -20,7 +20,7 @@ export type OwnedLike = {
   condition: Condition | null;
   grade: (GradeLike & { certNumber?: string | null }) | null;
   manualPrice: { cents: number; currency: Currency } | null;
-  valuations: { currency: Currency; cents: number; source: 'manual' | 'tcgplayer' | 'cardmarket' }[];
+  valuations: { currency: Currency; cents: number; source: 'manual' | 'tcgplayer' | 'cardmarket'; converted?: boolean }[];
 };
 
 export type GroupLike = {

@@ -10,6 +10,7 @@ export { useStartupProgress } from './startup-progress';
 export { fdxMeasures } from './bootstrap';
 
 export { useSettings, useUpdateSettings, useDashboard } from './settings-hooks';
+export { fxProvider, useFxRecord, useFxSync, refreshFxIfNeeded } from './fx-hooks';
 
 export {
   useCollection, useOwnedCopy, useAddCopies, useUpdateCopy, useRemoveCopy, useOwnedSetKeys,

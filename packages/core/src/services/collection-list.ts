@@ -3,7 +3,7 @@ import { nameSearch, localIdSort } from '../catalog/tcgdex';
 import { valuationsFor, valueIn } from '../domain/valuation';
 import { chunk } from '../db/sql';
 import { ValidationError } from '../errors';
-import { identityKey, loadQuotes, loadSeries, parse, readSettings, type ServiceContext } from './context';
+import { identityKey, fxFor, loadQuotes, loadSeries, parse, readSettings, type ServiceContext } from './context';
 import { hydrateOwned } from './owned-read';
 
 type Variant = OwnedDto['variant'];
@@ -95,13 +95,15 @@ async function listOwnedOnce(ctx: ServiceContext, rawInput: Input<typeof OwnedLi
   if (input.priced !== undefined || input.sort === 'value_desc' || input.sort === 'value_asc') {
     const quotes = await loadQuotes(ctx, copies.filter((c) => c.catalogCardId !== null).map((c) => ({ language: c.language, id: c.catalogCardId as string })));
     const cache = new Map<string, number | null>();
+    const fx = fxFor(ctx);
     valueOf = (c) => {
       const key = `${c.id}`;
       if (cache.has(key)) return cache.get(key) ?? null;
       const manual = c.manualCents !== null && c.manualCurrency !== null ? { cents: c.manualCents, currency: c.manualCurrency } : null;
       const valuations = valuationsFor(
         { variant: c.variant, variantDetail: c.variantDetail, graded: c.graded === 1, manual, updatedAt: c.updatedAt },
-        c.catalogCardId === null ? [] : (quotes.get(identityKey(c.language, c.catalogCardId)) ?? [])
+        c.catalogCardId === null ? [] : (quotes.get(identityKey(c.language, c.catalogCardId)) ?? []),
+        fx
       );
       const value = valueIn(valuations, currency);
       cache.set(key, value);

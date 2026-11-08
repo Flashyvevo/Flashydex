@@ -1,0 +1,38 @@
+{
+  "source": "https://api.tcgdex.net/v2/en/cards/xy1-1",
+  "fetchedAt": "2026-11-08",
+  "language": "en",
+  "id": "xy1-1",
+  "name": "Venusaur EX",
+  "pricing": {
+    "cardmarket": {
+      "updated": "2026-11-07T23:49:17.843Z",
+      "unit": "EUR",
+      "idProduct": 281338,
+      "avg": 8.42,
+      "low": 1.9,
+      "trend": 10.39,
+      "avg1": 2,
+      "avg7": 12.15,
+      "avg30": 8.72,
+      "avg-holo": null,
+      "low-holo": null,
+      "trend-holo": 4.37,
+      "avg1-holo": 3.99,
+      "avg7-holo": 4.56,
+      "avg30-holo": 4.47
+    },
+    "tcgplayer": {
+      "unit": "USD",
+      "updated": "2026-11-07T23:49:25.428Z",
+      "holofoil": {
+        "productId": 90324,
+        "lowPrice": 4.03,
+        "midPrice": 6.16,
+        "highPrice": 94.38,
+        "marketPrice": 7.03,
+        "directLowPrice": 94.38
+      }
+    }
+  }
+}

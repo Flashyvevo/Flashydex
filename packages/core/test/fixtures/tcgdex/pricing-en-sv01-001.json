@@ -1,0 +1,46 @@
+{
+  "source": "https://api.tcgdex.net/v2/en/cards/sv01-001",
+  "fetchedAt": "2026-11-08",
+  "language": "en",
+  "id": "sv01-001",
+  "name": "Pineco",
+  "pricing": {
+    "cardmarket": {
+      "updated": "2026-11-07T23:49:17.828Z",
+      "unit": "EUR",
+      "idProduct": 702298,
+      "avg": 0.04,
+      "low": 0.02,
+      "trend": 0.03,
+      "avg1": 0.03,
+      "avg7": 0.04,
+      "avg30": 0.03,
+      "avg-holo": 0.16,
+      "low-holo": 0.02,
+      "trend-holo": 0.16,
+      "avg1-holo": 0.1,
+      "avg7-holo": 0.15,
+      "avg30-holo": 0.16
+    },
+    "tcgplayer": {
+      "unit": "USD",
+      "updated": "2026-11-07T23:49:30.680Z",
+      "normal": {
+        "productId": 487828,
+        "lowPrice": 0.01,
+        "midPrice": 0.16,
+        "highPrice": 19.66,
+        "marketPrice": 0.11,
+        "directLowPrice": null
+      },
+      "reverse-holofoil": {
+        "productId": 487828,
+        "lowPrice": 0.04,
+        "midPrice": 0.25,
+        "highPrice": 19.66,
+        "marketPrice": 0.22,
+        "directLowPrice": null
+      }
+    }
+  }
+}

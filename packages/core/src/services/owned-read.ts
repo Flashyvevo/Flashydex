@@ -1,7 +1,7 @@
 import type { AcquisitionDto, GradeDto, Language, OwnedDto } from '@flashydex/schemas';
 import { chunk, placeholders } from '../db/sql';
 import { valuationsFor } from '../domain/valuation';
-import { CHUNK, identityKey, loadOfficialCounts, loadQuotes, type ServiceContext } from './context';
+import { CHUNK, fxFor, identityKey, loadOfficialCounts, loadQuotes, type ServiceContext } from './context';
 
 type OwnedRow = {
   id: string; catalogCardId: string | null; customCardId: string | null; name: string; setId: string | null; setName: string | null;
@@ -62,6 +62,7 @@ async function hydrateOwnedOnce(ctx: ServiceContext, ids: readonly string[]): Pr
   const quotes = await loadQuotes(ctx, identities);
   const available = await catalogAvailability(ctx, identities);
   const officialCounts = await loadOfficialCounts(ctx, rows.filter((r) => r.catalogCardId !== null && r.setId !== null).map((r) => ({ language: r.language, setId: r.setId as string })));
+  const fx = fxFor(ctx);
 
   for (const r of rows) {
     const graded = r.gradeId !== null;
@@ -83,7 +84,8 @@ async function hydrateOwnedOnce(ctx: ServiceContext, ids: readonly string[]): Pr
       manualPrice: manual, grade, groupIds: groupIds.get(r.id) ?? [], duplicateCount: Number(r.dup),
       valuations: valuationsFor(
         { variant: r.variant, variantDetail: r.variantDetail, graded, manual, updatedAt: r.updatedAt },
-        r.catalogCardId === null ? [] : (quotes.get(identityKey(r.language, r.catalogCardId)) ?? [])
+        r.catalogCardId === null ? [] : (quotes.get(identityKey(r.language, r.catalogCardId)) ?? []),
+        fx
       ),
       catalogAvailable: r.catalogCardId !== null && available.has(identityKey(r.language, r.catalogCardId)),
       setOfficialCount: r.setId === null ? null : (officialCounts.get(identityKey(r.language, r.setId)) ?? null),

@@ -7,6 +7,7 @@ import { useToast } from '../../components/overlay';
 import { Button, EmptyState, ErrorState, LinkButton, SectionTitle, Skeleton, StatTile, cx } from '../../components/ui';
 import { useCatalogInstall, useCatalogStatus, useDashboard, useSettings, useSyncCapabilities, useUpdateOwnedPrices } from '../../data';
 import { describeProgress } from '../../lib/catalog';
+import { describeFxCoverage } from '../../lib/fx/coverage';
 import { describeError, isCancelled } from '../../lib/errors';
 import { formatInt, plural, formatMoney, formatSigned, LANGUAGE_NAMES, type Currency } from '../../lib/format';
 import { useDelayedFlag } from '../../lib/hooks';
@@ -193,6 +194,7 @@ function ValueBlock({ d, onUpdate, updating, unavailable }: { d: Dash; onUpdate:
           <Link to="/collection" search={{ priced: 'none' } as never} className="flex min-h-(--ps-tap) items-center text-caption text-fg-muted" data-testid="coverage">
             {formatInt(d.pricedCopies)} of {formatInt(d.totalCopies)} {d.totalCopies === 1 ? 'copy' : 'copies'} priced ›
           </Link>
+          <FxCoverage stats={primary} />
           {otherValue && other && (
             <p className="text-small text-fg-muted" data-testid="value-secondary">
               {otherValue} from {SOURCE[other.currency]} prices
@@ -208,6 +210,18 @@ function ValueBlock({ d, onUpdate, updating, unavailable }: { d: Dash; onUpdate:
         </>
       )}
     </section>
+  );
+}
+
+function FxCoverage({ stats }: { stats: Dash['currencies'][number] | undefined }) {
+  const text = stats && stats.currency === 'USD' ? describeFxCoverage(stats) : null;
+  if (!text) return null;
+  return (
+    <div className="flex flex-col gap-0.5 pb-1" data-testid="fx-coverage-block">
+      <p className="text-caption text-fg-muted" data-testid="fx-coverage">{text.line}</p>
+      {text.staleBadge && <p className="text-caption text-warning" data-testid="fx-stale">{text.staleBadge}</p>}
+      {text.unavailable && <p className="text-caption text-fg-muted" data-testid="fx-unavailable">{text.unavailable}</p>}
+    </div>
   );
 }
 

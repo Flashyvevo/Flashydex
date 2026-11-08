@@ -1,6 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AppServicesContext, type StartupState } from './context';
 import { classifyStartupError, openAppServices } from './bootstrap';
+import { useFxSync } from './fx-hooks';
+
+function FxSync() {
+  useFxSync();
+  return null;
+}
 
 /**
  * Opens the user DB, runs the user migration chain, reconciles installed catalogs / interrupted install jobs, builds the services.
@@ -24,5 +30,5 @@ export function AppServicesProvider({ children }: { children: ReactNode }) {
     );
     return () => { live = false; };
   }, []);
-  return <AppServicesContext.Provider value={state}>{children}</AppServicesContext.Provider>;
+  return <AppServicesContext.Provider value={state}><FxSync />{children}</AppServicesContext.Provider>;
 }

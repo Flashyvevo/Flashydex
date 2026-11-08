@@ -1,4 +1,5 @@
 import type { Currency, PriceDto, ValuationDto } from '@flashydex/schemas';
+import { tryConvertCents, type FxContext } from './fx';
 
 
 /** Pure valuation math (DATA-MODEL "Definitions for every screen and aggregate"). No I/O, no clock. */
@@ -65,19 +66,50 @@ export function automaticValue(quotes: readonly Quote[], variant: string, varian
   return cents === null ? null : { cents, quote };
 }
 
+export type UsdResolution =
+  | { kind: 'native'; cents: number; quote: Quote }
+  | { kind: 'converted'; cents: number; quote: Quote; fx: FxContext }
+  /** A usable Cardmarket (EUR) quote exists for the exact print but there is no usable FX record: USD is unavailable, never guessed. */
+  | { kind: 'fx_unavailable'; quote: Quote }
+  | { kind: 'none' };
+
+/**
+ * USD value of an exact (variant, detail) print: (a) TCGplayer market → mid; (b) else Cardmarket mid (EUR) × FX.
+ * Never mixes variants; never adds currencies; the original EUR quote is untouched.
+ */
+export function resolveUsd(quotes: readonly Quote[], variant: string, variantDetail: string, fx: FxContext | null | undefined): UsdResolution {
+  const native = automaticValue(quotes, variant, variantDetail, 'USD');
+  if (native) return { kind: 'native', cents: native.cents, quote: native.quote };
+  const eur = automaticValue(quotes, variant, variantDetail, 'EUR');
+  if (!eur) return { kind: 'none' };
+  if (!fx) return { kind: 'fx_unavailable', quote: eur.quote };
+  const cents = tryConvertCents(eur.cents, fx.record.rate);
+  if (cents === null) return { kind: 'fx_unavailable', quote: eur.quote };
+  return { kind: 'converted', cents, quote: eur.quote, fx };
+}
+
 /** Valuations of one copy, USD then EUR. Manual wins and replaces every automatic valuation; graded without override has none. */
-export function valuationsFor(copy: ValuationInput, quotes: readonly Quote[]): ValuationDto[] {
+export function valuationsFor(copy: ValuationInput, quotes: readonly Quote[], fx?: FxContext | null): ValuationDto[] {
   if (copy.manual) {
     return [{ currency: copy.manual.currency, cents: copy.manual.cents, source: 'manual', priceSnapshotId: null, capturedAt: copy.updatedAt }];
   }
   if (copy.graded) return [];
   const out: ValuationDto[] = [];
-  for (const currency of ['USD', 'EUR'] as const) {
-    const value = automaticValue(quotes, copy.variant, copy.variantDetail, currency);
-    if (value) {
-      out.push({ currency, cents: value.cents, source: SOURCE_FOR[currency], priceSnapshotId: value.quote.id, capturedAt: value.quote.capturedAt });
-    }
+  const usd = resolveUsd(quotes, copy.variant, copy.variantDetail, fx);
+  if (usd.kind === 'native') {
+    out.push({
+      currency: 'USD', cents: usd.cents, source: 'tcgplayer', priceSnapshotId: usd.quote.id, capturedAt: usd.quote.capturedAt,
+      quoteType: usd.quote.marketCents !== null ? 'market' : 'mid'
+    });
+  } else if (usd.kind === 'converted') {
+    out.push({
+      currency: 'USD', cents: usd.cents, source: 'cardmarket', priceSnapshotId: usd.quote.id, capturedAt: usd.quote.capturedAt,
+      converted: true, originalCents: usd.quote.midCents as number, originalCurrency: 'EUR', fxRate: usd.fx.record.rate,
+      fxRateDate: usd.fx.record.rateDate, fxProvider: usd.fx.record.provider, quoteType: 'avg', stale: usd.fx.stale
+    });
   }
+  const eur = automaticValue(quotes, copy.variant, copy.variantDetail, 'EUR');
+  if (eur) out.push({ currency: 'EUR', cents: eur.cents, source: 'cardmarket', priceSnapshotId: eur.quote.id, capturedAt: eur.quote.capturedAt, quoteType: 'avg' });
   return out;
 }
 

@@ -8,6 +8,7 @@ import { CatalogRepo } from './catalog';
 import { CatalogInstallService, type CatalogConfig, type CatalogInstallPort } from './catalog-install';
 import { CollectionRepo } from './collection';
 import type { ServiceContext } from './context';
+import type { FxProvider } from '../domain/fx';
 import { PortfolioService } from './portfolio';
 import { SettingsRepo } from './settings';
 import { BackupService } from '../backup/service';
@@ -49,6 +50,8 @@ export interface CreateServicesOptions {
   catalog?: CatalogConfig;
   /** D42: the page does not own the writer lock -> every personal write is refused with INSTANCE_LOCK. */
   userWriteBlock?: { reason: 'instance_lock'; message: string };
+  /** Pricing v2: provider of the already-loaded EUR→USD record (derived valuation only). */
+  fx?: FxProvider;
 }
 
 /** Compose every service. Runs boot recovery of interrupted catalog jobs before any catalog is opened. */
@@ -56,7 +59,7 @@ export async function createServices(options: CreateServicesOptions): Promise<Se
   const user = await openUserDb(options.userDriver, options.env);
   if (options.userWriteBlock) user.setInstanceLock({ message: options.userWriteBlock.message });
   const databases = new DatabaseSet(user, options.catalogSource);
-  const ctx: ServiceContext = { databases, env: options.env };
+  const ctx: ServiceContext = { databases, env: options.env, ...(options.fx ? { fx: options.fx } : {}) };
   const install = new CatalogInstallService(ctx, options.installPort, options.catalog);
   if (!options.userWriteBlock) await timed('fdx:recover-install', () => install.recover());
   const sync = new SyncService(ctx, options.platform, options.sync);

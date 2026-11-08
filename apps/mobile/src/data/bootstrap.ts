@@ -6,6 +6,7 @@ import { acquireInstanceLock } from '../platform/instance-lock';
 import { uuidV4 } from '../lib/uuid';
 import { prepareStorage, withMetricsRecording } from '../lib/storage-bridge';
 import { setStartupProgress } from './startup-progress';
+import { fxProvider } from './fx-hooks';
 
 export const appEnvironment: Environment = {
   clock: { now: () => new Date().toISOString() },
@@ -98,7 +99,8 @@ export function openAppServices(): Promise<Services> {
         installPort: withMetricsRecording(createInstallPort()),
         platform,
         appVersion: '0.1.0',
-        catalog: catalogConfig()
+        catalog: catalogConfig(),
+        fx: fxProvider
       });
       // DEV-ONLY e2e hook (stripped from production builds): lets a spec drive a second code path against the live services.
       if (import.meta.env.DEV) {

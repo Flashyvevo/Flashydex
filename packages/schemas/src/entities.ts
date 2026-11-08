@@ -74,7 +74,18 @@ export const ValuationDto = z
     cents: Cents,
     source: z.enum(['manual', 'tcgplayer', 'cardmarket']),
     priceSnapshotId: Id.nullable(),
-    capturedAt: Instant
+    capturedAt: Instant,
+    /** Derived value: a Cardmarket (EUR) quote converted to USD with an ECB reference rate. Absent for native/manual values. */
+    converted: z.boolean().optional(),
+    originalCents: Cents.optional(),
+    originalCurrency: Currency.optional(),
+    fxRate: z.string().optional(),
+    fxRateDate: DateOnly.optional(),
+    fxProvider: z.string().optional(),
+    /** Which quote column fed the value: Cardmarket's average is `avg`. */
+    quoteType: z.enum(['market', 'mid', 'avg']).optional(),
+    /** The FX rate is more than 7 days old. */
+    stale: z.boolean().optional()
   })
   .strict();
 export const CardSummary = z
@@ -173,7 +184,19 @@ export const CurrencyStats = z
     comparableCopies: SafeInt,
     comparableCostCents: SafeInt.nullable(),
     comparableValueCents: SafeInt.nullable(),
-    gainLossCents: z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).nullable()
+    gainLossCents: z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).nullable(),
+    // Pricing v2 FX layer (USD stats only; omitted for an empty collection). Converted copies are included in valued/estimated above.
+    /** Valued copies that needed no conversion (TCGplayer-native or manual). */
+    sourcePricedCopies: SafeInt.optional(),
+    convertedCopies: SafeInt.optional(),
+    convertedValueCents: SafeInt.optional(),
+    /** Converted copies whose FX rate is more than 7 days old. */
+    staleFxCopies: SafeInt.optional(),
+    /** Copies with a Cardmarket price but no usable FX record (unpriced in USD, reason fx_unavailable). */
+    fxUnavailableCopies: SafeInt.optional(),
+    /** Copies whose EUR cost was converted with the same FX record to compare against a USD value. */
+    costConvertedCopies: SafeInt.optional(),
+    fxRateDate: DateOnly.nullable().optional()
   })
   .strict();
 export const DashboardDto = z

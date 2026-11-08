@@ -8,6 +8,7 @@ export * from './platform/types';
 export * from './platform/platform';
 export * from './catalog/tcgdex';
 export * from './domain/valuation';
+export * from './domain/fx';
 export * from './services';
 export { timed } from './perf';
 export type { CollectionCardGroup } from './services/collection-list';
