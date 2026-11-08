@@ -231,3 +231,31 @@ describe('getCard (26, 53)', () => {
     await expect(h.catalog.getCard({ language: 'en', cardId: 'zzz' })).rejects.toBeInstanceOf(NotFoundError);
   });
 });
+
+describe('setCovers (set tile cover cards)', () => {
+  it('returns the first collector-order card image per set, null for imageless/empty/unknown sets and missing catalogs', async () => {
+    await installStandardCatalog(h, 'en');
+    expect(await h.catalog.setCovers('en', ['tset', 'pocket', 'shell', 'nope'])).toEqual({ tset: 'https://assets.example.test/tset/001', pocket: null, shell: null, nope: null });
+    expect(await h.catalog.setCovers('ja', ['tset'])).toEqual({ tset: null });
+    expect(await h.catalog.setCovers('en', [])).toEqual({});
+  });
+
+  it('skips leading cards without art and sorts by collector number, not insertion order', async () => {
+    const cards: FixtureCard[] = [
+      { id: 'x-010', setId: 'x', localId: '010', name: 'Ten', imageUrl: 'https://assets.example.test/x/010' },
+      { id: 'x-002', setId: 'x', localId: '002', name: 'Two', imageUrl: 'https://assets.example.test/x/002' },
+      { id: 'x-001', setId: 'x', localId: '001', name: 'One', imageUrl: null }
+    ];
+    await installCatalog(h, 'en', { sets: [{ id: 'x', name: 'X Set', series: 's', releaseDate: '2020-01-01' }], cards });
+    expect((await h.catalog.setCovers('en', ['x'])).x).toBe('https://assets.example.test/x/002');
+  });
+
+  it('handles more sets than one statement chunk (100)', async () => {
+    const sets = Array.from({ length: 130 }, (_, i) => ({ id: `s${i}`, name: `Set ${i}`, series: 's', releaseDate: '2020-01-01' }));
+    const cards: FixtureCard[] = sets.map((s) => ({ id: `${s.id}-001`, setId: s.id, localId: '001', name: 'C', imageUrl: `https://assets.example.test/${s.id}/001` }));
+    await installCatalog(h, 'en', { sets, cards });
+    const covers = await h.catalog.setCovers('en', sets.map((s) => s.id));
+    expect(Object.keys(covers)).toHaveLength(130);
+    expect(Object.values(covers).every((v) => v !== null)).toBe(true);
+  });
+});
