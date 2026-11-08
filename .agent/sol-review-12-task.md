@@ -1,0 +1,7 @@
+# sol-review-12 — re-verify Sol-11 P1 fixes (R11-01, R11-02, R11-03) + P2s
+
+You are GPT Sol. Unattended; read-only; write ONLY `.agent/reports/sol-review-12.md`. Repo `C:/Projects/flashydex`, branch `pricing-v2` (verify). Your previous report: `.agent/reports/sol-review-11.md`; the fix report: `.agent/reports/sonnet-fx-fix-report.md`; diff to review: `git diff a2a40c0..HEAD`.
+
+Re-run your adversarial conversion table against the new `packages/core/src/domain/fx.ts` (exact string oracle; include the five previously failing rows and `MAX_CENTS × 1.0000004`). Re-probe the dashboard labels (`apps/mobile/src/routes/_tabs/index.tsx`) for all-converted / mixed / EUR-primary compositions (render-level or e2e). Re-probe FX record validation on read with every malformed case from R11-03 (numeric rate, array, impossible date, future date, future fetchedAt) and confirm an invalid cache is discarded and a valid record replaces it. Spot-check R11-04 (failed-attempt throttle), R11-07, R11-05, R11-06. Run `npm run typecheck`, `npm run lint`, core + mobile unit, `cd apps/mobile && FLASHYDEX_E2E_PORT=3221 npx playwright test e2e/pricing.spec.ts e2e/core-flow.spec.ts e2e/routes.spec.ts --project=mobile`. Confirm `git diff --stat dc9d7ea..HEAD` still touches nothing under `src/platform/**`, `packages/core/src/db/**`, scanner files, `netlify/**`, `services/**`.
+
+Report: verdict (release Phase A: yes / no), per-finding status table (fixed / partially / not), any NEW finding with severity, gate output verbatim. ≤ 150 lines.
