@@ -40,7 +40,16 @@ export async function crawl(fetcher: Fetcher, options: CrawlOptions): Promise<Cr
   const list = await fetcher.getJson<RawSetBrief[]>(`${TCGDEX_API}/${language}/sets`, join(langRoot, 'sets.json'), options.discoveryMaxAgeMs);
   if (!Array.isArray(list) || list.length === 0) throw new Error(`TCGdex returned no sets for ${language}`);
   const ids = list.map((s) => s.id);
-  if (new Set(ids).size !== ids.length) throw new Error(`Duplicate set ids in /v2/${language}/sets`);
+  if (new Set(ids).size !== ids.length) {
+    // TCGdex occasionally lists two sets under one id (ja BW3a/BW8a, Nov 2026). The id is our primary key and the
+    // detail endpoint resolves only one of them, so keep the first occurrence and surface the collision as a warning.
+    const seen = new Set<string>();
+    for (const s of list) {
+      if (seen.has(s.id)) warnings.push(`duplicate set id ${s.id} in /v2/${language}/sets (dropped "${s.name}")`);
+      seen.add(s.id);
+    }
+    list.splice(0, list.length, ...list.filter((s, i) => ids.indexOf(s.id) === i));
+  }
   log(`${language}: ${list.length} sets in provider list`);
 
   const detailList = await pool(list, 8, async (brief): Promise<[string, RawSetDetail | null]> => {
@@ -58,7 +67,7 @@ export async function crawl(fetcher: Fetcher, options: CrawlOptions): Promise<Cr
   const details = new Map<string, RawSetDetail>();
   for (const [id, detail] of detailList) if (detail) details.set(id, detail);
 
-  let selectedSetIds = [...ids];
+  let selectedSetIds = [...new Set(ids)];
   if (options.sets?.length) {
     const unknown = options.sets.filter((id) => !details.has(id));
     if (unknown.length) throw new Error(`Requested set(s) not found in ${language}: ${unknown.join(', ')}`);
