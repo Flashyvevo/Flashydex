@@ -1,0 +1,27 @@
+{
+  "manifestVersion": 1,
+  "currentVersion": null,
+  "targetVersion": "2026.10.31.002",
+  "builtAt": "2026-10-31T04:50:09.532Z",
+  "languages": {
+    "en": {
+      "currentVersion": null,
+      "targetVersion": "2026.10.31.002",
+      "fullPackUrl": "/dev-packs/full16/catalog-en-2026.10.31.002.db.zst",
+      "setIndexUrl": "/dev-packs/full/set-index-en.json",
+      "compressedBytes": 12219412,
+      "uncompressedBytes": 123863040,
+      "sha256": "eb717e166c7d2a5ee34773ab8253ea6bfff08762b2828675edb2e3085a13144c",
+      "compressedSha256": "982baab77482e8becc2bac98e490c98233b4a043e2582c8d70efce19cec83c08",
+      "schemaVersion": 1,
+      "builtAt": "2026-10-31T04:46:15.167Z",
+      "counts": {
+        "sets": 220,
+        "cards": 23736,
+        "variants": 36693,
+        "prices": 48805,
+        "unpublishedSets": 4
+      }
+    }
+  }
+}

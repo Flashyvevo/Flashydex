@@ -1,0 +1,17 @@
+
+> @flashydex/mobile@0.0.0 test
+> vitest run
+
+
+ RUN  v5.0.5 C:/Projects/flashydex/apps/mobile
+
+
+ Test Files  36 passed (36)
+      Tests  469 passed (469)
+   Start at  12:52:25
+   Duration  51.34s (tests 39%, environment 31%, import 16%, setup 13%, transform 1%, worker 1%)
+
+Environment  jsdom was created 36 times · 42.23s total, 31% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+

@@ -1,0 +1,11 @@
+import { chromium, devices } from 'playwright';
+const b = await chromium.launch(); const p = await (await b.newContext(devices['iPhone 14'])).newPage();
+const imgs=[]; p.on('response', r => { if (/tcgdex|logo|symbol/.test(r.url())) imgs.push(r.status()+' '+r.url().slice(-60)); });
+await p.goto('https://flashydex.netlify.app/', { waitUntil: 'networkidle', timeout: 90000 });
+await p.getByTestId('welcome-start').click(); await p.getByTestId('notice-continue').click(); await p.getByTestId('languages-continue').click(); await p.getByTestId('onboarding-finish').click();
+await p.waitForFunction(() => /English catalog ready/.test(document.body.innerText), null, { timeout: 300000 });
+await p.goto("https://flashydex.netlify.app/sets/en/swsh3", { waitUntil: "networkidle" }); await p.waitForTimeout(4000);
+console.log((await p.locator('body').innerText()).replace(/\s+/g,' ').slice(0,300));
+console.log('img tags', await p.locator('img').count(), 'with src', await p.locator('img[src]').evaluateAll(e=>e.slice(0,3).map(i=>i.src.slice(-70)+' '+i.naturalWidth)));
+console.log(imgs.slice(0,6).join('\n'));
+await b.close();

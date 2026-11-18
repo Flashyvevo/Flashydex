@@ -1,0 +1,52 @@
+
+Running 9 tests using 1 worker
+
+[1/9] [mobile] › e2e\scanner.spec.ts:34:5 › scanner mocked @ 375x812 › landing, every result state, every error code, offline banner, catalog branches
+[mobile] › e2e\scanner.spec.ts:34:5 › scanner mocked @ 375x812 › landing, every result state, every error code, offline banner, catalog branches
+MEASURE landing@375 {"height":812,"take":{"x":16,"y":136,"width":343,"height":48}}
+
+MEASURE match-art@375 {"x":57.5,"y":76,"width":260,"height":363.171875}
+
+MEASURE tiles@375 [{"x":16,"y":156,"width":343,"height":525.09375},{"x":16,"y":693.09375,"width":343,"height":525.09375},{"x":16,"y":1230.1875,"width":343,"height":525.09375}]
+
+[2/9] [mobile] › e2e\scanner.spec.ts:232:5 › scanner mocked @ 375x812 › scanner offline banner (non-blocking) and nav entry
+[mobile] › e2e\scanner.spec.ts:232:5 › scanner mocked @ 375x812 › scanner offline banner (non-blocking) and nav entry
+MEASURE fab@375 {"fab":{"x":157.5,"y":736,"width":60,"height":60},"label":{"x":150,"y":798,"width":75,"height":12}}
+
+[3/9] [mobile] › e2e\scanner.spec.ts:261:5 › scanner mocked @ 375x812 › confirm → add → Added → Scan Another → second add → View Card → reload → copies persist
+[mobile] › e2e\scanner.spec.ts:261:5 › scanner mocked @ 375x812 › confirm → add → Added → Scan Another → second add → View Card → reload → copies persist
+MEASURE scan-height@375 812
+
+[4/9] [mobile] › e2e\scanner.spec.ts:34:5 › scanner mocked @ 390x844 › landing, every result state, every error code, offline banner, catalog branches
+[mobile] › e2e\scanner.spec.ts:34:5 › scanner mocked @ 390x844 › landing, every result state, every error code, offline banner, catalog branches
+MEASURE landing@390 {"height":844,"take":{"x":16,"y":136,"width":358,"height":48}}
+
+MEASURE match-art@390 {"x":65,"y":76,"width":260,"height":363.171875}
+
+MEASURE tiles@390 [{"x":16,"y":156,"width":173,"height":307.625},{"x":201,"y":156,"width":173,"height":287.625},{"x":16,"y":475.625,"width":173,"height":307.625}]
+
+[5/9] [mobile] › e2e\scanner.spec.ts:232:5 › scanner mocked @ 390x844 › scanner offline banner (non-blocking) and nav entry
+[mobile] › e2e\scanner.spec.ts:232:5 › scanner mocked @ 390x844 › scanner offline banner (non-blocking) and nav entry
+MEASURE fab@390 {"fab":{"x":165,"y":768,"width":60,"height":60},"label":{"x":156,"y":830,"width":78,"height":12}}
+
+[6/9] [mobile] › e2e\scanner.spec.ts:261:5 › scanner mocked @ 390x844 › confirm → add → Added → Scan Another → second add → View Card → reload → copies persist
+[mobile] › e2e\scanner.spec.ts:261:5 › scanner mocked @ 390x844 › confirm → add → Added → Scan Another → second add → View Card → reload → copies persist
+MEASURE scan-height@390 844
+
+[7/9] [mobile] › e2e\scanner.spec.ts:34:5 › scanner mocked @ 430x932 › landing, every result state, every error code, offline banner, catalog branches
+[mobile] › e2e\scanner.spec.ts:34:5 › scanner mocked @ 430x932 › landing, every result state, every error code, offline banner, catalog branches
+MEASURE landing@430 {"height":932,"take":{"x":16,"y":136,"width":398,"height":48}}
+
+MEASURE match-art@430 {"x":85,"y":76,"width":260,"height":363.171875}
+
+MEASURE tiles@430 [{"x":16,"y":156,"width":193,"height":335.5625},{"x":221,"y":156,"width":193,"height":315.5625},{"x":16,"y":503.5625,"width":193,"height":335.5625}]
+
+[8/9] [mobile] › e2e\scanner.spec.ts:232:5 › scanner mocked @ 430x932 › scanner offline banner (non-blocking) and nav entry
+[mobile] › e2e\scanner.spec.ts:232:5 › scanner mocked @ 430x932 › scanner offline banner (non-blocking) and nav entry
+MEASURE fab@430 {"fab":{"x":185,"y":856,"width":60,"height":60},"label":{"x":172,"y":918,"width":86,"height":12}}
+
+[9/9] [mobile] › e2e\scanner.spec.ts:261:5 › scanner mocked @ 430x932 › confirm → add → Added → Scan Another → second add → View Card → reload → copies persist
+[mobile] › e2e\scanner.spec.ts:261:5 › scanner mocked @ 430x932 › confirm → add → Added → Scan Another → second add → View Card → reload → copies persist
+MEASURE scan-height@430 932
+
+  9 passed (1.7m)

@@ -1,0 +1,7 @@
+
+Running 3 tests using 2 workers
+
+[1/3] [mobile] › e2e\core-flow.spec.ts:6:1 › onboarding → install → add 2 Charizard V → one ×2 tile → detail → JSON export
+[2/3] [mobile] › e2e\routes.spec.ts:27:1 › every route renders without console errors or horizontal overflow
+[3/3] [mobile] › e2e\core-flow.spec.ts:40:1 › .fdx backup → fresh browser context (reinstall) → install dev pack → restore → same tiles, copy ids and notes
+  3 passed (40.6s)

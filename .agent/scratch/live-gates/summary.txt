@@ -1,0 +1,8 @@
+typecheck exit 0
+lint exit 0
+unit exit 0
+scanner run 1 exit 1
+scanner run 2 exit 1
+live run 1 exit 0
+routes+core exit 1
+DONE

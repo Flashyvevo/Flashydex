@@ -1,0 +1,16 @@
+
+> flashydex@0.0.0 typecheck
+> npm run typecheck --workspace=@flashydex/core && npm run typecheck --workspace=@flashydex/schemas && npm run typecheck --workspace=@flashydex/mobile
+
+
+> @flashydex/core@0.0.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> @flashydex/schemas@0.0.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> @flashydex/mobile@0.0.0 typecheck
+> tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json
+

@@ -1,0 +1,48 @@
+
+Running 17 tests using 1 worker
+
+[1/17] [mobile] › e2e\scanner-live.spec.ts:35:5 › scanner live @ 375x812 › viewfinder layout, quality chips, auto-capture → match → add → Scan Another → viewfinder
+[mobile] › e2e\scanner-live.spec.ts:35:5 › scanner live @ 375x812 › viewfinder layout, quality chips, auto-capture → match → add → Scan Another → viewfinder
+MEASURE live-layout@375 {"viewport":{"width":375,"height":812},"viewfinder":{"x":16,"y":72,"width":343,"height":406},"ratio":0.5,"shutter":{"x":155.5,"y":490,"width":64,"height":64},"browse":{"x":191.5,"y":610,"width":167.5,"height":64}}
+
+[2/17] [mobile] › e2e\scanner-live.spec.ts:101:5 › scanner live @ 375x812 › 3 no-match attempts → coach (rate-limited, glare leads); Keep Scanning returns to live
+[mobile] › e2e\scanner-live.spec.ts:101:5 › scanner live @ 375x812 › 3 no-match attempts → coach (rate-limited, glare leads); Keep Scanning returns to live
+MEASURE retry-gaps@375 {"gaps":[1666,1704],"span":3370}
+
+[3/17] [mobile] › e2e\scanner-live.spec.ts:35:5 › scanner live @ 390x844 › viewfinder layout, quality chips, auto-capture → match → add → Scan Another → viewfinder
+[mobile] › e2e\scanner-live.spec.ts:35:5 › scanner live @ 390x844 › viewfinder layout, quality chips, auto-capture → match → add → Scan Another → viewfinder
+MEASURE live-layout@390 {"viewport":{"width":390,"height":844},"viewfinder":{"x":16,"y":72,"width":358,"height":422},"ratio":0.5,"shutter":{"x":163,"y":506,"width":64,"height":64},"browse":{"x":199,"y":626,"width":175,"height":64}}
+
+[4/17] [mobile] › e2e\scanner-live.spec.ts:101:5 › scanner live @ 390x844 › 3 no-match attempts → coach (rate-limited, glare leads); Keep Scanning returns to live
+[mobile] › e2e\scanner-live.spec.ts:101:5 › scanner live @ 390x844 › 3 no-match attempts → coach (rate-limited, glare leads); Keep Scanning returns to live
+MEASURE retry-gaps@390 {"gaps":[1649,1667],"span":3316}
+
+[5/17] [mobile] › e2e\scanner-live.spec.ts:35:5 › scanner live @ 430x932 › viewfinder layout, quality chips, auto-capture → match → add → Scan Another → viewfinder
+[mobile] › e2e\scanner-live.spec.ts:35:5 › scanner live @ 430x932 › viewfinder layout, quality chips, auto-capture → match → add → Scan Another → viewfinder
+MEASURE live-layout@430 {"viewport":{"width":430,"height":932},"viewfinder":{"x":16,"y":72,"width":398,"height":466},"ratio":0.5,"shutter":{"x":183,"y":550,"width":64,"height":64},"browse":{"x":219,"y":670,"width":195,"height":44}}
+
+[6/17] [mobile] › e2e\scanner-live.spec.ts:101:5 › scanner live @ 430x932 › 3 no-match attempts → coach (rate-limited, glare leads); Keep Scanning returns to live
+[mobile] › e2e\scanner-live.spec.ts:101:5 › scanner live @ 430x932 › 3 no-match attempts → coach (rate-limited, glare leads); Keep Scanning returns to live
+MEASURE retry-gaps@430 {"gaps":[1650,1669],"span":3319}
+
+[7/17] [mobile] › e2e\scanner-live.spec.ts:144:3 › scanner live: edge cases @ 390x844 › dark session → coach leads with lighting
+[8/17] [mobile] › e2e\scanner-live.spec.ts:155:3 › scanner live: edge cases @ 390x844 › no dominant problem → coach leads with the dark surface
+[9/17] [mobile] › e2e\scanner-live.spec.ts:163:3 › scanner live: edge cases @ 390x844 › manual shutter submits even a poor frame; never twice while in flight
+[10/17] [mobile] › e2e\scanner-live.spec.ts:175:3 › scanner live: edge cases @ 390x844 › network error and 429 are errors, not attempts: error screen, no coach, counter untouched
+[11/17] [mobile] › e2e\scanner-live.spec.ts:188:5 › scanner live: edge cases @ 390x844 › camera blank → silent fallback to the file-input flow
+[mobile] › e2e\scanner-live.spec.ts:188:5 › scanner live: edge cases @ 390x844 › camera blank → silent fallback to the file-input flow
+MEASURE fallback-blank {"ms":6784}
+
+[12/17] [mobile] › e2e\scanner-live.spec.ts:188:5 › scanner live: edge cases @ 390x844 › camera denied → silent fallback to the file-input flow
+[mobile] › e2e\scanner-live.spec.ts:188:5 › scanner live: edge cases @ 390x844 › camera denied → silent fallback to the file-input flow
+MEASURE fallback-denied {"ms":4338}
+
+[13/17] [mobile] › e2e\scanner-live.spec.ts:188:5 › scanner live: edge cases @ 390x844 › camera missing → silent fallback to the file-input flow
+[mobile] › e2e\scanner-live.spec.ts:188:5 › scanner live: edge cases @ 390x844 › camera missing → silent fallback to the file-input flow
+MEASURE fallback-missing {"ms":4188}
+
+[14/17] [mobile] › e2e\scanner-live.spec.ts:208:3 › scanner live: edge cases @ 390x844 › camera lost mid-session → fallback; mid-analysis keeps the result
+[15/17] [mobile] › e2e\scanner-live.spec.ts:227:3 › scanner live: edge cases @ 390x844 › page hidden pauses the video and sampling; visible resumes
+[16/17] [mobile] › e2e\scanner-live.spec.ts:247:3 › scanner live: edge cases @ 390x844 › leaving the route stops the camera
+[17/17] [mobile] › e2e\scanner-live.spec.ts:255:3 › scanner live: edge cases @ 390x844 › file-input mode: two consecutive no-match photos → coach; Keep Scanning returns to the landing
+  17 passed (2.5m)

@@ -1,0 +1,48 @@
+{
+ "install": {
+  "ok": true,
+  "totalMs": 18549,
+  "phases": {
+   "download": 341,
+   "decode": 6239,
+   "import": 1947,
+   "validate": 9757,
+   "activate": 1
+  }
+ },
+ "ref": "/catalog-en/g-33284c6u726t441f.db",
+ "pragmas": {
+  "cache32768": {
+   "page_count": {
+    "ms": 1,
+    "rows": 1,
+    "first": "7560"
+   },
+   "cache_size": {
+    "ms": 0,
+    "rows": 1,
+    "first": "-32768"
+   },
+   "page_size": {
+    "ms": 0,
+    "rows": 1,
+    "first": "16384"
+   },
+   "scan_cards_cold": {
+    "ms": 1508,
+    "rows": 1,
+    "first": "0"
+   },
+   "foreign_key_check": {
+    "ms": 2214,
+    "rows": 0,
+    "first": "undefined"
+   },
+   "integrity_check": {
+    "ms": 6159,
+    "rows": 1,
+    "first": "ok"
+   }
+  }
+ }
+}

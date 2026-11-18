@@ -1,0 +1,61 @@
+
+> flashydex@0.0.0 lint
+> npm run lint --workspace=@flashydex/mobile
+
+
+> @flashydex/mobile@0.0.0 lint
+> eslint .
+
+
+C:\Projects\flashydex\apps\mobile\src\components\card.tsx
+  257:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  459:10  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\copy-editor.tsx
+  270:10  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\custom-card-view.tsx
+  159:10  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\overlay.tsx
+  314:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  333:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\owned.tsx
+  38:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  42:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  46:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  52:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  56:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  70:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\page.tsx
+   9:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  15:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\set-picker.tsx
+  9:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\shell.tsx
+  9:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\storage-screens.tsx
+  21:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\sync.tsx
+   58:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  250:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  254:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\components\ui.tsx
+  15:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Projects\flashydex\apps\mobile\src\lib\pwa-hooks.ts
+  34:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+C:\Projects\flashydex\apps\mobile\src\routes\_modal\add.tsx
+  30:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+✖ 23 problems (0 errors, 23 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

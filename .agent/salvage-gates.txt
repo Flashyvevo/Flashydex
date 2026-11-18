@@ -1,0 +1,9 @@
+npm error location C:\Projects\flashydex\apps\mobile
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c eslint .
+ Test Files  1 failed | 21 passed (22)
+      Tests  285 passed (285)
+npm error Lifecycle script `test` failed with error:
+npm error command failed

@@ -1,0 +1,1106 @@
+{
+ "en": {
+  "cov": {
+   "sets": 220,
+   "withLogo": 163,
+   "withSymbol": 0,
+   "byProvenance": {
+    "tcgdex": 158,
+    "symbol": 5,
+    "en-twin": 0,
+    "none": 57
+   }
+  },
+  "none": [
+   {
+    "id": "2011bw",
+    "published": true
+   },
+   {
+    "id": "2012bw",
+    "published": true
+   },
+   {
+    "id": "2014xy",
+    "published": true
+   },
+   {
+    "id": "2015xy",
+    "published": true
+   },
+   {
+    "id": "2016xy",
+    "published": true
+   },
+   {
+    "id": "2017sm",
+    "published": true
+   },
+   {
+    "id": "2018sm",
+    "published": true
+   },
+   {
+    "id": "2019sm",
+    "published": true
+   },
+   {
+    "id": "2021swsh",
+    "published": true
+   },
+   {
+    "id": "2022swsh",
+    "published": true
+   },
+   {
+    "id": "2023sv",
+    "published": true
+   },
+   {
+    "id": "2024sv",
+    "published": true
+   },
+   {
+    "id": "30th-c",
+    "published": true
+   },
+   {
+    "id": "A3a",
+    "published": true
+   },
+   {
+    "id": "A3b",
+    "published": true
+   },
+   {
+    "id": "B1a",
+    "published": true
+   },
+   {
+    "id": "B2a",
+    "published": true
+   },
+   {
+    "id": "bog",
+    "published": true
+   },
+   {
+    "id": "cel25cc",
+    "published": true
+   },
+   {
+    "id": "jumbo",
+    "published": false
+   },
+   {
+    "id": "mee",
+    "published": true
+   },
+   {
+    "id": "mfb",
+    "published": true
+   },
+   {
+    "id": "miscp",
+    "published": true
+   },
+   {
+    "id": "rc",
+    "published": false
+   },
+   {
+    "id": "sm3.5",
+    "published": true
+   },
+   {
+    "id": "sm7.5",
+    "published": true
+   },
+   {
+    "id": "sp",
+    "published": false
+   },
+   {
+    "id": "sve",
+    "published": true
+   },
+   {
+    "id": "svp",
+    "published": true
+   },
+   {
+    "id": "swsh10tg",
+    "published": true
+   },
+   {
+    "id": "swsh11tg",
+    "published": true
+   },
+   {
+    "id": "swsh12.5gg",
+    "published": true
+   },
+   {
+    "id": "swsh12tg",
+    "published": true
+   },
+   {
+    "id": "swsh4.5sv",
+    "published": true
+   },
+   {
+    "id": "swsh9tg",
+    "published": true
+   },
+   {
+    "id": "tk-bw-e",
+    "published": true
+   },
+   {
+    "id": "tk-bw-z",
+    "published": true
+   },
+   {
+    "id": "tk-dp-l",
+    "published": true
+   },
+   {
+    "id": "tk-dp-m",
+    "published": true
+   },
+   {
+    "id": "tk-ex-latia",
+    "published": true
+   },
+   {
+    "id": "tk-ex-latio",
+    "published": true
+   },
+   {
+    "id": "tk-ex-m",
+    "published": true
+   },
+   {
+    "id": "tk-ex-p",
+    "published": true
+   },
+   {
+    "id": "tk-hs-g",
+    "published": true
+   },
+   {
+    "id": "tk-hs-r",
+    "published": true
+   },
+   {
+    "id": "tk-sm-l",
+    "published": true
+   },
+   {
+    "id": "tk-sm-r",
+    "published": true
+   },
+   {
+    "id": "tk-xy-b",
+    "published": true
+   },
+   {
+    "id": "tk-xy-latia",
+    "published": true
+   },
+   {
+    "id": "tk-xy-latio",
+    "published": true
+   },
+   {
+    "id": "tk-xy-n",
+    "published": true
+   },
+   {
+    "id": "tk-xy-p",
+    "published": true
+   },
+   {
+    "id": "tk-xy-su",
+    "published": true
+   },
+   {
+    "id": "tk-xy-sy",
+    "published": true
+   },
+   {
+    "id": "tk-xy-w",
+    "published": true
+   },
+   {
+    "id": "wp",
+    "published": false
+   },
+   {
+    "id": "xya",
+    "published": true
+   }
+  ],
+  "resolved": [
+   {
+    "id": "30th",
+    "logoUrl": "https://assets.tcgdex.net/en/me/30th/logo.png",
+    "source": "tcgdex"
+   },
+   {
+    "id": "ex5.5",
+    "logoUrl": "https://assets.tcgdex.net/en/ex/ex5.5/symbol.png",
+    "source": "symbol"
+   },
+   {
+    "id": "exu",
+    "logoUrl": "https://assets.tcgdex.net/en/ex/exu/symbol.webp",
+    "source": "symbol"
+   },
+   {
+    "id": "mep",
+    "logoUrl": "https://assets.tcgdex.net/en/me/mep/symbol.webp",
+    "source": "symbol"
+   },
+   {
+    "id": "sma",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sma/symbol.webp",
+    "source": "symbol"
+   },
+   {
+    "id": "sv05",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv05/symbol.webp",
+    "source": "symbol"
+   }
+  ]
+ },
+ "ja": {
+  "cov": {
+   "sets": 184,
+   "withLogo": 76,
+   "withSymbol": 0,
+   "byProvenance": {
+    "tcgdex": 1,
+    "symbol": 0,
+    "en-twin": 75,
+    "none": 108
+   }
+  },
+  "none": [
+   {
+    "id": "ADV1",
+    "published": false
+   },
+   {
+    "id": "ADV2",
+    "published": false
+   },
+   {
+    "id": "ADV3",
+    "published": false
+   },
+   {
+    "id": "ADV4",
+    "published": false
+   },
+   {
+    "id": "ADV5",
+    "published": false
+   },
+   {
+    "id": "CP2",
+    "published": true
+   },
+   {
+    "id": "CP3",
+    "published": false
+   },
+   {
+    "id": "CP4",
+    "published": false
+   },
+   {
+    "id": "CP5",
+    "published": false
+   },
+   {
+    "id": "CS1.5",
+    "published": false
+   },
+   {
+    "id": "CS1a",
+    "published": false
+   },
+   {
+    "id": "CS1b",
+    "published": false
+   },
+   {
+    "id": "CS2.5",
+    "published": false
+   },
+   {
+    "id": "CS2a",
+    "published": false
+   },
+   {
+    "id": "CS2b",
+    "published": false
+   },
+   {
+    "id": "CS3.5",
+    "published": false
+   },
+   {
+    "id": "CS3a",
+    "published": false
+   },
+   {
+    "id": "CS3b",
+    "published": false
+   },
+   {
+    "id": "CS3D",
+    "published": false
+   },
+   {
+    "id": "CS4",
+    "published": false
+   },
+   {
+    "id": "CS4a",
+    "published": false
+   },
+   {
+    "id": "CS4b",
+    "published": false
+   },
+   {
+    "id": "CS4Da",
+    "published": false
+   },
+   {
+    "id": "CSA",
+    "published": false
+   },
+   {
+    "id": "E1",
+    "published": true
+   },
+   {
+    "id": "E2",
+    "published": true
+   },
+   {
+    "id": "E3",
+    "published": true
+   },
+   {
+    "id": "E4",
+    "published": true
+   },
+   {
+    "id": "E5",
+    "published": true
+   },
+   {
+    "id": "L1a",
+    "published": false
+   },
+   {
+    "id": "L1b",
+    "published": false
+   },
+   {
+    "id": "L2",
+    "published": false
+   },
+   {
+    "id": "L3",
+    "published": false
+   },
+   {
+    "id": "LL",
+    "published": false
+   },
+   {
+    "id": "M-P",
+    "published": true
+   },
+   {
+    "id": "M6",
+    "published": true
+   },
+   {
+    "id": "MC",
+    "published": true
+   },
+   {
+    "id": "neo1",
+    "published": true
+   },
+   {
+    "id": "neo2",
+    "published": true
+   },
+   {
+    "id": "neo3",
+    "published": true
+   },
+   {
+    "id": "neo4",
+    "published": true
+   },
+   {
+    "id": "PCG1",
+    "published": true
+   },
+   {
+    "id": "PCG10",
+    "published": false
+   },
+   {
+    "id": "PCG2",
+    "published": true
+   },
+   {
+    "id": "PCG3",
+    "published": true
+   },
+   {
+    "id": "PCG4",
+    "published": true
+   },
+   {
+    "id": "PCG5",
+    "published": true
+   },
+   {
+    "id": "PCG6",
+    "published": true
+   },
+   {
+    "id": "PCG7",
+    "published": true
+   },
+   {
+    "id": "PCG8",
+    "published": true
+   },
+   {
+    "id": "PCG9",
+    "published": true
+   },
+   {
+    "id": "PMCG1",
+    "published": true
+   },
+   {
+    "id": "PMCG2",
+    "published": true
+   },
+   {
+    "id": "PMCG3",
+    "published": true
+   },
+   {
+    "id": "PMCG4",
+    "published": true
+   },
+   {
+    "id": "PMCG5",
+    "published": true
+   },
+   {
+    "id": "PMCG6",
+    "published": true
+   },
+   {
+    "id": "S10a",
+    "published": true
+   },
+   {
+    "id": "S11a",
+    "published": true
+   },
+   {
+    "id": "S1a",
+    "published": false
+   },
+   {
+    "id": "S2a",
+    "published": false
+   },
+   {
+    "id": "S3",
+    "published": false
+   },
+   {
+    "id": "S3a",
+    "published": false
+   },
+   {
+    "id": "S5a",
+    "published": false
+   },
+   {
+    "id": "S6a",
+    "published": false
+   },
+   {
+    "id": "S8b",
+    "published": true
+   },
+   {
+    "id": "S9a",
+    "published": true
+   },
+   {
+    "id": "SM0",
+    "published": false
+   },
+   {
+    "id": "SM1+",
+    "published": false
+   },
+   {
+    "id": "SM10a",
+    "published": true
+   },
+   {
+    "id": "SM10b",
+    "published": true
+   },
+   {
+    "id": "SM11a",
+    "published": true
+   },
+   {
+    "id": "SM11b",
+    "published": true
+   },
+   {
+    "id": "SM12a",
+    "published": true
+   },
+   {
+    "id": "SM1p",
+    "published": true
+   },
+   {
+    "id": "sm2+",
+    "published": false
+   },
+   {
+    "id": "SM2p",
+    "published": true
+   },
+   {
+    "id": "SM3+",
+    "published": false
+   },
+   {
+    "id": "SM3p",
+    "published": true
+   },
+   {
+    "id": "SM4+",
+    "published": false
+   },
+   {
+    "id": "SM4p",
+    "published": true
+   },
+   {
+    "id": "SM5+",
+    "published": false
+   },
+   {
+    "id": "SM5p",
+    "published": true
+   },
+   {
+    "id": "SM6a",
+    "published": true
+   },
+   {
+    "id": "SM6b",
+    "published": true
+   },
+   {
+    "id": "SM7a",
+    "published": true
+   },
+   {
+    "id": "SM7b",
+    "published": true
+   },
+   {
+    "id": "SM8a",
+    "published": true
+   },
+   {
+    "id": "SM8b",
+    "published": true
+   },
+   {
+    "id": "SM9a",
+    "published": true
+   },
+   {
+    "id": "SM9b",
+    "published": true
+   },
+   {
+    "id": "SV-P",
+    "published": true
+   },
+   {
+    "id": "SV1a",
+    "published": true
+   },
+   {
+    "id": "SV3a",
+    "published": true
+   },
+   {
+    "id": "SV5a",
+    "published": true
+   },
+   {
+    "id": "SV5K",
+    "published": true
+   },
+   {
+    "id": "SV5M",
+    "published": true
+   },
+   {
+    "id": "SV7a",
+    "published": true
+   },
+   {
+    "id": "SV8a",
+    "published": true
+   },
+   {
+    "id": "SV9a",
+    "published": true
+   },
+   {
+    "id": "SVK",
+    "published": true
+   },
+   {
+    "id": "SVLN",
+    "published": true
+   },
+   {
+    "id": "SVLS",
+    "published": true
+   },
+   {
+    "id": "VS1",
+    "published": true
+   },
+   {
+    "id": "web1",
+    "published": true
+   },
+   {
+    "id": "XY1a",
+    "published": false
+   },
+   {
+    "id": "XY1b",
+    "published": false
+   },
+   {
+    "id": "XY3",
+    "published": false
+   }
+  ],
+  "resolved": [
+   {
+    "id": "CP1",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/dc1/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "CP6",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy12/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "M1L",
+    "logoUrl": "https://assets.tcgdex.net/en/me/me01/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "M1S",
+    "logoUrl": "https://assets.tcgdex.net/en/me/me01/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "M2",
+    "logoUrl": "https://assets.tcgdex.net/en/me/me02/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "M2a",
+    "logoUrl": "https://assets.tcgdex.net/en/me/me02.5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "M3",
+    "logoUrl": "https://assets.tcgdex.net/en/me/me03/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "M4",
+    "logoUrl": "https://assets.tcgdex.net/ja/M/M4/logo.webp",
+    "source": "tcgdex"
+   },
+   {
+    "id": "M5",
+    "logoUrl": "https://assets.tcgdex.net/en/me/me05/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S10b",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh10.5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S10D",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh10/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S10P",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh10/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S11",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh11/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S12",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh12/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S12a",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh12.5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S1H",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh1/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S1W",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh1/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S2",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh2/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S4",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh4/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S4a",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh4.5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S5I",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S5R",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S6H",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh6/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S6K",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh6/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S7D",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh7/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S7R",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh7/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S8",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh8/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S8a",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/cel25/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "S9",
+    "logoUrl": "https://assets.tcgdex.net/en/swsh/swsh9/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM10",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm10/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM11",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm11/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM12",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm12/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM1M",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm1/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM1S",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm1/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM2K",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm2/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM2L",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm2/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM3H",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm3/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM3N",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm3/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM4A",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm4/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM4S",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm4/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM5M",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM5S",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM6",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm6/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM7",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm7/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM8",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm8/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SM9",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/sm9/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SMP2",
+    "logoUrl": "https://assets.tcgdex.net/en/sm/det1/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV10",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv10/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV11B",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv10.5b/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV11W",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv10.5w/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV1S",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv01/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV1V",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv01/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV2a",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv03.5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV2D",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv02/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV2P",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv02/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV3",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv03/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV4a",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv04.5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV4K",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv04/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV4M",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv04/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV6",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv06/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV6a",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv06.5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV7",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv07/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV8",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv08/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "SV9",
+    "logoUrl": "https://assets.tcgdex.net/en/sv/sv09/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY10",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy10/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY11a",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy11/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY11b",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy11/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY2",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy2/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY4",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy4/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY5a",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY5b",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy5/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY6",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy6/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY7",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy7/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY8a",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy8/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY8b",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy8/logo.webp",
+    "source": "en-twin"
+   },
+   {
+    "id": "XY9",
+    "logoUrl": "https://assets.tcgdex.net/en/xy/xy9/logo.webp",
+    "source": "en-twin"
+   }
+  ]
+ }
+}

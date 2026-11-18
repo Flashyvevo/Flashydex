@@ -1,0 +1,53 @@
+{
+ "install": {
+  "ok": true,
+  "totalMs": 45670,
+  "phases": {
+   "download": 468,
+   "decode": 6510,
+   "import": 2150,
+   "validate": 36057,
+   "activate": 1
+  }
+ },
+ "ref": "/catalog-en/g-592z0i5p2w1s2f5v.db",
+ "pragmas": {
+  "cache2048": {
+   "page_count": {
+    "ms": 1,
+    "rows": 1,
+    "first": "33692"
+   },
+   "cache_size": {
+    "ms": 0,
+    "rows": 1,
+    "first": "-2048"
+   },
+   "scan_cards_cold": {
+    "ms": 9347,
+    "rows": 1,
+    "first": "0"
+   },
+   "scan_cards_warm": {
+    "ms": 6331,
+    "rows": 1,
+    "first": "0"
+   },
+   "scan_variants_cold": {
+    "ms": 409,
+    "rows": 1,
+    "first": "0"
+   },
+   "scan_prices_cold": {
+    "ms": 328,
+    "rows": 1,
+    "first": "0"
+   },
+   "tables": {
+    "ms": 4,
+    "rows": 6,
+    "first": "catalog_cards"
+   }
+  }
+ }
+}
